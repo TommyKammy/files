@@ -8,7 +8,10 @@ export function formatBytes(bytes: number): string {
   return `${val >= 10 || exp === 0 ? val.toFixed(0) : val.toFixed(1)} ${units[exp]}`;
 }
 
-export function formatDateTime(iso: string | null | undefined): string {
+export function formatDateTime(
+  iso: string | null | undefined,
+  options?: { timeZone?: string; timeZoneName?: 'short' | 'long' }
+): string {
   if (!iso) return '—';
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return iso;
@@ -18,7 +21,20 @@ export function formatDateTime(iso: string | null | undefined): string {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    ...(options?.timeZone ? { timeZone: options.timeZone } : {}),
+    ...(options?.timeZoneName ? { timeZoneName: options.timeZoneName } : {}),
   }).format(new Date(ms));
+}
+
+/**
+ * Audit timestamps are displayed in JST with an explicit zone label so the
+ * value cannot be mistaken for the viewer's local time.
+ */
+export function formatAuditDateTime(iso: string | null | undefined): string {
+  return formatDateTime(iso, {
+    timeZone: 'Asia/Tokyo',
+    timeZoneName: 'short',
+  });
 }
 
 export const CLASSIFICATION_META: Record<

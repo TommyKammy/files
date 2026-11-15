@@ -15,6 +15,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
 import { DynamicWatermarkOverlay } from '@/components/DynamicWatermarkOverlay';
+import { ModalShell } from '@/components/ModalShell';
 import { ApiClientError, getFileContentUrl } from '@/lib/files-api';
 import {
   formatBytes,
@@ -110,7 +111,7 @@ export function SecurePreviewModal({
     };
   }, []);
 
-  // Always handle Escape/Space close (regardless of restriction level), PDF paging, and file nav
+  // Native <dialog> handles Escape; this listener adds Space close, PDF paging and file nav
   useEffect(() => {
     const restrictActions = requireWatermark || !canDownload;
 
@@ -126,13 +127,6 @@ export function SecurePreviewModal({
       }
 
       if (scopeTokenRef.current && !keyboardScopes.isTopToken(scopeTokenRef.current)) {
-        return;
-      }
-
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
         return;
       }
 
@@ -345,14 +339,12 @@ export function SecurePreviewModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs"
-      onClick={onClose}
+    <ModalShell
+      label={`プレビュー: ${file.name}`}
+      onClose={onClose}
+      backdrop="deep"
+      className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
     >
-      <div
-        className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
         <header className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-3">
             <h2 className="truncate text-sm font-semibold text-slate-900">
@@ -368,24 +360,26 @@ export function SecurePreviewModal({
                 <button
                   type="button"
                   title="前のファイル (↑)"
+                  aria-label="前のファイル"
                   disabled={!canNavigatePrev}
                   onClick={() => onNavigateFile(-1)}
-                  className="rounded p-1 hover:bg-white hover:text-slate-900 disabled:opacity-35"
+                  className="flex h-6 w-6 items-center justify-center rounded hover:bg-white hover:text-slate-900 disabled:opacity-35"
                 >
                   <ChevronUp className="h-3.5 w-3.5" />
                 </button>
                 <button
                   type="button"
                   title="次のファイル (↓)"
+                  aria-label="次のファイル"
                   disabled={!canNavigateNext}
                   onClick={() => onNavigateFile(1)}
-                  className="rounded p-1 hover:bg-white hover:text-slate-900 disabled:opacity-35"
+                  className="flex h-6 w-6 items-center justify-center rounded hover:bg-white hover:text-slate-900 disabled:opacity-35"
                 >
                   <ChevronDown className="h-3.5 w-3.5" />
                 </button>
               </div>
             )}
-            <span className="hidden md:inline-flex items-center rounded bg-slate-100 px-2 py-0.5 font-mono text-[10px] text-slate-500">
+            <span className="hidden md:inline-flex items-center rounded bg-slate-100 px-2 py-0.5 font-mono text-[0.625rem] text-slate-500">
               {previewKind === 'pdf' && pdfNumPages > 1 ? '←/→ ページ • ' : ''}
               Space / Esc 閉じる
             </span>
@@ -402,8 +396,9 @@ export function SecurePreviewModal({
             )}
             <button
               type="button"
+              aria-label="閉じる"
               onClick={onClose}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
             >
               <X className="h-4 w-4" />
             </button>
@@ -419,14 +414,23 @@ export function SecurePreviewModal({
           </div>
         )}
 
-        <div className="flex-1 overflow-auto bg-slate-100 p-4">
+        <div
+          role="region"
+          aria-label="プレビュー内容"
+          tabIndex={-1}
+          data-autofocus
+          className="flex-1 overflow-auto bg-slate-100 p-4"
+        >
           {loading ? (
             <div className="flex h-80 flex-col items-center justify-center gap-3 text-slate-500">
               <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
               <span className="text-sm">署名付きプレビューを読み込み中...</span>
             </div>
           ) : error ? (
-            <div className="mx-auto my-12 max-w-md rounded-xl border border-red-200 bg-red-50 p-6 text-center text-sm text-red-700">
+            <div
+              role="alert"
+              className="mx-auto my-12 max-w-md rounded-xl border border-red-200 bg-red-50 p-6 text-center text-sm text-red-700"
+            >
               <AlertTriangle className="mx-auto mb-2 h-6 w-6 text-red-500" />
               <p>{error}</p>
             </div>
@@ -442,7 +446,7 @@ export function SecurePreviewModal({
                       type="button"
                       disabled={pdfPage <= 1}
                       onClick={() => setPdfPage((p) => Math.max(1, p - 1))}
-                      className="rounded p-1 hover:bg-slate-100 disabled:opacity-40"
+                      className="flex h-6 w-6 items-center justify-center rounded hover:bg-slate-100 disabled:opacity-40"
                     >
                       <ChevronLeft className="h-3.5 w-3.5" />
                     </button>
@@ -453,7 +457,7 @@ export function SecurePreviewModal({
                       type="button"
                       disabled={pdfPage >= pdfNumPages}
                       onClick={() => setPdfPage((p) => Math.min(pdfNumPages, p + 1))}
-                      className="rounded p-1 hover:bg-slate-100 disabled:opacity-40"
+                      className="flex h-6 w-6 items-center justify-center rounded hover:bg-slate-100 disabled:opacity-40"
                     >
                       <ChevronRight className="h-3.5 w-3.5" />
                     </button>
@@ -492,7 +496,7 @@ export function SecurePreviewModal({
 
               {previewKind === 'fallback' && (
                 <div className="mx-auto my-12 max-w-md rounded-xl border border-slate-200 bg-white p-8 text-center shadow-xs">
-                  <FileWarning className="mx-auto mb-3 h-10 w-10 text-slate-400" />
+                  <FileWarning className="mx-auto mb-3 h-10 w-10 text-slate-500" />
                   <h3 className="text-sm font-semibold text-slate-900">
                     この形式のブラウザ内プレビューには対応していません
                   </h3>
@@ -519,7 +523,6 @@ export function SecurePreviewModal({
             </DynamicWatermarkOverlay>
           )}
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

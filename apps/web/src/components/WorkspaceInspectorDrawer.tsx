@@ -107,7 +107,7 @@ export function WorkspaceInspectorDrawer({
             <h2 className="truncate text-sm font-semibold text-slate-900">
               {item.name}
             </h2>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[0.6875rem] text-slate-500">
               {isFolder ? 'フォルダ' : target.file.mime_type || 'ファイル'}
             </p>
           </div>
@@ -116,7 +116,7 @@ export function WorkspaceInspectorDrawer({
           type="button"
           aria-label="詳細インスペクタを閉じる"
           onClick={onClose}
-          className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
         >
           <X className="h-4 w-4" />
         </button>
@@ -128,13 +128,13 @@ export function WorkspaceInspectorDrawer({
           <ClassificationBadge classification={item.classification} />
         </div>
         {confidentialAncestor ? (
-          <p className="text-[11px] leading-relaxed text-amber-800">
+          <p className="text-[0.6875rem] leading-relaxed text-amber-800">
             親フォルダ「{confidentialAncestor}」から{' '}
             <span className="font-semibold">Confidential (極秘)</span>{' '}
             を継承中（下位ランクへの変更不可）
           </p>
         ) : (
-          <p className="text-[11px] text-slate-500">
+          <p className="text-[0.6875rem] text-slate-500">
             直接設定または親既定値に基づく機密区分
           </p>
         )}
@@ -152,12 +152,12 @@ export function WorkspaceInspectorDrawer({
               />
             </div>
             {target.file.ai_confidence != null && (
-              <div className="text-[11px] text-indigo-700">
+              <div className="text-[0.6875rem] text-indigo-700">
                 確信度: {Math.round(target.file.ai_confidence * 100)}%
               </div>
             )}
             {target.file.ai_reason && (
-              <p className="text-[11px] leading-relaxed text-indigo-900">
+              <p className="text-[0.6875rem] leading-relaxed text-indigo-900">
                 {target.file.ai_reason}
               </p>
             )}
@@ -165,7 +165,7 @@ export function WorkspaceInspectorDrawer({
               <button
                 type="button"
                 onClick={() => onApproveAi(target.file)}
-                className="w-full rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-indigo-700"
+                className="w-full rounded-md bg-indigo-600 px-2.5 py-1 text-[0.6875rem] font-semibold text-white hover:bg-indigo-700"
               >
                 AI提案を承認する
               </button>
@@ -175,19 +175,19 @@ export function WorkspaceInspectorDrawer({
       </section>
 
       <section className="space-y-2 text-xs">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        <h3 className="text-[0.6875rem] font-semibold uppercase tracking-wide text-slate-500">
           メタデータ & アクセス権
         </h3>
         <dl className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
           <div className="flex items-center justify-between px-3 py-2">
             <dt className="text-slate-500">実効ロール</dt>
-            <dd className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-medium text-slate-800">
+            <dd className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[0.6875rem] font-medium text-slate-800">
               {itemRole}
             </dd>
           </div>
           <div className="flex items-center justify-between px-3 py-2">
             <dt className="text-slate-500">複製 / ダウンロード</dt>
-            <dd className="text-[11px] font-medium text-slate-700">
+            <dd className="text-[0.6875rem] font-medium text-slate-700">
               {canCopyItem ? '許可' : '禁止 (Previewer DLP)'}
             </dd>
           </div>
@@ -221,7 +221,7 @@ export function WorkspaceInspectorDrawer({
       </section>
 
       <section className="space-y-1.5 pt-1 text-xs">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        <h3 className="text-[0.6875rem] font-semibold uppercase tracking-wide text-slate-500">
           クイック操作
         </h3>
         {!isFolder && (

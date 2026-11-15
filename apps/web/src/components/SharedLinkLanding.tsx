@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Download,
   Eye,
+  EyeOff,
   FileText,
   Folder,
   Loader2,
@@ -34,6 +35,7 @@ export function SharedLinkLanding({ token }: { token: string }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [verifyingPassword, setVerifyingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [unlockToken, setUnlockToken] = useState<string | undefined>(undefined);
@@ -160,20 +162,20 @@ export function SharedLinkLanding({ token }: { token: string }) {
   }
 
   return (
-    <main className="min-h-screen bg-[#F8FAFC] px-4 py-12 text-slate-900">
+    <main className="min-h-screen bg-[#efeff1] px-4 py-12 text-slate-900">
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#131B2E] text-sm font-bold text-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#5e6ad2] text-sm font-semibold text-white">
               F
             </div>
             <div>
               <div className="text-sm font-semibold text-slate-900">Files</div>
-              <div className="text-[11px] text-slate-500">Secure Share Delivery</div>
+              <div className="text-[0.6875rem] text-slate-700">Secure Share Delivery</div>
             </div>
           </div>
           {meta && (
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-mono text-[11px] text-slate-600">
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-mono text-[0.6875rem] text-slate-600">
               {meta.accessScope}
             </span>
           )}
@@ -227,18 +229,54 @@ export function SharedLinkLanding({ token }: { token: string }) {
             ) : (
               <form onSubmit={handleVerifyPassword} className="space-y-3">
                 {passwordError && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  <div
+                    id="shared-link-password-error"
+                    role="alert"
+                    className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+                  >
                     {passwordError}
                   </div>
                 )}
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="共有パスワードを入力"
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none"
-                />
+                <div className="text-xs">
+                  <label
+                    htmlFor="shared-link-password"
+                    className="font-medium text-slate-700"
+                  >
+                    共有パスワード
+                  </label>
+                  <div className="relative mt-1">
+                    <input
+                      id="shared-link-password"
+                      name="sharedLinkPassword"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      required
+                      aria-invalid={Boolean(passwordError)}
+                      aria-describedby={
+                        passwordError ? 'shared-link-password-error' : undefined
+                      }
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="共有パスワードを入力"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 pr-10 text-sm focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                    />
+                    <button
+                      type="button"
+                      aria-label={
+                        showPassword ? 'パスワードを隠す' : 'パスワードを表示'
+                      }
+                      aria-pressed={showPassword}
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute inset-y-0 right-2 my-auto flex h-7 w-7 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
                 <button
                   type="submit"
                   disabled={verifyingPassword}
@@ -252,7 +290,10 @@ export function SharedLinkLanding({ token }: { token: string }) {
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
             {errorMessage && (
-              <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-xs text-red-700">
+              <div
+                role="alert"
+                className="border-b border-red-200 bg-red-50 px-5 py-3 text-xs text-red-700"
+              >
                 {errorMessage}
               </div>
             )}
@@ -337,7 +378,7 @@ export function SharedLinkLanding({ token }: { token: string }) {
                           <div className="truncate font-medium text-slate-900">
                             {item.name}
                           </div>
-                          <div className="text-[11px] text-slate-500">
+                          <div className="text-[0.6875rem] text-slate-500">
                             {formatBytes(item.sizeBytes)}
                           </div>
                         </div>
@@ -352,7 +393,7 @@ export function SharedLinkLanding({ token }: { token: string }) {
                           type="button"
                           disabled={actionBusyId === item.id}
                           onClick={() => handlePreview(item)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[0.6875rem] font-medium text-slate-700 hover:bg-slate-100"
                         >
                           <Eye className="h-3.5 w-3.5 text-blue-600" />
                           <span>プレビュー</span>
@@ -362,7 +403,7 @@ export function SharedLinkLanding({ token }: { token: string }) {
                             type="button"
                             disabled={actionBusyId === item.id}
                             onClick={() => handleDownload(item)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
+                            className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[0.6875rem] font-medium text-white hover:bg-blue-700"
                           >
                             <Download className="h-3.5 w-3.5" />
                             <span>DL</span>

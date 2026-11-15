@@ -1,12 +1,231 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont,
+    "SF Pro Text", "Segoe UI", sans-serif;
+
+  --color-slate-50: #f9f9fa;
+  --color-slate-100: #f4f4f5;
+  --color-slate-200: #e7e7ea;
+  --color-slate-300: #d7d7dc;
+  --color-slate-400: #b4b4bb;
+  --color-slate-500: #6b6f76;
+  --color-slate-600: #6b6f76;
+  --color-slate-700: #55565a;
+  --color-slate-800: #3c3f46;
+  --color-slate-900: #111214;
+  --color-slate-950: #0b0b0d;
+
+  --color-blue-50: #eef0fb;
+  --color-blue-100: #e4e7f8;
+  --color-blue-200: #d5d9f2;
+  --color-blue-300: #bcc3ea;
+  --color-blue-400: #9aa4dd;
+  --color-blue-500: #7b86d6;
+  --color-blue-600: #5e6ad2;
+  --color-blue-700: #4f5ac2;
+  --color-blue-800: #414ba6;
+  --color-blue-900: #363e86;
+
+  --color-indigo-50: #eef0fb;
+  --color-indigo-100: #e4e7f8;
+  --color-indigo-200: #d5d9f2;
+  --color-indigo-300: #bcc3ea;
+  --color-indigo-400: #9aa4dd;
+  --color-indigo-500: #7b86d6;
+  --color-indigo-600: #5e6ad2;
+  --color-indigo-700: #4f5ac2;
+  --color-indigo-800: #414ba6;
+  --color-indigo-900: #363e86;
+
+  --color-red-50: #fdf0f1;
+  --color-red-200: #f3d3d5;
+  --color-red-500: #e0565f;
+  --color-red-600: #d9343f;
+  --color-red-700: #b3242e;
+
+  --color-emerald-50: #eef7f1;
+  --color-emerald-200: #d6eadf;
+  --color-emerald-500: #3aab6b;
+  --color-emerald-600: #2f9e5f;
+  --color-emerald-700: #2f7a52;
+
+  --color-amber-50: #fdf6e9;
+  --color-amber-200: #f1e1bf;
+  --color-amber-500: #c98a2a;
+  --color-amber-600: #b7791f;
+  --color-amber-700: #8a6118;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+  --radius-3xl: 14px;
+
+  --shadow-2xs: 0 1px 1px rgb(17 18 20 / 0.03);
+  --shadow-xs: 0 1px 2px rgb(17 18 20 / 0.04);
+  --shadow-sm: 0 1px 2px rgb(17 18 20 / 0.05);
+  --shadow-md: 0 4px 12px rgb(17 18 20 / 0.06);
+  --shadow-lg: 0 8px 24px rgb(17 18 20 / 0.08);
+  --shadow-xl: 0 12px 32px rgb(17 18 20 / 0.1);
+  --shadow-2xl: 0 9px 48px rgb(0 0 0 / 0.08), 0 6px 24px rgb(0 0 0 / 0.1),
+    0 1px 1px rgb(0 0 0 / 0.04);
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.8125rem;
+  --text-lg: 0.9375rem;
+  --text-xl: 1.0625rem;
+  --text-2xl: 1.25rem;
+}
+
 :root {
   color-scheme: light;
+  --bg: #efeff1;
+  --surface: #f9f9fa;
+  --surface-raised: #ffffff;
+  --surface-hover: #f2f2f4;
+  --border: #e7e7ea;
+  --border-subtle: #f0f0f1;
+  --text: #111214;
+  --text-secondary: #55565a;
+  --text-muted: #676b72;
+  --accent: #5e6ad2;
+  --accent-hover: #4f5ac2;
+  --accent-soft: #eef0fb;
+  --accent-border: #dfe2f5;
 }
 
 body {
-  background-color: #f8fafc;
-  color: #0f172a;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+[role="menu"]:focus,
+[role="menu"]:focus-visible {
+  outline: none;
+}
+
+/* Native modal surface. The browser owns the top layer, focus containment,
+   background inertness and Escape handling; these rules only restore the
+   app's visual treatment (full-viewport backdrop, centered content). */
+dialog.modal-shell {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 1rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  overflow: visible;
+}
+
+dialog.modal-shell[open] {
+  display: flex;
+}
+
+dialog.modal-shell[data-align="center"] {
+  align-items: center;
+  justify-content: center;
+}
+
+dialog.modal-shell[data-align="top"] {
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 5rem;
+}
+
+dialog.modal-shell[data-backdrop="light"]::backdrop {
+  background: rgb(17 18 20 / 0.25);
+}
+
+dialog.modal-shell[data-backdrop="dark"]::backdrop {
+  background: rgb(2 6 23 / 0.6);
+}
+
+dialog.modal-shell[data-backdrop="deep"]::backdrop {
+  background: rgb(2 6 23 / 0.7);
+}
+
+dialog.modal-shell[data-blur="true"]::backdrop {
+  backdrop-filter: blur(4px);
+}
+
+dialog.modal-shell > * {
+  overscroll-behavior: contain;
+}
+
+dialog.modal-shell:focus {
+  outline: none;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cfcfd4 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cfcfd4;
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b4b4bb;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+@media (pointer: coarse) {
+  button[aria-label$="閉じる"],
+  button[aria-label$="を展開"],
+  [role="checkbox"],
+  [role="menuitem"],
+  [role="option"],
+  label[for^="ai-suggestion"] {
+    min-block-size: 2.75rem;
+    min-inline-size: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @media print {

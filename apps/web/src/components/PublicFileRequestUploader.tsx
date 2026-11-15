@@ -127,21 +127,21 @@ export function PublicFileRequestUploader({ token }: { token: string }) {
   }
 
   return (
-    <main className="min-h-screen bg-[#F8FAFC] px-4 py-12 text-slate-900">
+    <main className="min-h-screen bg-[#efeff1] px-4 py-12 text-slate-900">
       <div className="mx-auto max-w-2xl space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#131B2E] text-sm font-bold text-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#5e6ad2] text-sm font-semibold text-white">
               F
             </div>
             <div>
               <div className="text-sm font-semibold text-slate-900">Files</div>
-              <div className="text-[11px] text-slate-500">
+              <div className="text-[0.6875rem] text-slate-500">
                 Blind Dropbox — Secure File Submission
               </div>
             </div>
           </div>
-          <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px] font-medium text-indigo-700">
+          <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[0.6875rem] font-medium text-indigo-700">
             <ShieldCheck className="h-3.5 w-3.5" />
             <span>提出専用・フォルダ非公開</span>
           </span>
@@ -177,7 +177,7 @@ export function PublicFileRequestUploader({ token }: { token: string }) {
                     {meta.description}
                   </p>
                 )}
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                <div className="mt-2 flex flex-wrap gap-2 text-[0.6875rem] text-slate-500">
                   <span>上限サイズ: {formatBytes(meta.maxFileSizeBytes)}</span>
                   <span>•</span>
                   <span>
@@ -202,12 +202,17 @@ export function PublicFileRequestUploader({ token }: { token: string }) {
                 {meta.requireSubmitterEmail ? '(必須)' : '(任意)'}
               </span>
               <input
+                id="submitter-email"
+                name="submitterEmail"
                 type="email"
+                autoComplete="email"
+                inputMode="email"
+                spellCheck={false}
                 required={meta.requireSubmitterEmail}
                 value={submitterEmail}
                 onChange={(e) => setSubmitterEmail(e.target.value)}
                 placeholder="sender@partner.co.jp"
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
               />
             </label>
 
@@ -217,7 +222,11 @@ export function PublicFileRequestUploader({ token }: { token: string }) {
                   Turnstile 認証トークン
                 </span>
                 <input
+                  id="turnstile-token"
+                  name="turnstileToken"
                   type="text"
+                  autoComplete="off"
+                  spellCheck={false}
                   required
                   value={turnstileToken}
                   onChange={(e) => setTurnstileToken(e.target.value)}
@@ -254,6 +263,9 @@ export function PublicFileRequestUploader({ token }: { token: string }) {
 
               <input
                 ref={fileInputRef}
+                id="public-file-input"
+                name="files"
+                aria-label="提出ファイルを選択"
                 type="file"
                 multiple
                 className="hidden"
@@ -281,7 +293,7 @@ export function PublicFileRequestUploader({ token }: { token: string }) {
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-medium text-slate-900">
                         {sub.fileName}{' '}
-                        <span className="font-normal text-slate-400">
+                        <span className="font-normal text-slate-500">
                           ({formatBytes(sub.sizeBytes)})
                         </span>
                       </div>
@@ -294,12 +306,12 @@ export function PublicFileRequestUploader({ token }: { token: string }) {
                         </div>
                       )}
                       {sub.status === 'done' && (
-                        <div className="mt-0.5 text-[11px] text-emerald-700">
+                        <div className="mt-0.5 text-[0.6875rem] text-emerald-700">
                           提出完了 ({formatDateTime(sub.submittedAt)})
                         </div>
                       )}
                       {sub.errorMessage && (
-                        <div className="mt-0.5 text-[11px] text-red-600">
+                        <div className="mt-0.5 text-[0.6875rem] text-red-600">
                           {sub.errorMessage}
                         </div>
                       )}

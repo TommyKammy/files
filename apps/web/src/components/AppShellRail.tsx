@@ -18,6 +18,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppShellFolderTree } from '@/components/AppShellFolderTree';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
+import { ModalShell } from '@/components/ModalShell';
 import {
   getDropTargetClassName,
   useWorkspaceDrag,
@@ -334,83 +335,82 @@ export function AppShellRail({
 
   return (
     <>
-      <aside className="flex w-60 shrink-0 flex-col justify-between bg-[#131B2E] text-slate-200 border-r border-slate-800/80">
-        <div>
-          <div className="flex items-center gap-3 px-4 py-5 border-b border-slate-800/80">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white shadow-sm">
+      <aside className="sticky top-0 flex h-screen w-[245px] shrink-0 self-start flex-col justify-between bg-[#efeff1] text-[#111214]">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center gap-2 px-3 pb-2 pt-4">
+            <div className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-[#5e6ad2] text-[0.6875rem] font-semibold text-white">
               F
             </div>
-            <div>
-              <div className="text-sm font-semibold tracking-tight text-white">
+            <div className="min-w-0">
+              <div className="truncate text-[0.8125rem] font-semibold tracking-[-0.01em] text-[#111214]">
                 Files
               </div>
-              <div className="text-[11px] text-slate-400">
+              <div className="truncate text-[0.6875rem] text-[#3c3f46]">
                 Enterprise Governance
               </div>
             </div>
           </div>
 
-          <div className="p-3">
+          <div className="px-3 pb-2">
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
-              className="flex w-full items-center justify-between rounded-lg border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-xs text-slate-300 hover:border-slate-600 hover:text-white transition"
+              className="flex h-7 w-full items-center justify-between rounded-md px-2 text-[0.8125rem] text-[#111214] transition hover:bg-[#e4e4e6] hover:text-[#111214]"
             >
               <span className="flex items-center gap-2">
-                <Search className="h-3.5 w-3.5 text-slate-400" />
+                <Search className="h-4 w-4 text-[#676b72]" />
                 <span>横断検索...</span>
               </span>
-              <kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
+              <kbd className="rounded border border-[#d7d7dc] bg-[#f9f9fa] px-1 py-0.5 font-mono text-[0.625rem] text-[#3c3f46]">
                 ⌘K
               </kbd>
             </button>
           </div>
 
-          <nav className="px-3 space-y-1">
+          <nav aria-label="メインナビゲーション" className="space-y-0.5 px-2">
             <Link
               href="/workspace"
               data-drop-folder-id={ROOT_DROP_ID}
               data-drop-label="マイファイル"
-              className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+              className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
                 dragCtx?.isDragging
                   ? `${getDropTargetClassName(
                       null,
-                      dragCtx.hoveredTarget,
-                      dragCtx.springTargetId
+                      dragCtx.hoveredTarget
                     ) || (resolvedView === 'workspace'
-                      ? 'bg-blue-600/20 text-white border border-blue-500/30'
-                      : 'text-slate-300 hover:bg-slate-800/70 hover:text-white')}`
+                      ? 'bg-[#e2e2e6] text-[#111214]'
+                      : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]')}`
                   : resolvedView === 'workspace'
-                    ? 'bg-blue-600/20 text-white border border-blue-500/30'
-                    : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
+                    ? 'bg-[#e2e2e6] text-[#111214]'
+                    : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
               }`}
             >
-              <FolderOpen className="h-4 w-4 text-blue-400" />
+              <FolderOpen className="h-4 w-4 text-[#676b72]" />
               <span>マイファイル</span>
             </Link>
 
             <Link
               href="/workspace?view=trash"
-              className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+              className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
                 resolvedView === 'trash'
-                  ? 'bg-blue-600/20 text-white border border-blue-500/30'
-                  : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
+                  ? 'bg-[#e2e2e6] text-[#111214]'
+                  : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
               }`}
             >
-              <Trash2 className="h-4 w-4 text-slate-400" />
+              <Trash2 className="h-4 w-4 text-[#676b72]" />
               <span>ゴミ箱</span>
             </Link>
 
             {isAdmin && (
               <Link
                 href="/admin"
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
                   resolvedView === 'admin'
-                    ? 'bg-blue-600/20 text-white border border-blue-500/30'
-                    : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
+                    ? 'bg-[#e2e2e6] text-[#111214]'
+                    : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
                 }`}
               >
-                <ShieldAlert className="h-4 w-4 text-amber-400" />
+                <ShieldAlert className="h-4 w-4 text-[#676b72]" />
                 <span>ガバナンス</span>
               </Link>
             )}
@@ -426,78 +426,94 @@ export function AppShellRail({
           )}
         </div>
 
-        <div className="border-t border-slate-800/80 p-3">
+        <div className="p-2 pb-8">
           {user ? (
-            <div className="flex items-center justify-between gap-2 rounded-lg bg-slate-900/60 px-3 py-2.5">
-              <div className="min-w-0">
-                <div className="truncate text-xs font-semibold text-white">
+            <div className="flex items-center gap-2 rounded-md px-2 py-1.5 transition hover:bg-[#e6e6e8]">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#5e6ad2] text-[0.625rem] font-semibold text-white">
+                {user.displayName.slice(0, 1).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[0.75rem] font-medium text-[#111214]">
                   {user.displayName}
                 </div>
-                <div className="truncate text-[11px] text-slate-400">
+                <div className="truncate text-[0.6875rem] text-[#3c3f46]">
                   {user.email}
-                </div>
-                <div className="mt-1 inline-block rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-mono text-slate-300">
-                  {user.role}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={handleLogout}
                 title="サインアウト"
-                className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                className="flex h-6 w-6 items-center justify-center rounded text-[#676b72] transition hover:bg-[#dcdcdf] hover:text-[#111214]"
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-3.5 w-3.5" />
               </button>
             </div>
           ) : (
-            <div className="text-xs text-slate-400 px-2 py-1">未認証</div>
+            <div className="px-2 py-1 text-[0.75rem] text-[#3c3f46]">未認証</div>
           )}
         </div>
       </aside>
 
       {searchOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/60 pt-20 px-4 backdrop-blur-xs"
-          onClick={() => setSearchOpen(false)}
+        <ModalShell
+          label="横断検索"
+          onClose={() => setSearchOpen(false)}
+          align="top"
+          backdrop="light"
+          blur={false}
+          className="w-full max-w-2xl overflow-hidden rounded-xl border border-[#e7e7ea] bg-white shadow-2xl"
         >
-          <div
-            className="w-full max-w-2xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
-              <Search className="h-4 w-4 shrink-0 text-slate-400" />
+            <div className="flex items-center gap-3 border-b border-[#f0f0f1] px-4 py-3">
+              <Search className="h-4 w-4 shrink-0 text-[#676b72]" />
               <input
                 ref={inputRef}
+                id="workspace-search-input"
+                name="workspaceSearch"
+                role="combobox"
+                aria-label="ワークスペースを検索"
+                aria-autocomplete="list"
+                aria-expanded={searchOpen}
+                aria-controls="workspace-search-listbox"
+                aria-activedescendant={
+                  entries[activeIndex]
+                    ? `workspace-search-option-${activeIndex}`
+                    : undefined
+                }
+                autoComplete="off"
+                spellCheck={false}
+                data-autofocus
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleInputKeyDown}
                 placeholder="ファイル名・コマンド検索 (> コマンド, is:confidential, is:unset)"
-                className="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                className="w-full rounded bg-transparent text-[0.8125rem] text-[#111214] placeholder:text-[#676b72] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#5e6ad2]/45"
               />
               {searching && (
-                <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600">
+                <span className="shrink-0 rounded bg-[#eef0fb] px-2 py-0.5 text-[0.625rem] font-medium text-[#5e6ad2]">
                   FTS5検索中...
                 </span>
               )}
               <button
                 type="button"
+                aria-label="検索を閉じる"
                 onClick={() => setSearchOpen(false)}
-                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                className="rounded p-1 text-[#676b72] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs">
-              <span className="text-slate-500">クイック入力:</span>
+            <div className="flex flex-wrap items-center gap-1.5 border-b border-[#f0f0f1] bg-[#f9f9fa] px-4 py-2 text-[0.6875rem]">
+              <span className="text-[#676b72]">クイック入力:</span>
               <button
                 type="button"
                 onClick={() => {
                   setQuery('> ');
                   inputRef.current?.focus();
                 }}
-                className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 font-mono text-[11px] text-indigo-700 hover:border-indigo-400"
+                className="inline-flex min-h-6 items-center gap-1 rounded-md border border-[#dfe2f5] bg-[#eef0fb] px-2 py-0.5 font-mono text-[0.6875rem] text-[#4f5ac2] transition hover:border-[#bcc3ea]"
               >
                 <Command className="h-3 w-3" />
                 <span>&gt; コマンド</span>
@@ -510,7 +526,7 @@ export function AppShellRail({
                     setQuery(`${chip} `);
                     inputRef.current?.focus();
                   }}
-                  className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 font-mono text-[11px] text-slate-700 hover:border-blue-400 hover:text-blue-700"
+                  className="min-h-6 rounded-md border border-[#e7e7ea] bg-white px-2 py-0.5 font-mono text-[0.6875rem] text-[#55565a] transition hover:border-[#bcc3ea] hover:text-[#4f5ac2]"
                 >
                   {chip}
                 </button>
@@ -519,7 +535,10 @@ export function AppShellRail({
 
             <div
               ref={listRef}
-              className="max-h-96 overflow-y-auto divide-y divide-slate-100"
+              id="workspace-search-listbox"
+              role="listbox"
+              aria-label="検索結果"
+              className="max-h-96 overflow-y-auto divide-y divide-[#f0f0f1]"
             >
               {entries.length === 0 ? (
                 <div className="px-4 py-8 text-center text-sm text-slate-500">
@@ -532,8 +551,8 @@ export function AppShellRail({
               ) : (
                 entries.map((entry, idx) => {
                   const isActive = idx === activeIndex;
-                  const baseRowClass = `flex w-full items-center justify-between gap-4 px-4 py-2.5 text-left transition ${
-                    isActive ? 'bg-blue-50/90' : 'hover:bg-slate-50'
+                  const baseRowClass = `flex w-full items-center justify-between gap-4 px-3 py-2 text-left transition ${
+                    isActive ? 'bg-[#eef0fb]' : 'hover:bg-[#f4f4f5]'
                   }`;
 
                   if (entry.kind === 'command') {
@@ -541,31 +560,35 @@ export function AppShellRail({
                       <button
                         key={entry.key}
                         type="button"
+                        id={`workspace-search-option-${idx}`}
+                        role="option"
+                        aria-selected={isActive}
+                        tabIndex={-1}
                         data-palette-index={idx}
                         onMouseEnter={() => setActiveIndex(idx)}
                         onClick={() => handleExecuteEntry(entry)}
                         className={baseRowClass}
                       >
                         <div className="flex min-w-0 items-center gap-3">
-                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white">
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#f4f4f5] text-[#55565a]">
                             <Sparkles className="h-3.5 w-3.5" />
                           </span>
                           <div className="min-w-0">
-                            <div className="truncate text-sm font-medium text-slate-900">
+                            <div className="truncate text-[0.8125rem] font-medium text-[#111214]">
                               {entry.command.label}
                             </div>
-                            <div className="truncate text-xs text-slate-500">
+                            <div className="truncate text-[0.6875rem] text-[#3c3f46]">
                               {entry.command.description}
                             </div>
                           </div>
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
                           {entry.command.shortcutHint && (
-                            <kbd className="rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
+                            <kbd className="rounded border border-[#e7e7ea] bg-white px-1.5 py-0.5 font-mono text-[0.625rem] text-[#55565a]">
                               {entry.command.shortcutHint}
                             </kbd>
                           )}
-                          <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                          <ChevronRight className="h-3.5 w-3.5 text-[#b4b4bb]" />
                         </div>
                       </button>
                     );
@@ -576,6 +599,10 @@ export function AppShellRail({
                       <button
                         key={entry.key}
                         type="button"
+                        id={`workspace-search-option-${idx}`}
+                        role="option"
+                        aria-selected={isActive}
+                        tabIndex={-1}
                         data-palette-index={idx}
                         onMouseEnter={() => setActiveIndex(idx)}
                         onClick={() => handleExecuteEntry(entry)}
@@ -585,14 +612,14 @@ export function AppShellRail({
                           <Folder className="h-4 w-4 shrink-0 text-amber-500" />
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="truncate text-sm font-medium text-slate-900">
+                              <span className="truncate text-[0.8125rem] font-medium text-[#111214]">
                                 {entry.folder.name}
                               </span>
-                              <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                              <span className="rounded bg-[#eef7f1] px-1 py-0.5 text-[0.625rem] font-medium text-[#2f7a52]">
                                 キャッシュ即応
                               </span>
                             </div>
-                            <div className="truncate text-xs text-slate-500">
+                            <div className="truncate text-[0.6875rem] text-[#3c3f46]">
                               {entry.pathHint} • フォルダ
                             </div>
                           </div>
@@ -610,29 +637,33 @@ export function AppShellRail({
                     <button
                       key={entry.key}
                       type="button"
+                      id={`workspace-search-option-${idx}`}
+                      role="option"
+                      aria-selected={isActive}
+                      tabIndex={-1}
                       data-palette-index={idx}
                       onMouseEnter={() => setActiveIndex(idx)}
                       onClick={() => handleExecuteEntry(entry)}
                       className={baseRowClass}
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                        <FileText className="h-4 w-4 shrink-0 text-[#676b72]" />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="truncate text-sm font-medium text-slate-900">
+                            <span className="truncate text-[0.8125rem] font-medium text-[#111214]">
                               {item.name}
                             </span>
                             <span
-                              className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                              className={`rounded px-1.5 py-0.5 text-[0.625rem] font-medium ${
                                 entry.source === 'local'
-                                  ? 'bg-emerald-50 text-emerald-700'
-                                  : 'bg-slate-100 text-slate-600'
+                                  ? 'bg-[#eef7f1] text-[#2f7a52]'
+                                  : 'bg-[#f4f4f5] text-[#55565a]'
                               }`}
                             >
                               {entry.source === 'local' ? 'キャッシュ即応' : 'FTS5'}
                             </span>
                           </div>
-                          <div className="truncate text-xs text-slate-500">
+                          <div className="truncate text-[0.6875rem] text-[#3c3f46]">
                             {item.folderName ?? 'Root'} • {formatBytes(item.sizeBytes)} •{' '}
                             {formatDateTime(item.updatedAt)}
                           </div>
@@ -648,12 +679,11 @@ export function AppShellRail({
               )}
             </div>
 
-            <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-4 py-2 text-[11px] text-slate-500">
+            <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-4 py-2 text-[0.6875rem] text-slate-500">
               <span>↑/↓ で移動 • Enter で実行 • Esc で閉じる</span>
               <span className="font-mono">0ms ローカル + FTS5</span>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
     </>
   );

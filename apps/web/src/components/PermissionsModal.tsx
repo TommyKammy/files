@@ -2,6 +2,7 @@
 
 import { Loader2, Search, Shield, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { ModalShell } from '@/components/ModalShell';
 import {
   ApiClientError,
   grantPermission,
@@ -136,14 +137,11 @@ export function PermissionsModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
-      onClick={onClose}
+    <ModalShell
+      label={`アクセス権限: ${targetName}`}
+      onClose={onClose}
+      className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
     >
-      <div
-        className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div className="flex items-center gap-2.5 min-w-0">
             <Shield className="h-4 w-4 shrink-0 text-blue-600" />
@@ -158,8 +156,9 @@ export function PermissionsModal({
           </div>
           <button
             type="button"
+            aria-label="閉じる"
             onClick={onClose}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-4 w-4" />
           </button>
@@ -167,7 +166,10 @@ export function PermissionsModal({
 
         <div className="max-h-[75vh] overflow-y-auto p-5 space-y-5">
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700">
+            <div
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700"
+            >
               {error}
             </div>
           )}
@@ -182,8 +184,20 @@ export function PermissionsModal({
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <div className="relative flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                  <Search className="pointer-events-none absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500" />
                   <input
+                    id="permission-principal-search"
+                    name="principalSearch"
+                    role="combobox"
+                    aria-label="ユーザーまたはグループを検索"
+                    aria-autocomplete="list"
+                    aria-expanded={
+                      !selectedPrincipal && (searching || candidates.length > 0)
+                    }
+                    aria-controls="permission-principal-listbox"
+                    autoComplete="off"
+                    spellCheck={false}
+                    data-autofocus
                     type="text"
                     value={
                       selectedPrincipal
@@ -197,13 +211,18 @@ export function PermissionsModal({
                       setQuery(e.target.value);
                     }}
                     placeholder="氏名・メールアドレス・グループ名で検索"
-                    className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                   />
 
                   {!selectedPrincipal && (searching || candidates.length > 0) && (
-                    <div className="absolute left-0 right-0 z-20 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg divide-y divide-slate-100">
+                    <div
+                      id="permission-principal-listbox"
+                      role="listbox"
+                      aria-label="検索候補"
+                      className="absolute left-0 right-0 z-20 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg divide-y divide-slate-100"
+                    >
                       {searching ? (
-                        <div className="px-3 py-2 text-xs text-slate-400">
+                        <div className="px-3 py-2 text-xs text-slate-500">
                           検索中...
                         </div>
                       ) : (
@@ -211,6 +230,8 @@ export function PermissionsModal({
                           <button
                             key={`${cand.type}:${cand.id}`}
                             type="button"
+                            role="option"
+                            aria-selected={false}
                             onClick={() => {
                               setSelectedPrincipal(cand);
                               setCandidates([]);
@@ -225,7 +246,7 @@ export function PermissionsModal({
                               )}
                               <span>{cand.name}</span>
                             </span>
-                            <span className="text-[11px] text-slate-400">
+                            <span className="text-[0.6875rem] text-slate-600">
                               {cand.email ?? 'SCIM Group'}
                             </span>
                           </button>
@@ -236,6 +257,9 @@ export function PermissionsModal({
                 </div>
 
                 <select
+                  id="permission-role"
+                  name="role"
+                  aria-label="付与するロール"
                   value={role}
                   onChange={(e) => setRole(e.target.value as ResourceRole)}
                   className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800"
@@ -267,7 +291,7 @@ export function PermissionsModal({
             </div>
 
             {loading ? (
-              <div className="py-8 text-center text-xs text-slate-400">
+              <div className="py-8 text-center text-xs text-slate-500">
                 読み込み中...
               </div>
             ) : permissions.length === 0 ? (
@@ -286,17 +310,17 @@ export function PermissionsModal({
                         <span className="font-medium text-slate-900">
                           {perm.granteeName ?? perm.granteeId}
                         </span>
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono text-slate-600">
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.625rem] font-mono text-slate-600">
                           {perm.granteeType}
                         </span>
                         {perm.inherited && (
-                          <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] text-amber-700">
+                          <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[0.625rem] text-amber-700">
                             継承 ({perm.sourceName ?? '親フォルダ'})
                           </span>
                         )}
                       </div>
                       {perm.granteeEmail && (
-                        <div className="text-[11px] text-slate-400">
+                        <div className="text-[0.6875rem] text-slate-600">
                           {perm.granteeEmail}
                         </div>
                       )}
@@ -311,7 +335,7 @@ export function PermissionsModal({
                           type="button"
                           onClick={() => handleRevoke(perm)}
                           title="権限を削除"
-                          className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          className="flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-red-50 hover:text-red-600"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -323,7 +347,6 @@ export function PermissionsModal({
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

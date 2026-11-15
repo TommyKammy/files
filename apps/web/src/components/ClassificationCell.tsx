@@ -89,7 +89,7 @@ export function ClassificationCell({
             onChange={(e) =>
               handleManualChange(e.target.value as ClassificationLabel)
             }
-            className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-medium text-slate-800 shadow-2xs hover:border-slate-300 focus:border-blue-500 focus:outline-none"
+            className="rounded border border-transparent bg-transparent px-1.5 py-0.5 text-[0.6875rem] font-medium text-[#3c3f46] transition hover:border-[#e1e1e4] hover:bg-white focus:border-[#5e6ad2] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5e6ad2]/40"
           >
             {file.classification === 'unset' && (
               <option value="unset">Unset (未分類)</option>
@@ -110,10 +110,10 @@ export function ClassificationCell({
 
       {hasPendingSuggestion && file.ai_suggested_label && (
         <div
-          className="inline-flex max-w-full items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50/90 px-2 py-0.5 text-[11px] text-indigo-800"
+          className="inline-flex max-w-full items-center gap-1 rounded border border-[#dfe2f5] bg-[#eef0fb] px-2 py-0.5 text-[0.6875rem] text-[#4f5ac2]"
           title={file.ai_reason ?? 'Workers AI による分類提案'}
         >
-          <Sparkles className="h-3 w-3 shrink-0 text-indigo-600" />
+          <Sparkles className="h-3 w-3 shrink-0 text-[#5e6ad2]" />
           <span className="truncate font-medium">
             AI提案: {CLASSIFICATION_META[file.ai_suggested_label].label}
             {confidencePct !== null ? ` (${confidencePct}%)` : ''}
@@ -127,7 +127,7 @@ export function ClassificationCell({
                   ? `理由: ${file.ai_reason} — クリックで承認`
                   : 'AI提案を1クリック承認'
               }
-              className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-indigo-600 text-white hover:bg-indigo-700"
+              className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[#5e6ad2] text-white hover:bg-[#4f5ac2]"
             >
               <Check className="h-2.5 w-2.5" />
             </button>

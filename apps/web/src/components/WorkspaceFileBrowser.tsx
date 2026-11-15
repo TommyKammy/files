@@ -43,6 +43,7 @@ import { ClassificationBadge } from '@/components/ClassificationBadge';
 import { ClassificationCell } from '@/components/ClassificationCell';
 import { CreateFileRequestModal } from '@/components/CreateFileRequestModal';
 import { FileDropzoneUploader } from '@/components/FileDropzoneUploader';
+import { ModalShell } from '@/components/ModalShell';
 import { MoveCopyTreeModal } from '@/components/MoveCopyTreeModal';
 import { PermissionsModal } from '@/components/PermissionsModal';
 import {
@@ -181,16 +182,16 @@ function BulkActionButton({
       title={title}
       aria-label={label}
       onClick={onClick}
-      className={`inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 font-medium transition ${
+      className={`inline-flex h-6 shrink-0 items-center gap-1 rounded border px-2 text-[0.6875rem] font-medium transition ${
         variant === 'primary'
-          ? 'border-indigo-300 bg-indigo-600 text-white hover:bg-indigo-700'
+          ? 'border-[#5e6ad2] bg-[#5e6ad2] text-white hover:bg-[#4f5ac2]'
           : variant === 'danger'
-            ? 'border-red-200 bg-white text-red-600 hover:bg-red-50'
-            : 'border-indigo-200 bg-white text-slate-700 hover:bg-slate-50'
+            ? 'border-[#f3d3d5] bg-white text-[#d9343f] hover:bg-[#fdf0f1]'
+            : 'border-[#dfe2f5] bg-white text-[#3c3f46] hover:bg-[#f2f2f4]'
       }`}
     >
       {icon}
-      <span className="hidden 2xl:inline">{label}</span>
+      <span className="hidden lg:inline">{label}</span>
     </button>
   );
 }
@@ -424,10 +425,12 @@ export function WorkspaceFileBrowser() {
     x: number;
     y: number;
     row: WorkspaceTableRow | null;
+    trigger: HTMLElement | null;
   } | null>(null);
   const [backgroundMenu, setBackgroundMenu] = useState<{
     x: number;
     y: number;
+    trigger: HTMLElement | null;
   } | null>(null);
   const backgroundFileInputRef = useRef<HTMLInputElement>(null);
   const backgroundFolderInputRef = useRef<HTMLInputElement>(null);
@@ -915,7 +918,15 @@ export function WorkspaceFileBrowser() {
         setSelectionAnchorKey(resolved.anchorKey);
       }
       setBackgroundMenu(null);
-      setContextMenu({ x: event.clientX, y: event.clientY, row });
+      const current = event.currentTarget;
+      const trigger =
+        current instanceof HTMLElement
+          ? current.matches('button')
+            ? current
+            : current.querySelector<HTMLElement>('[data-row-name-trigger="true"]') ??
+              current
+          : null;
+      setContextMenu({ x: event.clientX, y: event.clientY, row, trigger });
     },
     [isTrashView, selectedKeys]
   );
@@ -1537,7 +1548,14 @@ export function WorkspaceFileBrowser() {
       }
       event.preventDefault();
       setContextMenu(null);
-      setBackgroundMenu({ x: event.clientX, y: event.clientY });
+      setBackgroundMenu({
+        x: event.clientX,
+        y: event.clientY,
+        trigger:
+          event.target instanceof Element
+            ? event.target.closest<HTMLElement>('[data-workspace-table="true"]')
+            : null,
+      });
     },
     [isTrashView]
   );
@@ -1734,6 +1752,11 @@ export function WorkspaceFileBrowser() {
           x: Math.round(rect.left + 80),
           y: Math.round(rect.top + 24),
           row: targetRow,
+          trigger:
+            rowEl?.querySelector<HTMLElement>('[data-row-name-trigger="true"]') ??
+            rowEl ??
+            tableContainer ??
+            null,
         });
         return;
       }
@@ -2247,7 +2270,7 @@ export function WorkspaceFileBrowser() {
 
   if (!authChecked) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F8FAFC] text-sm text-slate-500">
+      <div className="flex min-h-screen items-center justify-center bg-[#efeff1] text-sm text-slate-500">
         <Loader2 className="mr-2 h-4 w-4 animate-spin text-blue-600" />
         セッションを確認中...
       </div>
@@ -2273,9 +2296,6 @@ export function WorkspaceFileBrowser() {
       currentFolderId={isTrashView ? null : folderId}
       isSysAdmin={isSysAdmin}
       onPrefetchFolder={(targetId) => prefetcher.scheduleHoverPrefetch(targetId)}
-      onSpringOpenFolder={(targetId) =>
-        router.push(`/workspace?folderId=${encodeURIComponent(targetId)}`)
-      }
       onDropMove={handleDragDropMove}
     >
       {(dragCtx) => {
@@ -2302,8 +2322,7 @@ export function WorkspaceFileBrowser() {
             folder && dragCtx.isDragging && isDropEligible
               ? getDropTargetClassName(
                   folder.id,
-                  dragCtx.hoveredTarget,
-                  dragCtx.springTargetId
+                  dragCtx.hoveredTarget
                 )
               : '';
 
@@ -2327,7 +2346,6 @@ export function WorkspaceFileBrowser() {
               data-row-index={globalIdx}
               data-drop-folder-id={isDropEligible && folder ? folder.id : undefined}
               data-drop-label={isDropEligible && folder ? folder.name : undefined}
-              aria-selected={isSelected}
               onContextMenu={(e) => {
                 if (isTrashView || isInlineRenaming || isPendingUpload) return;
                 openRowContextMenu(e, row);
@@ -2354,16 +2372,16 @@ export function WorkspaceFileBrowser() {
                 if (isRowControlTarget(e.target)) return;
                 openRow(row);
               }}
-              className={`flex h-[144px] flex-col justify-between rounded-xl border p-3 transition-colors ${
+              className={`flex h-[136px] flex-col justify-between rounded-lg border p-3 transition-colors ${
                 dropClass
                   ? dropClass
                   : isPendingUpload
                     ? 'border-blue-200 bg-blue-50/40'
                     : isSelected
-                      ? 'border-indigo-300 bg-indigo-50/70'
+                      ? 'border-[#c9cfee] bg-[#eef0fb]'
                       : isFocused
-                        ? 'border-blue-400 bg-blue-50/60'
-                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60'
+                        ? 'border-[#bcc3ea] bg-white'
+                        : 'border-[#e7e7ea] bg-white hover:border-[#d7d7dc] hover:bg-[#f6f6f8]'
               } ${isCut ? 'opacity-50 outline-1 outline-dashed outline-amber-400' : ''}`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -2376,29 +2394,33 @@ export function WorkspaceFileBrowser() {
                       aria-checked={isSelected}
                       data-workspace-row-trigger="true"
                       onClick={handleCardCheckboxClick}
-                      className={`flex h-4 w-4 items-center justify-center rounded border transition ${
-                        isSelected
-                          ? 'border-blue-600 bg-blue-600 text-white'
-                          : 'border-slate-300 bg-white text-transparent hover:border-blue-400'
-                      }`}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition hover:bg-[#f2f2f4]"
                     >
-                      <Check className="h-3 w-3" />
+                      <span
+                        className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border transition ${
+                          isSelected
+                            ? 'border-[#5e6ad2] bg-[#5e6ad2] text-white'
+                            : 'border-[#cfcfd4] bg-white text-transparent hover:border-[#9aa4dd]'
+                        }`}
+                      >
+                        <Check className="h-3 w-3" />
+                      </span>
                     </button>
                   )}
                   {isFolder ? (
-                    <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                    <Folder className="h-4 w-4 shrink-0 text-[#6b6f76]" />
                   ) : isPendingUpload ? (
                     <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600" />
                   ) : (
-                    <FileText className="h-4 w-4 shrink-0 text-blue-500" />
+                    <FileText className="h-4 w-4 shrink-0 text-[#6b6f76]" />
                   )}
                   {!isFolder && file && isPendingUpload && (
-                    <span className="rounded-full bg-blue-100 px-1.5 py-0.5 font-mono text-[10px] text-blue-700">
+                    <span className="rounded-full bg-blue-100 px-1.5 py-0.5 font-mono text-[0.625rem] text-blue-700">
                       {file.upload_progress ?? 0}%
                     </span>
                   )}
                   {!isFolder && file && !isPendingUpload && file.current_version_num > 1 && (
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.625rem] text-slate-500">
                       v{file.current_version_num}
                     </span>
                   )}
@@ -2412,7 +2434,7 @@ export function WorkspaceFileBrowser() {
                       if (folder) handleRestoreFolder(folder);
                       else if (file) handleRestoreFile(file);
                     }}
-                    className="inline-flex items-center gap-1 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 hover:bg-slate-100"
+                    className="inline-flex min-h-6 items-center gap-1 rounded border border-slate-200 px-1.5 py-0.5 text-[0.625rem] font-medium text-slate-700 hover:bg-slate-100"
                   >
                     <RotateCcw className="h-2.5 w-2.5" />
                     <span>復元</span>
@@ -2429,7 +2451,7 @@ export function WorkspaceFileBrowser() {
                       e.stopPropagation();
                       openRowContextMenu(e, row);
                     }}
-                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    className="rounded p-1 text-[#a0a0a7] transition hover:bg-[#f0f0f2] hover:text-[#111214]"
                   >
                     <MoreHorizontal className="h-3.5 w-3.5" />
                   </button>
@@ -2440,6 +2462,8 @@ export function WorkspaceFileBrowser() {
                 {isInlineRenaming && inlineRename ? (
                   <input
                     ref={inlineInputRef}
+                    name="renameValue"
+                    aria-label="名前を変更"
                     type="text"
                     value={inlineRename.value}
                     onChange={(e) =>
@@ -2463,13 +2487,19 @@ export function WorkspaceFileBrowser() {
                       }
                     }}
                     onBlur={() => commitInlineRename()}
-                    className="w-full rounded border border-blue-500 bg-white px-2 py-1 text-xs font-medium text-slate-900 focus:outline-none"
+                    className="w-full rounded border border-blue-500 bg-white px-2 py-1 text-xs font-medium text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                   />
                 ) : (
                   <button
                     type="button"
                     data-row-name-trigger="true"
                     data-workspace-row-trigger="true"
+                    aria-haspopup="menu"
+                    aria-expanded={
+                      contextMenu?.row
+                        ? getWorkspaceRowKey(contextMenu.row) === rowKey
+                        : false
+                    }
                     disabled={isTrashView || isPendingUpload}
                     title={
                       isTrashView
@@ -2502,7 +2532,7 @@ export function WorkspaceFileBrowser() {
                       e.preventDefault();
                       openRow(row);
                     }}
-                    className="w-full text-left text-xs font-semibold text-slate-900 hover:text-blue-600 disabled:cursor-default disabled:hover:text-slate-900"
+                    className="w-full text-left text-[0.8125rem] font-semibold text-[#111214] transition hover:text-[#4f5ac2] disabled:cursor-default disabled:hover:text-[#111214]"
                   >
                     <span className="line-clamp-2 break-all">
                       {folder ? folder.name : file!.name}
@@ -2511,7 +2541,7 @@ export function WorkspaceFileBrowser() {
                 )}
               </div>
 
-              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+              <div className="flex items-center justify-between gap-2 text-[0.6875rem] text-[#6b6f76]">
                 <div className="flex items-center gap-1 min-w-0">
                   <ClassificationBadge
                     classification={folder ? folder.classification : file!.classification}
@@ -2520,13 +2550,13 @@ export function WorkspaceFileBrowser() {
                   {file?.ai_suggested_label && (
                     <span
                       title="AI 分類提案あり"
-                      className="inline-flex items-center rounded bg-indigo-50 px-1 py-0.5 text-[10px] font-medium text-indigo-700"
+                      className="inline-flex items-center rounded bg-indigo-50 px-1 py-0.5 text-[0.625rem] font-medium text-indigo-700"
                     >
                       <Sparkles className="h-2.5 w-2.5" />
                     </span>
                   )}
                 </div>
-                <span className="shrink-0 font-mono text-[10px] text-slate-400">
+                <span className="shrink-0 font-mono text-[0.625rem] text-[#6b6f76]">
                   {folder
                     ? formatDateTime(isTrashView ? folder.deleted_at : folder.updated_at)
                     : formatBytes(file!.size_bytes)}
@@ -2537,7 +2567,13 @@ export function WorkspaceFileBrowser() {
         }
 
         return (
-          <div className="flex min-h-screen bg-[#F8FAFC] text-slate-900">
+          <div className="flex min-h-screen bg-[#efeff1] text-[#111214]">
+          <a
+            href="#workspace-main"
+            className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-[#111214] focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#5e6ad2]"
+          >
+            メインコンテンツへスキップ
+          </a>
           <AppShellRail
             user={user}
             activeView={isTrashView ? 'trash' : 'workspace'}
@@ -2549,29 +2585,38 @@ export function WorkspaceFileBrowser() {
             workspaceActions={workspaceActions}
           />
 
-          <main className="flex-1 min-w-0 px-6 py-6 lg:px-8 space-y-5">
+          <main
+            id="workspace-main"
+            tabIndex={-1}
+            className="mb-2 mr-2 mt-2 min-w-0 flex-1 space-y-4 rounded-2xl border border-[#e7e7ea] bg-[#f9f9fa] px-5 py-4 lg:px-7"
+          >
+        {!isTrashView && (
+          <h1 className="sr-only">{currentFolder?.name ?? 'マイファイル'}</h1>
+        )}
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0 space-y-1">
             {isTrashView ? (
               <div className="flex items-center gap-2">
                 <Trash2 className="h-5 w-5 text-slate-600" />
-                <h1 className="text-lg font-semibold text-slate-900">ゴミ箱</h1>
+                <h1 className="text-[0.9375rem] font-semibold tracking-[-0.01em] text-[#111214]">ゴミ箱</h1>
               </div>
             ) : (
-              <nav className="flex flex-wrap items-center gap-1 text-sm">
+              <nav
+                aria-label="パンくずリスト"
+                className="flex flex-wrap items-center gap-1 text-[0.75rem]"
+              >
                 <button
                   type="button"
                   data-drop-folder-id={ROOT_DROP_ID}
                   data-drop-label="マイファイル"
                   onClick={() => router.push('/workspace')}
-                  className={`rounded px-1.5 py-0.5 font-medium hover:bg-slate-200/70 transition ${
+                  className={`min-h-6 rounded px-1.5 py-0.5 font-medium hover:bg-[#ececee] transition ${
                     !folderId ? 'text-slate-900' : 'text-slate-500'
                   } ${
                     dragCtx.isDragging
                       ? getDropTargetClassName(
                           null,
-                          dragCtx.hoveredTarget,
-                          dragCtx.springTargetId
+                          dragCtx.hoveredTarget
                         )
                       : ''
                   }`}
@@ -2580,7 +2625,7 @@ export function WorkspaceFileBrowser() {
                 </button>
                 {breadcrumbs.map((crumb, idx) => (
                   <span key={crumb.id} className="flex items-center gap-1">
-                    <ChevronRight className="h-4 w-4 text-slate-400" />
+                    <ChevronRight className="h-4 w-4 text-[#6b6f76]" />
                     <button
                       type="button"
                       data-drop-folder-id={crumb.id}
@@ -2590,16 +2635,15 @@ export function WorkspaceFileBrowser() {
                           `/workspace?folderId=${encodeURIComponent(crumb.id)}`
                         )
                       }
-                      className={`rounded px-1.5 py-0.5 font-medium hover:bg-slate-200/70 transition ${
+                      className={`min-h-6 rounded px-1.5 py-0.5 font-medium hover:bg-[#ececee] transition ${
                         idx === breadcrumbs.length - 1
-                          ? 'text-slate-900'
-                          : 'text-slate-500'
+                          ? 'text-[#111214]'
+                          : 'text-[#6b6f76]'
                       } ${
                         dragCtx.isDragging
                           ? getDropTargetClassName(
                               crumb.id,
-                              dragCtx.hoveredTarget,
-                              dragCtx.springTargetId
+                              dragCtx.hoveredTarget
                             )
                           : ''
                       }`}
@@ -2614,7 +2658,7 @@ export function WorkspaceFileBrowser() {
             {!isTrashView &&
               (currentFolder ||
                 (nextCursor && (sortBy !== 'name' || sortDir !== 'asc'))) && (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <div className="flex flex-wrap items-center gap-2 text-[0.6875rem] text-[#6b6f76]">
                   {currentFolder && (
                     <>
                       <ClassificationBadge
@@ -2625,7 +2669,7 @@ export function WorkspaceFileBrowser() {
                     </>
                   )}
                   {nextCursor && (sortBy !== 'name' || sortDir !== 'asc') && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[0.6875rem] font-medium text-amber-700">
                       <Loader2 className="h-3 w-3 animate-spin" />
                       <span>ソート全件同期中...</span>
                     </span>
@@ -2634,7 +2678,7 @@ export function WorkspaceFileBrowser() {
               )}
           </div>
 
-          <div className="relative flex w-full flex-wrap items-center gap-2">
+          <div className="relative flex w-full flex-wrap items-center gap-1.5">
             <div
               aria-hidden={!isTrashView && selectedRows.length > 0}
               inert={!isTrashView && selectedRows.length > 0}
@@ -2659,7 +2703,7 @@ export function WorkspaceFileBrowser() {
                       parentId: folderId ?? null,
                     });
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-2xs hover:bg-slate-50"
+                  className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
                 >
                   <FolderPlus className="h-3.5 w-3.5 text-blue-600" />
                   <span>新規フォルダ</span>
@@ -2671,7 +2715,7 @@ export function WorkspaceFileBrowser() {
                   <button
                     type="button"
                     onClick={() => handleTogglePin(currentFolder)}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium shadow-2xs transition ${
+                    className={`inline-flex items-center gap-1.5 h-7 rounded-md border px-2.5 text-[0.75rem] font-medium transition ${
                       currentFolder.is_pinned === 1
                         ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
                         : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
@@ -2680,7 +2724,7 @@ export function WorkspaceFileBrowser() {
                     <Star
                       className={`h-3.5 w-3.5 ${
                         currentFolder.is_pinned === 1
-                          ? 'fill-amber-400 text-amber-500'
+                          ? 'fill-amber-400 text-[#6b6f76]'
                           : 'text-slate-500'
                       }`}
                     />
@@ -2699,7 +2743,7 @@ export function WorkspaceFileBrowser() {
                         canEdit: canEditCurrentFolder,
                       })
                     }
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-2xs hover:bg-slate-50"
+                    className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
                   >
                     <Inbox className="h-3.5 w-3.5 text-indigo-600" />
                     <span>ファイル収集</span>
@@ -2717,7 +2761,7 @@ export function WorkspaceFileBrowser() {
                         canEdit: canEditCurrentFolder,
                       })
                     }
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-2xs hover:bg-slate-50"
+                    className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
                   >
                     <Link2 className="h-3.5 w-3.5 text-blue-600" />
                     <span>フォルダ共有</span>
@@ -2737,7 +2781,7 @@ export function WorkspaceFileBrowser() {
                         effectiveRole,
                       })
                     }
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-2xs hover:bg-slate-50"
+                    className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
                   >
                     <Shield className="h-3.5 w-3.5 text-slate-600" />
                     <span>権限管理</span>
@@ -2751,7 +2795,7 @@ export function WorkspaceFileBrowser() {
               title="リスト / グリッド表示切替 (v)"
               aria-pressed={viewMode === 'grid'}
               onClick={handleToggleViewMode}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-2xs hover:bg-slate-50 hover:text-slate-900"
+              className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
             >
               {viewMode === 'grid' ? (
                 <List className="h-3.5 w-3.5 text-slate-600" />
@@ -2769,7 +2813,7 @@ export function WorkspaceFileBrowser() {
                 onClick={() => setInspectorOpen((prev) => !prev)}
                 className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-2xs transition ${
                   inspectorOpen
-                    ? 'border-blue-300 bg-blue-50 text-blue-700'
+                    ? 'border-[#bcc3ea] bg-[#eef0fb] text-[#4f5ac2]'
                     : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                 }`}
               >
@@ -2782,10 +2826,10 @@ export function WorkspaceFileBrowser() {
               type="button"
               title="キーボードショートカット (?)"
               onClick={() => setShortcutsHelpOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-2xs hover:bg-slate-50 hover:text-slate-900"
+              className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
             >
               <Keyboard className="h-3.5 w-3.5 text-slate-500" />
-              <kbd className="font-mono text-[10px] text-slate-500">?</kbd>
+              <kbd className="font-mono text-[0.625rem] text-slate-500">?</kbd>
             </button>
             </div>
 
@@ -2793,7 +2837,7 @@ export function WorkspaceFileBrowser() {
               <div
                 role="toolbar"
                 aria-label="一括操作"
-                className="absolute inset-0 z-20 flex items-center gap-1.5 overflow-x-auto whitespace-nowrap rounded-xl border border-indigo-200 bg-indigo-50/95 px-3 py-1.5 text-xs text-indigo-950 shadow-2xs"
+                className="absolute inset-0 z-20 flex items-center gap-1 overflow-x-auto whitespace-nowrap rounded-md border border-[#dfe2f5] bg-[#eef0fb]/95 px-2 py-1 text-[0.6875rem] text-[#3c3f46]"
               >
                 <span className="shrink-0 font-semibold">
                   {selectedRows.length} 件選択中
@@ -2851,7 +2895,7 @@ export function WorkspaceFileBrowser() {
                 <button
                   type="button"
                   onClick={() => setSelectedKeys(new Set())}
-                  className="shrink-0 rounded-lg px-2 py-1 text-slate-500 hover:bg-indigo-100 hover:text-slate-800"
+                  className="shrink-0 rounded-lg px-2 py-1 text-slate-700 hover:bg-indigo-100 hover:text-slate-900"
                 >
                   解除
                 </button>
@@ -2869,7 +2913,7 @@ export function WorkspaceFileBrowser() {
             <button
               type="button"
               onClick={() => syncStore.clearActiveDirectoryNotice()}
-              className="rounded px-2 py-0.5 text-[11px] font-medium hover:bg-amber-100"
+              className="rounded px-2 py-0.5 text-[0.6875rem] font-medium hover:bg-amber-100"
             >
               閉じる
             </button>
@@ -2890,17 +2934,15 @@ export function WorkspaceFileBrowser() {
                 ピン留めされたワークスペース
               </h2>
               {snapshot.revalidating && (
-                <span className="text-[11px] text-slate-400">同期中...</span>
+                <span className="text-[0.6875rem] text-[#6b6f76]">同期中...</span>
               )}
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {pinnedFolders.map((pinned) => {
-                const isSpringPinned = dragCtx.springTargetId === pinned.id;
                 const pinnedDropClass = dragCtx.isDragging
                   ? getDropTargetClassName(
                       pinned.id,
-                      dragCtx.hoveredTarget,
-                      dragCtx.springTargetId
+                      dragCtx.hoveredTarget
                     )
                   : '';
                 return (
@@ -2916,17 +2958,13 @@ export function WorkspaceFileBrowser() {
                     onClick={() =>
                       router.push(`/workspace?folderId=${encodeURIComponent(pinned.id)}`)
                     }
-                    className={`flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3.5 text-left shadow-2xs transition hover:border-blue-300 hover:bg-blue-50/30 ${pinnedDropClass}`}
+                    className={`flex items-center gap-3 rounded-lg border border-[#e7e7ea] bg-white p-3 text-left transition hover:border-[#d7d7dc] hover:bg-[#f6f6f8] ${pinnedDropClass}`}
                   >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-                      {isSpringPinned ? (
-                        <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                      ) : (
-                        <Folder className="h-4 w-4" />
-                      )}
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#f4f4f5] text-[#6b6f76]">
+                      <Folder className="h-4 w-4" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-slate-900">
+                      <p className="truncate text-[0.8125rem] font-medium text-[#111214]">
                         {pinned.name}
                       </p>
                       <div className="mt-1">
@@ -2965,7 +3003,7 @@ export function WorkspaceFileBrowser() {
           onContextMenu={handleBackgroundContextMenu}
           className="-mx-6 px-6 lg:-mx-8 lg:px-8"
         >
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+        <section className="overflow-hidden rounded-lg border border-[#e7e7ea] bg-white">
           {isInitialLoading ? (
             <div className="flex h-48 items-center justify-center text-sm text-slate-500">
               <Loader2 className="mr-2 h-4 w-4 animate-spin text-blue-600" />
@@ -2973,15 +3011,31 @@ export function WorkspaceFileBrowser() {
             </div>
           ) : rows.length === 0 ? (
             <div
-              className="px-6 py-14 text-center text-sm text-slate-500"
+              className="flex min-h-[240px] flex-col items-center justify-center px-6 py-12 text-center"
               onContextMenu={handleBackgroundContextMenu}
               onClick={handleBackgroundEmptyClick}
             >
-              {isTrashView
-                ? 'ゴミ箱は空です'
-                : folderId
-                  ? 'このフォルダにはまだアイテムがありません'
-                  : 'アクセス可能なルートフォルダはありません（「新規フォルダ」から作成できます）'}
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#e7e7ea] bg-[#f9f9fa] text-[#6b6f76]">
+                {isTrashView ? (
+                  <Trash2 className="h-4 w-4" />
+                ) : (
+                  <Folder className="h-4 w-4" />
+                )}
+              </div>
+              <p className="mt-3 text-[0.8125rem] font-medium text-[#111214]">
+                {isTrashView
+                  ? 'ゴミ箱は空です'
+                  : folderId
+                    ? 'このフォルダは空です'
+                    : 'アクセス可能なルートフォルダがありません'}
+              </p>
+              <p className="mt-1 max-w-sm text-[0.6875rem] leading-relaxed text-[#6b6f76]">
+                {isTrashView
+                  ? '削除したアイテムはここに表示されます'
+                  : folderId
+                    ? 'ファイルをドロップするか、上の「ファイルを選択」から追加できます'
+                    : '「新規フォルダ」からワークスペースを作成できます'}
+              </p>
             </div>
           ) : (
             <div
@@ -2992,9 +3046,11 @@ export function WorkspaceFileBrowser() {
               }}
               onScroll={virtualWindow.onScroll}
               onContextMenu={handleBackgroundContextMenu}
-              tabIndex={-1}
+              role="region"
+              aria-label="ファイルとフォルダの一覧"
+              tabIndex={0}
               data-workspace-table="true"
-              className={`min-h-[420px] overflow-x-auto focus:outline-none ${
+              className={`min-h-[420px] overflow-x-auto ${
                 virtualWindow.virtualized ? 'max-h-[68vh] overflow-y-auto' : ''
               }`}
             >
@@ -3029,12 +3085,21 @@ export function WorkspaceFileBrowser() {
               ) : (
                 <table
                   role="grid"
+                  aria-labelledby="workspace-table-caption"
                   aria-multiselectable="true"
+                  aria-rowcount={rows.length + 1}
+                  aria-colcount={6}
                   className="w-full text-left text-xs"
                 >
-                  <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 text-[11px] font-semibold uppercase tracking-wide text-slate-500 backdrop-blur-xs">
-                    <tr>
-                      <th className="w-10 px-3 py-3">
+                  <caption
+                    id="workspace-table-caption"
+                    className="sr-only"
+                  >
+                    ファイルとフォルダの一覧
+                  </caption>
+                  <thead className="sticky top-0 z-10 border-b border-[#ededf0] bg-[#fbfbfc]/95 text-[0.6875rem] font-medium tracking-normal text-[#6b6f76] backdrop-blur-xs">
+                    <tr aria-rowindex={1}>
+                      <th scope="col" className="w-10 px-3 py-2">
                         {!isTrashView && selectableRowKeys.length > 0 && (
                           <button
                             type="button"
@@ -3052,14 +3117,18 @@ export function WorkspaceFileBrowser() {
                                 setSelectedKeys(new Set(selectableRowKeys));
                               }
                             }}
-                            className={`flex h-4 w-4 items-center justify-center rounded border transition ${
-                              selectedRows.length > 0 &&
-                              selectedRows.length === selectableRowKeys.length
-                                ? 'border-blue-600 bg-blue-600 text-white'
-                                : 'border-slate-300 bg-white text-transparent hover:border-blue-400'
-                            }`}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition hover:bg-[#f2f2f4]"
                           >
-                            <Check className="h-3 w-3" />
+                            <span
+                              className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border transition ${
+                                selectedRows.length > 0 &&
+                                selectedRows.length === selectableRowKeys.length
+                                  ? 'border-[#5e6ad2] bg-[#5e6ad2] text-white'
+                                  : 'border-[#cfcfd4] bg-white text-transparent hover:border-[#9aa4dd]'
+                              }`}
+                            >
+                              <Check className="h-3 w-3" />
+                            </span>
                           </button>
                         )}
                       </th>
@@ -3078,13 +3147,14 @@ export function WorkspaceFileBrowser() {
                         return (
                           <th
                             key={field}
+                            scope="col"
                             aria-sort={getAriaSortValue(field, sortBy, sortDir)}
-                            className="px-4 py-3"
+                            className="px-3 py-2"
                           >
                             <button
                               type="button"
                               onClick={() => handleSortHeaderClick(field)}
-                              className={`inline-flex items-center gap-1 rounded px-1 py-0.5 transition hover:bg-slate-200/60 hover:text-slate-900 ${
+                              className={`inline-flex min-h-6 items-center gap-1 rounded px-1 py-0.5 transition hover:bg-slate-200/60 hover:text-slate-900 ${
                                 isActiveSort ? 'text-slate-900' : 'text-slate-500'
                               }`}
                             >
@@ -3102,10 +3172,12 @@ export function WorkspaceFileBrowser() {
                           </th>
                         );
                       })}
-                      <th className="px-4 py-3 text-right">操作</th>
+                      <th scope="col" className="px-3 py-2 text-right">
+                        操作
+                      </th>
                     </tr>
                   </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-[#f0f0f1]">
                   {virtualWindow.topSpacerPx > 0 && (
                     <tr aria-hidden="true">
                       <td
@@ -3153,8 +3225,7 @@ export function WorkspaceFileBrowser() {
                         dragCtx.isDragging && isDropEligible
                           ? getDropTargetClassName(
                               folder.id,
-                              dragCtx.hoveredTarget,
-                              dragCtx.springTargetId
+                              dragCtx.hoveredTarget
                             )
                           : '';
 
@@ -3162,6 +3233,7 @@ export function WorkspaceFileBrowser() {
                         <tr
                           key={rowKey}
                           data-row-index={globalIdx}
+                          aria-rowindex={globalIdx + 2}
                           data-drop-folder-id={isDropEligible ? folder.id : undefined}
                           data-drop-label={isDropEligible ? folder.name : undefined}
                           aria-selected={isSelected}
@@ -3191,15 +3263,15 @@ export function WorkspaceFileBrowser() {
                             if (isRowControlTarget(e.target)) return;
                             openRow(row);
                           }}
-                          className={`h-[52px] transition-colors ${
+                          className={`h-11 transition-colors ${
                             folderDropClass
                               ? folderDropClass
                               : isSelected
-                                ? 'bg-indigo-50/70'
+                                ? 'bg-[#eef0fb]'
                                 : isFocused
-                                  ? 'bg-blue-50/70'
-                                  : 'hover:bg-slate-50/70'
-                          } ${isFocused ? 'ring-1 ring-inset ring-blue-400/70' : ''} ${
+                                  ? 'bg-[#f4f4f5]'
+                                  : 'hover:bg-[#f6f6f8]'
+                          } ${isFocused ? 'ring-1 ring-inset ring-[#6d78d5]/45' : ''} ${
                             isCutFolder ? 'opacity-50 outline-1 outline-dashed outline-amber-400' : ''
                           }`}
                         >
@@ -3212,22 +3284,28 @@ export function WorkspaceFileBrowser() {
                                 aria-checked={isSelected}
                                 data-workspace-row-trigger="true"
                                 onClick={handleRowSelectionClick}
-                                className={`flex h-4 w-4 items-center justify-center rounded border transition ${
-                                  isSelected
-                                    ? 'border-blue-600 bg-blue-600 text-white'
-                                    : 'border-slate-300 bg-white text-transparent hover:border-blue-400'
-                                }`}
+                                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition hover:bg-[#f2f2f4]"
                               >
-                                <Check className="h-3 w-3" />
+                                <span
+                                  className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border transition ${
+                                    isSelected
+                                      ? 'border-[#5e6ad2] bg-[#5e6ad2] text-white'
+                                      : 'border-[#cfcfd4] bg-white text-transparent hover:border-[#9aa4dd]'
+                                  }`}
+                                >
+                                  <Check className="h-3 w-3" />
+                                </span>
                               </button>
                             )}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-2">
                             {isInlineRenaming && inlineRename ? (
                               <div className="flex items-center gap-2.5">
-                                <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                                <Folder className="h-4 w-4 shrink-0 text-[#6b6f76]" />
                                 <input
                                   ref={inlineInputRef}
+                                  name="renameValue"
+                                  aria-label="フォルダ名を変更"
                                   type="text"
                                   value={inlineRename.value}
                                   onChange={(e) =>
@@ -3251,7 +3329,7 @@ export function WorkspaceFileBrowser() {
                                     }
                                   }}
                                   onBlur={() => commitInlineRename()}
-                                  className="w-full max-w-xs rounded border border-blue-500 bg-white px-2 py-1 text-xs font-medium text-slate-900 focus:outline-none"
+                                  className="w-full max-w-xs rounded border border-blue-500 bg-white px-2 py-1 text-xs font-medium text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                                 />
                               </div>
                             ) : (
@@ -3259,6 +3337,12 @@ export function WorkspaceFileBrowser() {
                                 type="button"
                                 data-row-name-trigger="true"
                                 data-workspace-row-trigger="true"
+                                aria-haspopup="menu"
+                                aria-expanded={
+                                  contextMenu?.row
+                                    ? getWorkspaceRowKey(contextMenu.row) === rowKey
+                                    : false
+                                }
                                 disabled={isTrashView}
                                 title={
                                   isTrashView
@@ -3287,31 +3371,31 @@ export function WorkspaceFileBrowser() {
                                   e.preventDefault();
                                   openRow(row);
                                 }}
-                                className="flex items-center gap-2.5 font-medium text-slate-900 hover:text-blue-600 disabled:hover:text-slate-900"
+                                className="flex items-center gap-2.5 text-[0.8125rem] font-medium text-[#111214] transition hover:text-[#4f5ac2] disabled:hover:text-[#111214]"
                               >
-                                <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                                <Folder className="h-4 w-4 shrink-0 text-[#6b6f76]" />
                                 <span>{folder.name}</span>
                               </button>
                             )}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-2">
                             <ClassificationBadge
                               classification={folder.classification}
                               compact
                             />
                           </td>
-                          <td className="px-4 py-3 text-slate-400">フォルダ</td>
-                          <td className="px-4 py-3 text-slate-500">
+                          <td className="px-3 py-2 text-[#55565a]">フォルダ</td>
+                          <td className="px-3 py-2 text-[#55565a]">
                             {formatDateTime(
                               isTrashView ? folder.deleted_at : folder.updated_at
                             )}
                           </td>
-                          <td className="px-4 py-3 text-right">
+                          <td className="px-3 py-2 text-right">
                             {isTrashView ? (
                               <button
                                 type="button"
                                 onClick={() => handleRestoreFolder(folder)}
-                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-[0.6875rem] font-medium text-slate-700 hover:bg-slate-100"
                               >
                                 <RotateCcw className="h-3 w-3" />
                                 <span>復元</span>
@@ -3328,7 +3412,7 @@ export function WorkspaceFileBrowser() {
                                   e.stopPropagation();
                                   openRowContextMenu(e, row);
                                 }}
-                                className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                className="rounded p-1 text-[#a0a0a7] transition hover:bg-[#f0f0f2] hover:text-[#111214]"
                               >
                                 <MoreHorizontal className="h-4 w-4" />
                               </button>
@@ -3349,6 +3433,7 @@ export function WorkspaceFileBrowser() {
                       <tr
                         key={rowKey}
                         data-row-index={globalIdx}
+                        aria-rowindex={globalIdx + 2}
                         aria-selected={isSelected}
                         onContextMenu={(e) => {
                           if (isTrashView || isInlineRenaming || isPendingUpload) return;
@@ -3376,15 +3461,15 @@ export function WorkspaceFileBrowser() {
                           if (isRowControlTarget(e.target)) return;
                           openRow(row);
                         }}
-                        className={`h-[52px] transition-colors ${
+                        className={`h-11 transition-colors ${
                           isPendingUpload
-                            ? 'bg-blue-50/30 text-slate-600'
+                            ? 'bg-[#eef0fb]/50 text-[#55565a]'
                             : isSelected
-                              ? 'bg-indigo-50/70'
+                              ? 'bg-[#eef0fb]'
                               : isFocused
-                                ? 'bg-blue-50/70'
-                                : 'hover:bg-slate-50/70'
-                        } ${isFocused ? 'ring-1 ring-inset ring-blue-400/70' : ''} ${
+                                ? 'bg-[#f4f4f5]'
+                                : 'hover:bg-[#f6f6f8]'
+                        } ${isFocused ? 'ring-1 ring-inset ring-[#6d78d5]/45' : ''} ${
                           isCutFile ? 'opacity-50 outline-1 outline-dashed outline-amber-400' : ''
                         }`}
                       >
@@ -3397,22 +3482,28 @@ export function WorkspaceFileBrowser() {
                               aria-checked={isSelected}
                               data-workspace-row-trigger="true"
                               onClick={handleRowSelectionClick}
-                              className={`flex h-4 w-4 items-center justify-center rounded border transition ${
-                                isSelected
-                                  ? 'border-blue-600 bg-blue-600 text-white'
-                                  : 'border-slate-300 bg-white text-transparent hover:border-blue-400'
-                              }`}
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition hover:bg-[#f2f2f4]"
                             >
-                              <Check className="h-3 w-3" />
+                              <span
+                                className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border transition ${
+                                  isSelected
+                                    ? 'border-[#5e6ad2] bg-[#5e6ad2] text-white'
+                                    : 'border-[#cfcfd4] bg-white text-transparent hover:border-[#9aa4dd]'
+                                }`}
+                              >
+                                <Check className="h-3 w-3" />
+                              </span>
                             </button>
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2">
                           {isInlineRenaming && inlineRename ? (
                             <div className="flex items-center gap-2.5">
-                              <FileText className="h-4 w-4 shrink-0 text-blue-500" />
+                              <FileText className="h-4 w-4 shrink-0 text-[#6b6f76]" />
                               <input
                                 ref={inlineInputRef}
+                                name="renameValue"
+                                aria-label="ファイル名を変更"
                                 type="text"
                                 value={inlineRename.value}
                                 onChange={(e) =>
@@ -3436,7 +3527,7 @@ export function WorkspaceFileBrowser() {
                                   }
                                 }}
                                 onBlur={() => commitInlineRename()}
-                                className="w-full max-w-xs rounded border border-blue-500 bg-white px-2 py-1 text-xs font-medium text-slate-900 focus:outline-none"
+                                className="w-full max-w-xs rounded border border-blue-500 bg-white px-2 py-1 text-xs font-medium text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                               />
                             </div>
                           ) : (
@@ -3444,6 +3535,12 @@ export function WorkspaceFileBrowser() {
                               type="button"
                               data-row-name-trigger="true"
                               data-workspace-row-trigger="true"
+                              aria-haspopup="menu"
+                              aria-expanded={
+                                contextMenu?.row
+                                  ? getWorkspaceRowKey(contextMenu.row) === rowKey
+                                  : false
+                              }
                               disabled={isTrashView || isPendingUpload}
                               title={
                                 isTrashView || isPendingUpload
@@ -3471,21 +3568,21 @@ export function WorkspaceFileBrowser() {
                                 e.preventDefault();
                                 openRow(row);
                               }}
-                              className="flex items-center gap-2.5 text-left font-medium text-slate-900 hover:text-blue-600 disabled:cursor-default disabled:hover:text-slate-900"
+                              className="flex items-center gap-2.5 text-left text-[0.8125rem] font-medium text-[#111214] transition hover:text-[#4f5ac2] disabled:cursor-default disabled:hover:text-[#111214]"
                             >
                               {isPendingUpload ? (
                                 <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600" />
                               ) : (
-                                <FileText className="h-4 w-4 shrink-0 text-blue-500" />
+                                <FileText className="h-4 w-4 shrink-0 text-[#6b6f76]" />
                               )}
                               <span>{file.name}</span>
                               {isPendingUpload ? (
-                                <span className="rounded-full bg-blue-100 px-2 py-0.5 font-mono text-[10px] font-medium text-blue-700">
+                                <span className="rounded-full bg-blue-100 px-2 py-0.5 font-mono text-[0.625rem] font-medium text-blue-700">
                                   アップロード中 {file.upload_progress ?? 0}%
                                 </span>
                               ) : (
                                 file.current_version_num > 1 && (
-                                  <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+                                  <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.625rem] text-slate-500">
                                     v{file.current_version_num}
                                   </span>
                                 )
@@ -3493,7 +3590,7 @@ export function WorkspaceFileBrowser() {
                             </button>
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2">
                           <ClassificationCell
                             file={file}
                             canEdit={
@@ -3515,26 +3612,26 @@ export function WorkspaceFileBrowser() {
                             onError={setError}
                           />
                         </td>
-                        <td className="px-4 py-3 font-mono text-slate-600">
+                        <td className="px-3 py-2 font-mono text-[#55565a]">
                           {formatBytes(file.size_bytes)}
                         </td>
-                        <td className="px-4 py-3 text-slate-500">
+                        <td className="px-3 py-2 text-[#55565a]">
                           {formatDateTime(
                             isTrashView ? file.deleted_at : file.updated_at
                           )}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-3 py-2 text-right">
                           {isTrashView ? (
                             <button
                               type="button"
                               onClick={() => handleRestoreFile(file)}
-                              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-[0.6875rem] font-medium text-slate-700 hover:bg-slate-100"
                             >
                               <RotateCcw className="h-3 w-3" />
                               <span>復元</span>
                             </button>
                           ) : isPendingUpload ? (
-                            <span className="text-[11px] text-slate-400">
+                            <span className="text-[0.6875rem] text-[#6b6f76]">
                               転送完了後に操作可能
                             </span>
                           ) : (
@@ -3547,7 +3644,7 @@ export function WorkspaceFileBrowser() {
                                     e.stopPropagation();
                                     handleDownloadFile(file.id);
                                   }}
-                                  className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                  className="rounded p-1 text-[#a0a0a7] transition hover:bg-[#f0f0f2] hover:text-[#111214]"
                                 >
                                   <Download className="h-3.5 w-3.5" />
                                 </button>
@@ -3563,7 +3660,7 @@ export function WorkspaceFileBrowser() {
                                   e.stopPropagation();
                                   openRowContextMenu(e, row);
                                 }}
-                                className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                className="rounded p-1 text-[#a0a0a7] transition hover:bg-[#f0f0f2] hover:text-[#111214]"
                               >
                                 <MoreHorizontal className="h-4 w-4" />
                               </button>
@@ -3598,7 +3695,7 @@ export function WorkspaceFileBrowser() {
                 type="button"
                 disabled={loadingMore}
                 onClick={handleLoadMore}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="inline-flex items-center gap-2 h-7 rounded-md border border-[#e1e1e4] bg-white px-3 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] disabled:opacity-50"
               >
                 {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 <span>さらに読み込む</span>
@@ -3772,6 +3869,7 @@ export function WorkspaceFileBrowser() {
             primaryRow={contextMenu.row}
             capabilities={capabilities}
             clipboardCount={clip?.items.length ?? 0}
+            returnFocus={contextMenu.trigger}
             onAction={(action) =>
               handleContextMenuAction(action, contextMenu.row, targets, pasteDestId)
             }
@@ -3793,6 +3891,7 @@ export function WorkspaceFileBrowser() {
           )}
           clipboardCount={clipboardState?.items.length ?? 0}
           viewMode={viewMode}
+          returnFocus={backgroundMenu.trigger}
           onAction={handleBackgroundMenuAction}
           onClose={() => setBackgroundMenu(null)}
         />
@@ -3818,13 +3917,13 @@ export function WorkspaceFileBrowser() {
         <div
           role="region"
           aria-label="仮想クリップボード"
-          className="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-slate-700 bg-slate-900/95 px-4 py-2 text-xs text-white shadow-2xl backdrop-blur-xs"
+          className="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[#2a2a2e] bg-[#111214]/95 px-3 py-1.5 text-[0.6875rem] text-white shadow-2xl"
         >
           <span className="flex items-center gap-1.5 font-medium">
             {clipboardState.mode === 'cut' ? (
-              <Scissors className="h-3.5 w-3.5 text-amber-400" />
+              <Scissors className="h-3.5 w-3.5 text-[#f1e1bf]" />
             ) : (
-              <Copy className="h-3.5 w-3.5 text-blue-400" />
+              <Copy className="h-3.5 w-3.5 text-[#bcc3ea]" />
             )}
             <span>
               {clipboardState.mode === 'cut' ? '切り取り中' : 'コピー中'}:{' '}
@@ -3834,7 +3933,7 @@ export function WorkspaceFileBrowser() {
           <button
             type="button"
             onClick={() => handlePasteClipboard()}
-            className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-3 py-1 font-semibold text-white hover:bg-blue-500"
+            className="inline-flex h-6 items-center gap-1.5 rounded bg-[#5e6ad2] px-2.5 text-[0.6875rem] font-medium text-white transition hover:bg-[#4f5ac2]"
           >
             <ClipboardPaste className="h-3.5 w-3.5" />
             <span>ここへ貼り付け (⌘V)</span>
@@ -3842,7 +3941,7 @@ export function WorkspaceFileBrowser() {
           <button
             type="button"
             onClick={() => clipboardStore.clear()}
-            className="rounded-full px-2.5 py-1 text-slate-300 hover:bg-white/10 hover:text-white"
+            className="rounded px-2 py-1 text-[#b4b4bb] transition hover:bg-white/10 hover:text-white"
           >
             解除
           </button>
@@ -3882,15 +3981,18 @@ export function WorkspaceFileBrowser() {
       {(activeModal?.kind === 'createFolder' ||
         activeModal?.kind === 'renameFolder' ||
         activeModal?.kind === 'renameFile') && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
-          onClick={() => setActiveModal(null)}
+        <ModalShell
+          label={
+            activeModal.kind === 'createFolder'
+              ? '新規フォルダを作成'
+              : activeModal.kind === 'renameFolder'
+                ? 'フォルダ名を変更'
+                : 'ファイル名を変更'
+          }
+          onClose={() => setActiveModal(null)}
+          className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
         >
-          <form
-            onSubmit={handleCreateOrRenameSubmit}
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4"
-          >
+          <form onSubmit={handleCreateOrRenameSubmit} className="space-y-4">
             <h2 className="text-sm font-semibold text-slate-900">
               {activeModal.kind === 'createFolder'
                 ? '新規フォルダを作成'
@@ -3904,12 +4006,15 @@ export function WorkspaceFileBrowser() {
                 {activeModal.kind === 'renameFile' ? 'ファイル名' : 'フォルダ名'}
               </span>
               <input
+                id="workspace-modal-name"
+                name="name"
+                data-autofocus
                 required
                 autoFocus
                 type="text"
                 value={folderNameInput}
                 onChange={(e) => setFolderNameInput(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
               />
             </label>
 
@@ -3917,6 +4022,8 @@ export function WorkspaceFileBrowser() {
               <label className="block text-xs">
                 <span className="font-medium text-slate-700">機密分類ラベル</span>
                 <select
+                  id="workspace-modal-classification"
+                  name="classification"
                   value={folderClassInput}
                   onChange={(e) =>
                     setFolderClassInput(e.target.value as ClassificationLabel)
@@ -3949,7 +4056,7 @@ export function WorkspaceFileBrowser() {
               </button>
             </div>
           </form>
-        </div>
+        </ModalShell>
       )}
 
       {snapshot.toasts.length > 0 && (
@@ -3960,12 +4067,12 @@ export function WorkspaceFileBrowser() {
           {snapshot.toasts.map((toast) => (
             <div
               key={toast.id}
-              className={`flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-xs shadow-lg backdrop-blur-xs ${
+              className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-[0.6875rem] shadow-lg ${
                 toast.kind === 'error'
-                  ? 'border-red-200 bg-red-950/95 text-red-50'
+                  ? 'border-[#5a2a2e] bg-[#2a1416]/95 text-[#fdf0f1]'
                   : toast.kind === 'warning'
-                    ? 'border-amber-300 bg-amber-950/95 text-amber-50'
-                    : 'border-slate-700 bg-slate-900/95 text-slate-100'
+                    ? 'border-[#5a4a2a] bg-[#2a2314]/95 text-[#fdf6e9]'
+                    : 'border-[#2a2a2e] bg-[#111214]/95 text-[#f9f9fa]'
               }`}
             >
               <span className="min-w-0 flex-1 leading-relaxed">{toast.message}</span>
@@ -3984,7 +4091,7 @@ export function WorkspaceFileBrowser() {
                   type="button"
                   aria-label="通知を閉じる"
                   onClick={() => syncStore.dismissToast(toast.id)}
-                  className="rounded p-1 text-white/70 hover:bg-white/10 hover:text-white"
+                  className="flex h-6 w-6 items-center justify-center rounded text-white/70 hover:bg-white/10 hover:text-white"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>

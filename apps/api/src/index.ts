@@ -42,6 +42,16 @@ app.get('/api/health', (c) => {
   });
 });
 
+// CSP reports are sent anonymously by the browser. Keep this route before the
+// authenticated API routes and cap the logged payload.
+app.post('/api/csp-report', async (c) => {
+  const report = await c.req.text();
+  if (report.length <= 2000) {
+    console.warn('[csp-report]', report);
+  }
+  return c.body(null, 204);
+});
+
 app.route('/', authRoutes);
 app.route('/api', permissionsRoutes);
 app.route('/api/sync', syncRoutes);

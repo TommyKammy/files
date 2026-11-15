@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   Folder,
   FileText,
-  Loader2,
   MoveRight,
 } from 'lucide-react';
 import {
@@ -28,8 +27,7 @@ import {
   type DropTargetEvaluation,
   encodeDropFolderId,
   evaluateDropTarget,
-  SPRING_OPEN_DELAY_MS,
-  SPRING_PREFETCH_DELAY_MS,
+  DROP_HOVER_PREFETCH_DELAY_MS,
 } from '@/lib/drag-drop-controller';
 import {
   hasRoleAtLeast,
@@ -50,7 +48,6 @@ export interface WorkspaceDragContextValue {
   isDragging: boolean;
   dragItems: DragWorkspaceItem[];
   hoveredTarget: ActiveHoveredDropTarget | null;
-  springTargetId: string | null;
   startPointerDragCandidate: (
     event: React.PointerEvent,
     items: DragWorkspaceItem[]
@@ -67,16 +64,12 @@ export function useWorkspaceDrag(): WorkspaceDragContextValue | null {
 
 export function getDropTargetClassName(
   targetFolderId: string | null,
-  hoveredTarget: ActiveHoveredDropTarget | null,
-  springTargetId: string | null
+  hoveredTarget: ActiveHoveredDropTarget | null
 ): string {
   const encoded = encodeDropFolderId(targetFolderId);
   if (!hoveredTarget || hoveredTarget.rawId !== encoded) return '';
   if (!hoveredTarget.evaluation.allowed) {
     return 'ring-2 ring-red-400 bg-red-50/70';
-  }
-  if (springTargetId === targetFolderId && targetFolderId !== null) {
-    return 'ring-2 ring-blue-600 bg-blue-50/90 shadow-sm';
   }
   if (hoveredTarget.evaluation.promotesToConfidential) {
     return 'ring-2 ring-amber-500 bg-amber-50/80';
@@ -106,7 +99,6 @@ export function WorkspaceDragProvider({
   currentFolderId,
   isSysAdmin,
   onPrefetchFolder,
-  onSpringOpenFolder,
   onDropMove,
   children,
 }: {
@@ -114,7 +106,6 @@ export function WorkspaceDragProvider({
   currentFolderId: string | null;
   isSysAdmin: boolean;
   onPrefetchFolder: (folderId: string) => void;
-  onSpringOpenFolder: (folderId: string) => void;
   onDropMove: (
     items: DragWorkspaceItem[],
     targetFolderId: string | null,
@@ -127,7 +118,6 @@ export function WorkspaceDragProvider({
   const [dragItems, setDragItems] = useState<DragWorkspaceItem[]>([]);
   const [hoveredTarget, setHoveredTarget] =
     useState<ActiveHoveredDropTarget | null>(null);
-  const [springTargetId, setSpringTargetId] = useState<string | null>(null);
 
   const isDragging = dragItems.length > 0;
 
@@ -142,13 +132,11 @@ export function WorkspaceDragProvider({
   const scopeTokenRef = useRef<string | null>(null);
 
   const onPrefetchRef = useRef(onPrefetchFolder);
-  const onSpringOpenRef = useRef(onSpringOpenFolder);
   const onDropMoveRef = useRef(onDropMove);
   const isSysAdminRef = useRef(isSysAdmin);
 
   currentFolderIdRef.current = currentFolderId;
   onPrefetchRef.current = onPrefetchFolder;
-  onSpringOpenRef.current = onSpringOpenFolder;
   onDropMoveRef.current = onDropMove;
   isSysAdminRef.current = isSysAdmin;
 
@@ -205,7 +193,6 @@ export function WorkspaceDragProvider({
     lastHoveredRawRef.current = null;
     setDragItems([]);
     setHoveredTarget(null);
-    setSpringTargetId(null);
     if (typeof document !== 'undefined') {
       delete document.body.dataset.workspaceDragging;
       document.body.style.userSelect = '';
@@ -218,7 +205,7 @@ export function WorkspaceDragProvider({
 
   useEffect(() => () => cancelDrag(), [cancelDrag]);
 
-  // Spring-loaded timers: prefetch at 100ms, auto-open folder at 650ms
+  // Hover prefetch only: warm the folder view without navigating or opening it.
   useEffect(() => {
     if (
       !isDragging ||
@@ -227,25 +214,15 @@ export function WorkspaceDragProvider({
       hoveredTarget.folderId === null ||
       hoveredTarget.folderId === currentFolderId
     ) {
-      setSpringTargetId(null);
       return;
     }
 
     const folderId = hoveredTarget.folderId;
-    setSpringTargetId(folderId);
-
     const prefetchTimer = window.setTimeout(() => {
       onPrefetchRef.current(folderId);
-    }, SPRING_PREFETCH_DELAY_MS);
+    }, DROP_HOVER_PREFETCH_DELAY_MS);
 
-    const openTimer = window.setTimeout(() => {
-      onSpringOpenRef.current(folderId);
-    }, SPRING_OPEN_DELAY_MS);
-
-    return () => {
-      window.clearTimeout(prefetchTimer);
-      window.clearTimeout(openTimer);
-    };
+    return () => window.clearTimeout(prefetchTimer);
   }, [isDragging, hoveredTarget, currentFolderId]);
 
   const activateDragSession = useCallback(
@@ -255,7 +232,6 @@ export function WorkspaceDragProvider({
       lastHoveredRawRef.current = null;
       setDragItems(items);
       setHoveredTarget(null);
-      setSpringTargetId(null);
 
       if (typeof document !== 'undefined') {
         document.body.dataset.workspaceDragging = '1';
@@ -438,7 +414,6 @@ export function WorkspaceDragProvider({
       isDragging,
       dragItems,
       hoveredTarget,
-      springTargetId,
       startPointerDragCandidate,
       registerScrollContainer,
       cancelDrag,
@@ -447,7 +422,6 @@ export function WorkspaceDragProvider({
       isDragging,
       dragItems,
       hoveredTarget,
-      springTargetId,
       startPointerDragCandidate,
       registerScrollContainer,
       cancelDrag,
@@ -484,7 +458,7 @@ export function WorkspaceDragProvider({
               </div>
 
               {hoveredTarget && (
-                <div className="mt-1.5 flex items-center gap-1.5 border-t border-slate-100 pt-1.5 text-[11px]">
+                <div className="mt-1.5 flex items-center gap-1.5 border-t border-slate-100 pt-1.5 text-[0.6875rem]">
                   {!hoveredTarget.evaluation.allowed ? (
                     <span className="inline-flex items-center gap-1 font-medium text-red-600">
                       <Ban className="h-3.5 w-3.5 shrink-0" />
@@ -496,11 +470,6 @@ export function WorkspaceDragProvider({
                       <span>
                         「{hoveredTarget.label}」へ移動（機密区分が「極秘」へ自動昇格します）
                       </span>
-                    </span>
-                  ) : springTargetId && springTargetId === hoveredTarget.folderId ? (
-                    <span className="inline-flex items-center gap-1 font-medium text-blue-700">
-                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                      <span>「{hoveredTarget.label}」を開く / ドロップして移動</span>
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 font-medium text-blue-700">

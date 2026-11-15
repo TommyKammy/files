@@ -30,7 +30,7 @@ import {
 import {
   CLASSIFICATION_META,
   formatBytes,
-  formatDateTime,
+  formatAuditDateTime,
 } from '@/lib/formatters';
 import { AdminAiBatchCoalescer } from '@/lib/mutation-outbox';
 import {
@@ -367,7 +367,7 @@ export function HybridGovernanceDashboard() {
 
   if (!authChecked) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F8FAFC] text-sm text-slate-500">
+      <div className="flex min-h-screen items-center justify-center bg-[#efeff1] text-sm text-slate-500">
         <Loader2 className="mr-2 h-4 w-4 animate-spin text-blue-600" />
         認証を確認中...
       </div>
@@ -390,7 +390,7 @@ export function HybridGovernanceDashboard() {
 
   if (!isPrivilegedAdmin) {
     return (
-      <div className="flex min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="flex min-h-screen bg-[#efeff1] text-slate-900">
         <AppShellRail user={user} activeView="workspace" />
         <main className="flex flex-1 items-center justify-center p-8">
           <div className="max-w-md rounded-2xl border border-amber-200 bg-white p-8 text-center shadow-xs space-y-3">
@@ -398,12 +398,12 @@ export function HybridGovernanceDashboard() {
             <h1 className="text-base font-semibold text-slate-900">
               アクセス権限がありません (403)
             </h1>
-            <p className="text-xs text-slate-500">
+            <p className="text-[0.6875rem] text-[#55565a]">
               管理ガバナンスコンソールは sys_admin または sec_admin ロール専用です。
             </p>
             <Link
               href="/workspace"
-              className="inline-flex rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
+              className="inline-flex rounded-md bg-[#5e6ad2] px-4 py-2 text-[0.75rem] font-medium text-white hover:bg-[#4f5ac2]"
             >
               ワークスペースに戻る
             </Link>
@@ -429,16 +429,26 @@ export function HybridGovernanceDashboard() {
       : 0;
 
   return (
-    <div className="flex min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="flex min-h-screen bg-[#efeff1] text-slate-900">
+      <a
+        href="#governance-main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-[#111214] focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#5e6ad2]"
+      >
+        メインコンテンツへスキップ
+      </a>
       <AppShellRail user={user} activeView="admin" />
 
-      <main className="flex-1 min-w-0 px-6 py-6 lg:px-8 space-y-6">
+      <main
+        id="governance-main"
+        tabIndex={-1}
+        className="mb-2 mr-2 mt-2 min-w-0 flex-1 space-y-5 rounded-2xl border border-[#e7e7ea] bg-[#f9f9fa] px-5 py-4 lg:px-7"
+      >
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold text-slate-900">
+            <h1 className="text-[1rem] font-semibold tracking-[-0.01em] text-[#111214]">
               ガバナンス & セキュリティ統合ダッシュボード
             </h1>
-            <p className="text-xs text-slate-500">
+            <p className="text-[0.6875rem] text-[#55565a]">
               D1 O(1) 統計・Workers AI 分類レビュー・緊急失効・不変監査ログ
             </p>
           </div>
@@ -447,7 +457,7 @@ export function HybridGovernanceDashboard() {
             type="button"
             onClick={() => void loadAll()}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 shadow-2xs hover:bg-slate-50 disabled:opacity-50"
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>再読み込み</span>
@@ -455,27 +465,33 @@ export function HybridGovernanceDashboard() {
         </header>
 
         {error && (
-          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+          <div
+            role="alert"
+            className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700"
+          >
             <AlertTriangle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {notice && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800">
+          <div
+            role="status"
+            className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800"
+          >
             {notice}
           </div>
         )}
 
         {stats && (
           <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+            <div className="lg:col-span-2 rounded-lg border border-[#e7e7ea] bg-white p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-slate-900">
                     ストレージ使用量 & 機密分類内訳
                   </h2>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-[0.6875rem] text-[#55565a]">
                     {formatBytes(stats.usedBytes)} / {formatBytes(stats.quotaBytes)} ({usedPct}%) • 合計 {stats.totalFiles} ファイル
                   </p>
                 </div>
@@ -512,7 +528,7 @@ export function HybridGovernanceDashboard() {
                       <div className="mt-2 font-mono text-sm font-semibold text-slate-900">
                         {formatBytes(item.totalBytes)}
                       </div>
-                      <div className="text-[11px] text-slate-500">
+                      <div className="text-[0.6875rem] text-slate-500">
                         {item.fileCount} ファイル
                       </div>
                     </div>
@@ -521,7 +537,7 @@ export function HybridGovernanceDashboard() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between">
+            <div className="rounded-lg border border-[#e7e7ea] bg-white p-5 flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                   <Database className="h-4 w-4 text-indigo-600" />
@@ -541,7 +557,7 @@ export function HybridGovernanceDashboard() {
                   残りクォータ: {formatBytes(stats.remainingBytes)}
                 </div>
               </div>
-              <div className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+              <div className="rounded-lg bg-slate-50 px-3 py-2 text-[0.6875rem] text-slate-600">
                 集計は tenant_storage_stats から O(1) で取得しています（全件スキャンなし）
               </div>
             </div>
@@ -549,7 +565,7 @@ export function HybridGovernanceDashboard() {
         )}
 
         {/* AI Suggestion Approval Queue */}
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+        <section className="overflow-hidden rounded-lg border border-[#e7e7ea] bg-white">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-indigo-600" />
@@ -560,6 +576,9 @@ export function HybridGovernanceDashboard() {
 
             <div className="flex flex-wrap items-center gap-2">
               <select
+                id="ai-label-filter"
+                name="labelFilter"
+                aria-label="AI 提案の機密区分で絞り込む"
                 value={labelFilter}
                 onChange={(e) =>
                   setLabelFilter(e.target.value as ClassificationLabel | 'all')
@@ -593,48 +612,72 @@ export function HybridGovernanceDashboard() {
               承認待ちの AI 分類提案はありません
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div
+              role="region"
+              aria-label="AI 機密分類の提案レビューキュー"
+              tabIndex={0}
+              className="overflow-x-auto"
+            >
               <table className="w-full text-left text-xs">
-                <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                <caption className="sr-only">AI 機密分類の提案レビューキュー</caption>
+                <thead className="border-b border-slate-200 bg-slate-50 text-[0.6875rem] font-semibold text-slate-500">
                   <tr>
-                    <th className="w-10 px-4 py-2.5">
-                      <input
-                        type="checkbox"
-                        checked={
-                          suggestions.length > 0 &&
-                          selectedIds.size === suggestions.length
-                        }
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedIds(
-                              new Set(suggestions.slice(0, 50).map((s) => s.fileId))
-                            );
-                          } else {
-                            setSelectedIds(new Set());
+                    <th scope="col" className="w-10 px-4 py-2.5">
+                      <label
+                        htmlFor="ai-suggestion-select-all"
+                        className="flex h-6 w-6 items-center justify-center"
+                      >
+                        <input
+                          id="ai-suggestion-select-all"
+                          name="selectAllSuggestions"
+                          aria-label="すべての AI 提案を選択"
+                          type="checkbox"
+                          className="h-4 w-4 cursor-pointer accent-[#5e6ad2]"
+                          checked={
+                            suggestions.length > 0 &&
+                            selectedIds.size === suggestions.length
                           }
-                        }}
-                      />
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIds(
+                                new Set(suggestions.slice(0, 50).map((s) => s.fileId))
+                              );
+                            } else {
+                              setSelectedIds(new Set());
+                            }
+                          }}
+                        />
+                      </label>
                     </th>
-                    <th className="px-4 py-2.5">ファイル</th>
-                    <th className="px-4 py-2.5">現在</th>
-                    <th className="px-4 py-2.5">AI 提案 & 信頼度</th>
-                    <th className="px-4 py-2.5">推論理由</th>
-                    <th className="px-4 py-2.5 text-right">承認</th>
+                    <th scope="col" className="px-4 py-2.5">ファイル</th>
+                    <th scope="col" className="px-4 py-2.5">現在</th>
+                    <th scope="col" className="px-4 py-2.5">AI 提案 & 信頼度</th>
+                    <th scope="col" className="px-4 py-2.5">推論理由</th>
+                    <th scope="col" className="px-4 py-2.5 text-right">承認</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {suggestions.map((item) => (
                     <tr key={item.fileId} className="hover:bg-slate-50/70">
                       <td className="px-4 py-2.5">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(item.fileId)}
-                          onChange={() => toggleSelection(item.fileId)}
-                        />
+                        <label
+                          htmlFor={`ai-suggestion-${item.fileId}`}
+                          className="flex h-6 w-6 items-center justify-center"
+                        >
+                          <input
+                            id={`ai-suggestion-${item.fileId}`}
+                            name="selectedSuggestion"
+                            aria-label={`${item.name} を選択`}
+                            type="checkbox"
+                            className="h-4 w-4 cursor-pointer accent-[#5e6ad2]"
+                            checked={selectedIds.has(item.fileId)}
+                            onChange={() => toggleSelection(item.fileId)}
+                          />
+                        </label>
                       </td>
                       <td className="px-4 py-2.5">
                         <div className="font-medium text-slate-900">{item.name}</div>
-                        <div className="text-[11px] text-slate-500">
+                        <div className="text-[0.6875rem] text-slate-500">
                           {item.folderName ?? 'Root'} • {item.uploaderEmail ?? '—'}
                         </div>
                       </td>
@@ -651,7 +694,7 @@ export function HybridGovernanceDashboard() {
                             compact
                           />
                           {typeof item.confidence === 'number' && (
-                            <span className="font-mono text-[11px] text-slate-600">
+                            <span className="font-mono text-[0.6875rem] text-slate-600">
                               {Math.round(item.confidence * 100)}%
                             </span>
                           )}
@@ -664,7 +707,7 @@ export function HybridGovernanceDashboard() {
                         <button
                           type="button"
                           onClick={() => handleSingleApprove(item.fileId)}
-                          className="rounded-md bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
+                          className="rounded-md bg-indigo-50 px-2.5 py-1 text-[0.6875rem] font-semibold text-indigo-700 hover:bg-indigo-100"
                         >
                           提案通り承認
                         </button>
@@ -679,7 +722,7 @@ export function HybridGovernanceDashboard() {
 
         {/* Active Shared Links + Policies */}
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <div className="xl:col-span-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+          <div className="xl:col-span-2 overflow-hidden rounded-lg border border-[#e7e7ea] bg-white">
             <div className="border-b border-slate-200 px-5 py-4">
               <h2 className="text-sm font-semibold text-slate-900">
                 稼働中の外部・内部共有リンク監視 ({sharedLinks.length})
@@ -691,14 +734,20 @@ export function HybridGovernanceDashboard() {
                 稼働中の共有リンクはありません
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div
+                role="region"
+                aria-label="稼働中の共有リンク監視"
+                tabIndex={0}
+                className="overflow-x-auto"
+              >
                 <table className="w-full text-left text-xs">
-                  <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                  <caption className="sr-only">稼働中の共有リンク監視</caption>
+                  <thead className="border-b border-slate-200 bg-slate-50 text-[0.6875rem] font-semibold text-slate-500">
                     <tr>
-                      <th className="px-4 py-2.5">対象 / 発行者</th>
-                      <th className="px-4 py-2.5">スコープ / 状態</th>
-                      <th className="px-4 py-2.5">失敗試行 / DL数</th>
-                      <th className="px-4 py-2.5 text-right">緊急失効</th>
+                      <th scope="col" className="px-4 py-2.5">対象 / 発行者</th>
+                      <th scope="col" className="px-4 py-2.5">スコープ / 状態</th>
+                      <th scope="col" className="px-4 py-2.5">失敗試行 / DL数</th>
+                      <th scope="col" className="px-4 py-2.5 text-right">緊急失効</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -714,21 +763,21 @@ export function HybridGovernanceDashboard() {
                             <div className="font-medium text-slate-900">
                               {link.target_name ?? link.target_id}
                             </div>
-                            <div className="text-[11px] text-slate-500">
+                            <div className="text-[0.6875rem] text-slate-500">
                               {link.target_type} • {link.creator_email ?? link.created_by}
                             </div>
                           </td>
                           <td className="px-4 py-2.5">
-                            <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-700">
+                            <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[0.6875rem] text-slate-700">
                               {link.access_scope}
                             </span>
                             {link.locked_until && (
-                              <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                              <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-[0.625rem] font-semibold text-red-700">
                                 LOCKED
                               </span>
                             )}
                           </td>
-                          <td className="px-4 py-2.5 font-mono text-[11px] text-slate-600">
+                          <td className="px-4 py-2.5 font-mono text-[0.6875rem] text-slate-600">
                             PW失敗: {link.failed_password_attempts} • DL:{' '}
                             {link.download_count}
                             {link.max_downloads ? `/${link.max_downloads}` : ''}
@@ -737,7 +786,7 @@ export function HybridGovernanceDashboard() {
                             <button
                               type="button"
                               onClick={() => handleEmergencyRevoke(link.id)}
-                              className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50"
+                              className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[0.6875rem] font-semibold text-red-600 hover:bg-red-50"
                             >
                               緊急失効
                             </button>
@@ -754,7 +803,7 @@ export function HybridGovernanceDashboard() {
           {policy && (
             <form
               onSubmit={handlePolicySubmit}
-              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4"
+              className="rounded-lg border border-[#e7e7ea] bg-white p-5 space-y-4"
             >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <SlidersHorizontal className="h-4 w-4 text-slate-600" />
@@ -764,6 +813,8 @@ export function HybridGovernanceDashboard() {
               <label className="flex items-center justify-between gap-3 text-xs">
                 <span className="text-slate-700">共有リンクを社内SSO限定に強制</span>
                 <input
+                  id="policy-enforce-company-only"
+                  name="enforceCompanyOnlyLinks"
                   type="checkbox"
                   checked={policy.enforce_company_only_links === 1}
                   onChange={(e) =>
@@ -778,6 +829,8 @@ export function HybridGovernanceDashboard() {
               <label className="flex items-center justify-between gap-3 text-xs">
                 <span className="text-slate-700">Confidential に動的透かしを強制</span>
                 <input
+                  id="policy-require-watermark"
+                  name="requireWatermarkConfidential"
                   type="checkbox"
                   checked={policy.require_watermark_confidential === 1}
                   onChange={(e) =>
@@ -794,6 +847,8 @@ export function HybridGovernanceDashboard() {
                   AI 分類モード
                 </span>
                 <select
+                  id="policy-ai-classification-mode"
+                  name="aiClassificationMode"
                   value={policy.ai_classification_mode}
                   onChange={(e) =>
                     setPolicy({
@@ -813,7 +868,10 @@ export function HybridGovernanceDashboard() {
                 <label className="block text-xs">
                   <span className="font-medium text-slate-700">最大共有期限 (日)</span>
                   <input
+                    id="policy-max-link-expiration-days"
+                    name="maxLinkExpirationDays"
                     type="number"
+                    inputMode="numeric"
                     min={1}
                     max={365}
                     value={policy.max_link_expiration_days}
@@ -833,7 +891,10 @@ export function HybridGovernanceDashboard() {
                 <label className="block text-xs">
                   <span className="font-medium text-slate-700">ゴミ箱保持 (日)</span>
                   <input
+                    id="policy-trash-retention-days"
+                    name="trashRetentionDays"
                     type="number"
+                    inputMode="numeric"
                     min={1}
                     max={3650}
                     value={policy.trash_retention_days}
@@ -854,7 +915,7 @@ export function HybridGovernanceDashboard() {
               <button
                 type="submit"
                 disabled={policySaving}
-                className="w-full rounded-lg bg-slate-900 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                className="h-8 w-full rounded-md bg-[#5e6ad2] text-[0.75rem] font-medium text-white transition hover:bg-[#4f5ac2] disabled:opacity-50"
               >
                 {policySaving ? '保存中...' : 'ポリシーを保存'}
               </button>
@@ -863,7 +924,7 @@ export function HybridGovernanceDashboard() {
         </section>
 
         {/* Keyset Audit Log Stream + CSV Export */}
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+        <section className="overflow-hidden rounded-lg border border-[#e7e7ea] bg-white">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <h2 className="text-sm font-semibold text-slate-900">
               不変監査ログ (Audit Logs — Keyset Pagination)
@@ -871,6 +932,11 @@ export function HybridGovernanceDashboard() {
 
             <div className="flex flex-wrap items-center gap-2">
               <input
+                id="audit-action-filter"
+                name="auditActionFilter"
+                aria-label="監査ログのアクションで絞り込む"
+                autoComplete="off"
+                spellCheck={false}
                 type="text"
                 value={auditActionFilter}
                 onChange={(e) => setAuditActionFilter(e.target.value)}
@@ -878,6 +944,9 @@ export function HybridGovernanceDashboard() {
                 className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
               />
               <select
+                id="audit-status-filter"
+                name="auditStatusFilter"
+                aria-label="監査ログの結果で絞り込む"
                 value={auditStatusFilter}
                 onChange={(e) =>
                   setAuditStatusFilter(
@@ -900,29 +969,39 @@ export function HybridGovernanceDashboard() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div
+            role="region"
+            aria-label="不変監査ログ"
+            tabIndex={0}
+            className="overflow-x-auto"
+          >
             <table className="w-full text-left text-xs">
-              <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+              <caption className="sr-only">不変監査ログ</caption>
+              <thead className="border-b border-slate-200 bg-slate-50 text-[0.6875rem] font-semibold text-slate-500">
                 <tr>
-                  <th className="px-4 py-2.5">日時</th>
-                  <th className="px-4 py-2.5">アクション</th>
-                  <th className="px-4 py-2.5">ステータス</th>
-                  <th className="px-4 py-2.5">操作者 / IP</th>
-                  <th className="px-4 py-2.5">対象</th>
+                  <th scope="col" className="px-4 py-2.5">
+                    日時 (JST)
+                  </th>
+                  <th scope="col" className="px-4 py-2.5">アクション</th>
+                  <th scope="col" className="px-4 py-2.5">ステータス</th>
+                  <th scope="col" className="px-4 py-2.5">操作者 / IP</th>
+                  <th scope="col" className="px-4 py-2.5">対象</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {auditLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50/70">
-                    <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[11px] text-slate-600">
-                      {formatDateTime(log.createdAt)}
+                    <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[0.6875rem] text-slate-600">
+                      <time dateTime={log.createdAt}>
+                        {formatAuditDateTime(log.createdAt)}
+                      </time>
                     </td>
-                    <td className="px-4 py-2.5 font-mono text-[11px] font-medium text-slate-900">
+                    <td className="px-4 py-2.5 font-mono text-[0.6875rem] font-medium text-slate-900">
                       {log.action}
                     </td>
                     <td className="px-4 py-2.5">
                       <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        className={`rounded-full px-2 py-0.5 text-[0.625rem] font-semibold ${
                           log.status === 'blocked'
                             ? 'bg-red-100 text-red-700'
                             : 'bg-emerald-50 text-emerald-700'
@@ -931,10 +1010,10 @@ export function HybridGovernanceDashboard() {
                         {log.status}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-[11px] text-slate-600">
+                    <td className="px-4 py-2.5 text-[0.6875rem] text-slate-600">
                       {log.actorEmail ?? 'anonymous'} ({log.actorIp ?? '—'})
                     </td>
-                    <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500">
+                    <td className="px-4 py-2.5 font-mono text-[0.6875rem] text-slate-500">
                       {log.targetType ?? '—'}: {log.targetId?.slice(0, 12) ?? '—'}
                     </td>
                   </tr>

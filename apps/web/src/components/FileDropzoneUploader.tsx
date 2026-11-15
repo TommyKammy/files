@@ -182,29 +182,29 @@ export function FileDropzoneUploader({
           setDragging(false);
           enqueueFiles(e.dataTransfer.files);
         }}
-        className={`flex flex-col gap-3 rounded-xl border-2 border-dashed p-4 transition sm:flex-row sm:items-center sm:justify-between ${
+        className={`flex flex-col gap-2 rounded-lg border border-dashed bg-[#fbfbfc] px-3 py-2.5 transition sm:flex-row sm:items-center sm:justify-between ${
           disabled
-            ? 'border-slate-200 bg-slate-100/70 opacity-60'
+            ? 'border-[#e7e7ea] bg-[#f4f4f5] opacity-60'
             : dragging
-              ? 'border-blue-500 bg-blue-50/70'
-              : 'border-slate-300 bg-white hover:border-slate-400'
+              ? 'border-[#5e6ad2] bg-[#eef0fb]'
+              : 'border-[#d7d7dc] bg-[#fbfbfc] hover:border-[#b9b9c0]'
         }`}
       >
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-            <UploadCloud className="h-5 w-5" />
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#eef0fb] text-[#5e6ad2]">
+            <UploadCloud className="h-4 w-4" />
           </div>
           <div>
-            <div className="text-sm font-medium text-slate-900">
+            <div className="text-[0.8125rem] font-medium text-[#111214]">
               ファイルをドラッグ＆ドロップ、または選択してアップロード
             </div>
-            <div className="text-xs text-slate-500">
+            <div className="text-[0.6875rem] text-[#6b6f76]">
               100 MiB 未満は単一 PUT、100 MiB 以上は 4並列 Zero-copy S3 Multipart で自動転送されます
             </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <select
             aria-label="同名ファイル衝突時のポリシー"
             value={conflictPolicy}
@@ -212,7 +212,7 @@ export function FileDropzoneUploader({
               setConflictPolicy(e.target.value as 'fail' | 'new_version')
             }
             disabled={disabled}
-            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"
+            className="h-7 rounded-md border border-[#e1e1e4] bg-white px-2 text-[0.6875rem] text-[#55565a] focus:border-[#5e6ad2] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5e6ad2]/40"
           >
             <option value="fail">同名ファイル: エラー通知</option>
             <option value="new_version">同名ファイル: 新バージョン追記</option>
@@ -232,7 +232,7 @@ export function FileDropzoneUploader({
             type="button"
             disabled={disabled}
             onClick={() => fileInputRef.current?.click()}
-            className="rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-blue-700 disabled:opacity-50"
+            className="h-7 rounded-md bg-[#5e6ad2] px-2.5 text-[0.75rem] font-medium text-white transition hover:bg-[#4f5ac2] disabled:opacity-50"
           >
             ファイルを選択
           </button>
@@ -240,32 +240,32 @@ export function FileDropzoneUploader({
       </div>
 
       {queue.length > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white divide-y divide-slate-100 shadow-2xs">
+        <div className="rounded-lg border border-[#e7e7ea] bg-white divide-y divide-[#f0f0f1]">
           {queue.map((item) => (
             <div
               key={item.localId}
-              className="flex items-center justify-between gap-4 px-4 py-2.5 text-xs"
+              className="flex items-center justify-between gap-3 px-3 py-2 text-[0.6875rem]"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate font-medium text-slate-900">
+                  <span className="truncate font-medium text-[#111214]">
                     {item.fileName}
                   </span>
-                  <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
+                  <span className="rounded bg-[#f4f4f5] px-1.5 py-0.5 font-mono text-[0.625rem] text-[#55565a]">
                     {item.mode === 'multipart' ? '4x Multipart' : 'Single PUT'}
                   </span>
-                  <span className="text-slate-400">{formatBytes(item.sizeBytes)}</span>
+                  <span className="text-[#6b6f76]">{formatBytes(item.sizeBytes)}</span>
                 </div>
 
                 {item.status === 'uploading' && (
                   <div className="mt-1.5 flex items-center gap-2">
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#f0f0f1]">
                       <div
-                        className="h-full bg-blue-600 transition-all"
+                        className="h-full bg-[#5e6ad2] transition-all"
                         style={{ width: `${item.percent}%` }}
                       />
                     </div>
-                    <span className="w-24 text-right font-mono text-[11px] text-slate-600">
+                    <span className="w-24 text-right font-mono text-[0.6875rem] text-[#55565a]">
                       {item.percent}%
                       {item.totalParts
                         ? ` (${item.completedParts ?? 0}/${item.totalParts})`
@@ -275,7 +275,7 @@ export function FileDropzoneUploader({
                 )}
 
                 {item.errorMessage && (
-                  <div className="mt-1 flex items-center gap-1 text-red-600">
+                  <div className="mt-1 flex items-center gap-1 text-[#d9343f]">
                     <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                     <span>{item.errorMessage}</span>
                   </div>
@@ -284,10 +284,10 @@ export function FileDropzoneUploader({
 
               <div className="flex items-center gap-2 shrink-0">
                 {item.status === 'uploading' && (
-                  <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                  <Loader2 className="h-4 w-4 animate-spin text-[#5e6ad2]" />
                 )}
                 {item.status === 'done' && (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  <CheckCircle2 className="h-4 w-4 text-[#2f9e5f]" />
                 )}
                 <button
                   type="button"
@@ -295,7 +295,7 @@ export function FileDropzoneUploader({
                   title={
                     item.status === 'uploading' ? 'アップロード中止' : 'リストから消去'
                   }
-                  className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  className="flex h-6 w-6 items-center justify-center rounded text-[#6b6f76] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>

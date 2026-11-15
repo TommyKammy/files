@@ -3,6 +3,7 @@
 import { Keyboard, Sparkles, Tag, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
+import { ModalShell } from '@/components/ModalShell';
 import {
   isImeComposingEvent,
   keyboardScopes,
@@ -125,14 +126,11 @@ export function ClassificationPickerModal({
   }, [cursorIndex, aiSuggestedLabel, onSelect, onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-xs"
-      onClick={onClose}
+    <ModalShell
+      label="機密区分を設定"
+      onClose={onClose}
+      className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
     >
-      <div
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <Tag className="h-4 w-4 shrink-0 text-blue-600" />
@@ -140,15 +138,16 @@ export function ClassificationPickerModal({
               <div className="truncate text-xs font-semibold text-slate-900">
                 機密区分を設定
               </div>
-              <div className="truncate text-[11px] text-slate-500">
+              <div className="truncate text-[0.6875rem] text-slate-500">
                 {targetLabel}
               </div>
             </div>
           </div>
           <button
             type="button"
+            aria-label="閉じる"
             onClick={onClose}
-            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-4 w-4" />
           </button>
@@ -166,7 +165,7 @@ export function ClassificationPickerModal({
                 <span>AI 提案を承認:</span>
                 <ClassificationBadge classification={aiSuggestedLabel} compact />
               </span>
-              <kbd className="rounded border border-indigo-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-indigo-700">
+              <kbd className="rounded border border-indigo-200 bg-white px-1.5 py-0.5 font-mono text-[0.625rem] text-indigo-700">
                 a
               </kbd>
             </button>
@@ -179,6 +178,7 @@ export function ClassificationPickerModal({
               <button
                 key={opt.value}
                 type="button"
+                data-autofocus={active ? '' : undefined}
                 onMouseEnter={() => setCursorIndex(idx)}
                 onClick={() => onSelect(opt.value)}
                 className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition ${
@@ -189,14 +189,14 @@ export function ClassificationPickerModal({
                   <div className="flex items-center gap-2">
                     <ClassificationBadge classification={opt.value} compact />
                     {selected && (
-                      <span className="text-[10px] font-semibold text-blue-600">
+                      <span className="text-[0.625rem] font-semibold text-blue-600">
                         現在値
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-500">{opt.description}</p>
+                  <p className="text-[0.6875rem] text-slate-500">{opt.description}</p>
                 </div>
-                <kbd className="shrink-0 rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-[11px] text-slate-600">
+                <kbd className="shrink-0 rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-[0.6875rem] text-slate-600">
                   {opt.shortcut}
                 </kbd>
               </button>
@@ -204,11 +204,10 @@ export function ClassificationPickerModal({
           })}
         </div>
 
-        <div className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-[11px] text-slate-500">
+        <div className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-[0.6875rem] text-slate-500">
           数字キー 1–3 / j・k / Enter で即適用 • Esc でキャンセル
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }
 
@@ -290,14 +289,11 @@ export function ShortcutsHelpModal({ onClose }: { onClose: () => void }) {
   }, [onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
-      onClick={onClose}
+    <ModalShell
+      label="キーボードショートカット"
+      onClose={onClose}
+      className="w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
     >
-      <div
-        className="w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
         <header className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
             <Keyboard className="h-4 w-4 text-blue-600" />
@@ -305,8 +301,9 @@ export function ShortcutsHelpModal({ onClose }: { onClose: () => void }) {
           </div>
           <button
             type="button"
+            aria-label="閉じる"
             onClick={onClose}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-4 w-4" />
           </button>
@@ -315,7 +312,7 @@ export function ShortcutsHelpModal({ onClose }: { onClose: () => void }) {
         <div className="grid gap-5 p-5 md:grid-cols-3">
           {SHORTCUT_GROUPS.map((group) => (
             <section key={group.title} className="space-y-2.5">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <h3 className="text-[0.6875rem] font-semibold uppercase tracking-wide text-slate-500">
                 {group.title}
               </h3>
               <ul className="space-y-2">
@@ -329,7 +326,7 @@ export function ShortcutsHelpModal({ onClose }: { onClose: () => void }) {
                       {item.keys.map((k) => (
                         <kbd
                           key={k}
-                          className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700"
+                          className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[0.625rem] text-slate-700"
                         >
                           {k}
                         </kbd>
@@ -342,10 +339,9 @@ export function ShortcutsHelpModal({ onClose }: { onClose: () => void }) {
           ))}
         </div>
 
-        <footer className="border-t border-slate-100 bg-slate-50 px-5 py-2.5 text-[11px] text-slate-500">
+        <footer className="border-t border-slate-100 bg-slate-50 px-5 py-2.5 text-[0.6875rem] text-slate-500">
           日本語 IME 変換中・入力フォーカス中・モーダル表示中は単キーショートカットを自動無効化します
         </footer>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

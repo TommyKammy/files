@@ -5,8 +5,7 @@ import {
 import type { ClassificationLabel, ResourceRole } from '@/types/files';
 
 export const DRAG_THRESHOLD_PX = 6;
-export const SPRING_PREFETCH_DELAY_MS = 100;
-export const SPRING_OPEN_DELAY_MS = 650;
+export const DROP_HOVER_PREFETCH_DELAY_MS = 100;
 export const EDGE_SCROLL_ZONE_PX = 48;
 export const EDGE_SCROLL_MAX_STEP_PX = 16;
 

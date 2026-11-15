@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
+import { ModalShell } from '@/components/ModalShell';
 import {
   type DragWorkspaceItem,
   evaluateDropTarget,
@@ -352,14 +353,14 @@ export function MoveCopyTreeModal({
       }
 
       if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
         if (inlineNewFolderOpen) {
+          e.preventDefault();
+          e.stopPropagation();
           setInlineNewFolderOpen(false);
           setInlineNewFolderName('');
           return;
         }
-        onClose();
+        // Let the native <dialog> cancel event close the modal and restore focus.
         return;
       }
 
@@ -465,7 +466,7 @@ export function MoveCopyTreeModal({
                 e.stopPropagation();
                 toggleExpand(row.folderId!);
               }}
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200/70 hover:text-slate-700"
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-200/70 hover:text-slate-700"
             >
               {row.isExpanded ? (
                 <ChevronDown className="h-3.5 w-3.5" />
@@ -493,7 +494,7 @@ export function MoveCopyTreeModal({
             <ClassificationBadge classification={row.classification} compact />
           )}
           {locked && lockReason && (
-            <span title={lockReason} className="text-slate-400">
+            <span title={lockReason} className="text-slate-500">
               <Lock className="h-3.5 w-3.5" />
             </span>
           )}
@@ -503,23 +504,17 @@ export function MoveCopyTreeModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-xs"
-      onClick={onClose}
+    <ModalShell
+      label="移動またはコピー先を選択"
+      onClose={onClose}
+      className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="移動またはコピー先を選択"
-        className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-slate-900">
               移動 / コピー先を選択 ({items.length} 件)
             </h2>
-            <p className="truncate text-[11px] text-slate-500">
+            <p className="truncate text-[0.6875rem] text-slate-500">
               {items.length === 1
                 ? items[0]!.name
                 : `${items[0]!.name} ほか ${items.length - 1} 件`}
@@ -529,7 +524,7 @@ export function MoveCopyTreeModal({
             type="button"
             aria-label="閉じる"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-4 w-4" />
           </button>
@@ -537,15 +532,20 @@ export function MoveCopyTreeModal({
 
         <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-2.5">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+            <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-500" />
             <input
               ref={searchInputRef}
-              autoFocus
+              id="move-copy-destination-search"
+              name="destinationSearch"
+              aria-label="移動先フォルダを検索"
+              autoComplete="off"
+              spellCheck={false}
+              data-autofocus
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="フォルダ名で絞り込み..."
-              className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs text-slate-900 focus:border-blue-500 focus:outline-none"
+              className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
             />
           </div>
           <button
@@ -562,6 +562,9 @@ export function MoveCopyTreeModal({
           <div className="flex items-center gap-2 border-b border-blue-100 bg-blue-50/60 px-4 py-2 text-xs">
             <input
               autoFocus
+              id="move-copy-new-folder-name"
+              name="newFolderName"
+              aria-label={`「${selectedRow?.name ?? 'マイファイル'}」内に作成するフォルダ名`}
               type="text"
               value={inlineNewFolderName}
               onChange={(e) => setInlineNewFolderName(e.target.value)}
@@ -573,7 +576,7 @@ export function MoveCopyTreeModal({
                 }
               }}
               placeholder={`「${selectedRow?.name ?? 'マイファイル'}」内に作成するフォルダ名`}
-              className="flex-1 rounded-md border border-blue-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none"
+              className="flex-1 rounded-md border border-blue-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
             />
             <button
               type="button"
@@ -598,7 +601,7 @@ export function MoveCopyTreeModal({
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
           {recentRows.length > 0 && (
             <div>
-              <div className="mb-1 flex items-center gap-1.5 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              <div className="mb-1 flex items-center gap-1.5 px-2 text-[0.625rem] font-semibold uppercase tracking-wide text-slate-500">
                 <Clock className="h-3 w-3" />
                 <span>最近の移動先</span>
               </div>
@@ -609,7 +612,7 @@ export function MoveCopyTreeModal({
           )}
 
           <div>
-            <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            <div className="mb-1 px-2 text-[0.625rem] font-semibold uppercase tracking-wide text-slate-500">
               ワークスペースフォルダ
             </div>
             <div className="space-y-0.5">
@@ -631,9 +634,12 @@ export function MoveCopyTreeModal({
         {(actionError ||
           (!selectedEval?.moveEval.allowed && selectedEval?.moveEval.reason) ||
           (!selectedEval?.copyEval.allowed && selectedEval?.copyEval.reason)) && (
-          <div className="border-t border-slate-100 bg-slate-50 px-5 py-1.5 text-[11px] text-slate-600">
+          <div
+            role="alert"
+            className="border-t border-slate-100 bg-slate-50 px-5 py-1.5 text-[0.6875rem] text-slate-600"
+          >
             {actionError ? (
-              <span className="font-medium text-red-600">{actionError}</span>
+              <span className="font-medium text-red-700">{actionError}</span>
             ) : (
               <span>
                 {!selectedEval?.moveEval.allowed && selectedEval?.moveEval.reason
@@ -654,7 +660,7 @@ export function MoveCopyTreeModal({
         )}
 
         <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-5 py-3 text-xs">
-          <span className="text-[11px] text-slate-500">
+          <span className="text-[0.6875rem] text-slate-500">
             ↑↓ 移動 • ←→ 展開/折畳 • Enter 決定
           </span>
           <div className="flex items-center gap-2">
@@ -685,7 +691,6 @@ export function MoveCopyTreeModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

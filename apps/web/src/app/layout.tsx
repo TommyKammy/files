@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: 'Files — Enterprise Secure Workspace',
   description:
     'Cloudflare edge-native enterprise file sharing and governance platform',
+  other: {
+    'text-scale': 'scale',
+  },
 };
 
 export default function RootLayout({

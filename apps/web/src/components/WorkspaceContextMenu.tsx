@@ -71,6 +71,7 @@ export function WorkspaceContextMenu({
   primaryRow,
   capabilities,
   clipboardCount,
+  returnFocus = null,
   onAction,
   onClose,
 }: {
@@ -79,10 +80,14 @@ export function WorkspaceContextMenu({
   primaryRow: ContextRowTarget | null;
   capabilities: ContextMenuCapabilities;
   clipboardCount: number;
+  returnFocus?: HTMLElement | null;
   onAction: (action: ContextMenuActionId) => void;
   onClose: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const parentItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const submenuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const scopeTokenRef = useRef<string | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number }>(() => {
     if (typeof window === 'undefined') return { left: anchor.x, top: anchor.y };
@@ -338,6 +343,22 @@ export function WorkspaceContextMenu({
     setOpenSubmenuIndex(null);
   }, [enabledIndices]);
 
+  const closeAndRestore = () => {
+    const target = returnFocus ?? previouslyFocusedRef.current;
+    if (target?.isConnected) target.focus({ preventScroll: true });
+    onClose();
+  };
+
+  useEffect(() => {
+    if (openSubmenuIndex !== null) return;
+    parentItemRefs.current[activeIndex]?.focus({ preventScroll: true });
+  }, [activeIndex, openSubmenuIndex]);
+
+  useEffect(() => {
+    if (openSubmenuIndex === null) return;
+    submenuItemRefs.current[submenuActiveIndex]?.focus({ preventScroll: true });
+  }, [openSubmenuIndex, submenuActiveIndex]);
+
   useLayoutEffect(() => {
     const element = menuRef.current;
     if (!element || typeof window === 'undefined') return;
@@ -366,22 +387,39 @@ export function WorkspaceContextMenu({
   }, []);
 
   useEffect(() => {
-    menuRef.current?.focus({ preventScroll: true });
+    previouslyFocusedRef.current =
+      returnFocus ??
+      (document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null);
     function handleOutsidePointer(e: MouseEvent) {
       if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) {
         return;
       }
       onClose();
     }
+    function handleFocusIn(e: FocusEvent) {
+      if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) {
+        return;
+      }
+      onClose();
+    }
     window.addEventListener('mousedown', handleOutsidePointer, { capture: true });
+    window.addEventListener('focusin', handleFocusIn, { capture: true });
     return () => {
       window.removeEventListener('mousedown', handleOutsidePointer, { capture: true });
+      window.removeEventListener('focusin', handleFocusIn, { capture: true });
     };
-  }, [onClose]);
+  }, [onClose, returnFocus]);
 
   const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (isImeComposingEvent(e.nativeEvent)) return;
     if (scopeTokenRef.current && !keyboardScopes.isTopToken(scopeTokenRef.current)) {
+      return;
+    }
+
+    if (e.key === 'Tab') {
+      closeAndRestore();
       return;
     }
 
@@ -392,7 +430,7 @@ export function WorkspaceContextMenu({
         setOpenSubmenuIndex(null);
         return;
       }
-      onClose();
+      closeAndRestore();
       return;
     }
 
@@ -422,7 +460,7 @@ export function WorkspaceContextMenu({
         const selected = submenuEntries[submenuActiveIndex];
         if (selected?.enabled) {
           onAction(selected.id);
-          onClose();
+          closeAndRestore();
         }
       }
       return;
@@ -485,7 +523,7 @@ export function WorkspaceContextMenu({
       }
       if (selected.enabled) {
         onAction(selected.id);
-        onClose();
+        closeAndRestore();
       }
     }
   };
@@ -511,7 +549,7 @@ export function WorkspaceContextMenu({
     }
     if (!entry.enabled) return;
     onAction(entry.id);
-    onClose();
+    closeAndRestore();
   };
 
   return (
@@ -522,9 +560,9 @@ export function WorkspaceContextMenu({
       tabIndex={-1}
       onKeyDown={handleMenuKeyDown}
       style={{ left: `${pos.left}px`, top: `${pos.top}px` }}
-      className="fixed z-50 w-64 rounded-xl border border-slate-200 bg-white/98 py-1.5 shadow-2xl backdrop-blur-xs focus:outline-none"
+      className="fixed z-50 w-60 rounded-lg border border-[#e4e4e7] bg-white py-1 shadow-2xl focus:outline-none"
     >
-      <div className="border-b border-slate-100 px-3 py-1.5 text-[11px] font-medium text-slate-500 truncate">
+      <div className="border-b border-[#f0f0f1] px-2.5 py-1.5 text-[0.6875rem] font-medium text-[#6b6f76] truncate">
         {capabilities.isMulti
           ? `${targets.length} 件を選択中`
           : primaryRow?.kind === 'folder'
@@ -539,15 +577,18 @@ export function WorkspaceContextMenu({
           return (
             <div key={`${entry.id}:${index}`} className="relative">
               {entry.dividerBefore && (
-                <div className="my-1 border-t border-slate-100" />
+                <hr className="my-1 border-[#f0f0f1]" />
               )}
               <button
+                ref={(element) => {
+                  parentItemRefs.current[index] = element;
+                }}
                 type="button"
                 role="menuitem"
+                tabIndex={-1}
                 aria-disabled={!isEntrySelectable(entry)}
                 aria-haspopup={hasChildren ? 'menu' : undefined}
                 aria-expanded={hasChildren ? openSubmenuIndex === index : undefined}
-                disabled={!isEntrySelectable(entry)}
                 onMouseEnter={() => {
                   if (!isEntrySelectable(entry)) return;
                   setActiveIndex(index);
@@ -555,16 +596,16 @@ export function WorkspaceContextMenu({
                   else setOpenSubmenuIndex(null);
                 }}
                 onClick={() => activateEntry(entry, index)}
-                className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-xs transition ${
+                className={`flex w-full items-center justify-between px-2.5 py-1 text-left text-[0.75rem] transition ${
                   !isEntrySelectable(entry)
-                    ? 'cursor-not-allowed text-slate-300'
+                    ? 'cursor-not-allowed text-[#b4b4bb]'
                     : entry.danger
                       ? isActive
-                        ? 'bg-red-50 text-red-700'
-                        : 'text-red-600 hover:bg-red-50'
+                        ? 'bg-[#fdf0f1] text-[#b3242e]'
+                        : 'text-[#d9343f] hover:bg-[#fdf0f1]'
                       : isActive
-                        ? 'bg-blue-50 text-blue-700'
-                        : 'text-slate-700 hover:bg-slate-50'
+                        ? 'bg-[#eef0fb] text-[#4f5ac2]'
+                        : 'text-[#3c3f46] hover:bg-[#f4f4f5]'
                 }`}
               >
                 <span className="flex min-w-0 items-center gap-2">
@@ -573,11 +614,14 @@ export function WorkspaceContextMenu({
                 </span>
                 <span className="ml-2 flex shrink-0 items-center gap-1">
                   {entry.shortcut && !hasChildren && (
-                    <kbd className="font-mono text-[10px] text-slate-400">
+                    <kbd
+                      aria-hidden="true"
+                      className="font-mono text-[0.625rem] text-[#6b6f76]"
+                    >
                       {entry.shortcut}
                     </kbd>
                   )}
-                  {hasChildren && <ChevronRight className="h-3.5 w-3.5 text-slate-400" />}
+                  {hasChildren && <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
                 </span>
               </button>
 
@@ -585,7 +629,7 @@ export function WorkspaceContextMenu({
                 <div
                   role="menu"
                   aria-label={`${entry.label} サブメニュー`}
-                  className={`absolute z-[60] w-56 rounded-xl border border-slate-200 bg-white/98 py-1.5 shadow-2xl backdrop-blur-xs ${
+                  className={`absolute z-[60] w-56 rounded-lg border border-[#e4e4e7] bg-white py-1 shadow-2xl ${
                     submenuOnLeft ? 'right-[calc(100%+4px)]' : 'left-[calc(100%+4px)]'
                   } ${submenuOpensUp ? 'bottom-0' : 'top-0'}`}
                 >
@@ -595,24 +639,27 @@ export function WorkspaceContextMenu({
                     return (
                       <button
                         key={`${child.id}:${childIndex}`}
+                        ref={(element) => {
+                          submenuItemRefs.current[childIndex] = element;
+                        }}
                         type="button"
                         role="menuitem"
+                        tabIndex={-1}
                         aria-disabled={!child.enabled}
-                        disabled={!child.enabled}
                         onMouseEnter={() => {
                           if (child.enabled) setSubmenuActiveIndex(childIndex);
                         }}
                         onClick={() => {
                           if (!child.enabled) return;
                           onAction(child.id);
-                          onClose();
+                          closeAndRestore();
                         }}
-                        className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-xs transition ${
+                        className={`flex w-full items-center justify-between px-2.5 py-1 text-left text-[0.75rem] transition ${
                           !child.enabled
-                            ? 'cursor-not-allowed text-slate-300'
+                            ? 'cursor-not-allowed text-[#b4b4bb]'
                             : isChildActive
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'text-slate-700 hover:bg-slate-50'
+                              ? 'bg-[#eef0fb] text-[#4f5ac2]'
+                              : 'text-[#3c3f46] hover:bg-[#f4f4f5]'
                         }`}
                       >
                         <span className="flex min-w-0 items-center gap-2">
@@ -620,7 +667,10 @@ export function WorkspaceContextMenu({
                           <span className="truncate">{child.label}</span>
                         </span>
                         {child.shortcut && (
-                          <kbd className="ml-2 shrink-0 font-mono text-[10px] text-slate-400">
+                          <kbd
+                            aria-hidden="true"
+                            className="ml-2 shrink-0 font-mono text-[0.625rem] text-[#6b6f76]"
+                          >
                             {child.shortcut}
                           </kbd>
                         )}

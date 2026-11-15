@@ -39,6 +39,7 @@ export function WorkspaceBackgroundMenu({
   canPaste,
   clipboardCount,
   viewMode,
+  returnFocus = null,
   onAction,
   onClose,
 }: {
@@ -49,10 +50,13 @@ export function WorkspaceBackgroundMenu({
   canPaste: boolean;
   clipboardCount: number;
   viewMode: 'list' | 'grid';
+  returnFocus?: HTMLElement | null;
   onAction: (action: BackgroundMenuActionId) => void;
   onClose: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const scopeTokenRef = useRef<string | null>(null);
   const [pos, setPos] = useState(() => {
     if (typeof window === 'undefined') return { left: anchor.x, top: anchor.y };
@@ -136,6 +140,16 @@ export function WorkspaceBackgroundMenu({
     setActiveIndex(enabledIndices[0] ?? 0);
   }, [enabledIndices]);
 
+  const closeAndRestore = () => {
+    const target = returnFocus ?? previouslyFocusedRef.current;
+    if (target?.isConnected) target.focus({ preventScroll: true });
+    onClose();
+  };
+
+  useEffect(() => {
+    itemRefs.current[activeIndex]?.focus({ preventScroll: true });
+  }, [activeIndex]);
+
   useLayoutEffect(() => {
     const element = menuRef.current;
     if (!element || typeof window === 'undefined') return;
@@ -162,7 +176,23 @@ export function WorkspaceBackgroundMenu({
   }, []);
 
   useEffect(() => {
+    previouslyFocusedRef.current =
+      returnFocus ??
+      (document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null);
     function handleOutsidePointer(e: MouseEvent) {
+      if (
+        menuRef.current &&
+        e.target instanceof Node &&
+        menuRef.current.contains(e.target)
+      ) {
+        return;
+      }
+      onClose();
+    }
+
+    function handleFocusIn(e: FocusEvent) {
       if (
         menuRef.current &&
         e.target instanceof Node &&
@@ -178,10 +208,15 @@ export function WorkspaceBackgroundMenu({
       if (scopeTokenRef.current && !keyboardScopes.isTopToken(scopeTokenRef.current)) {
         return;
       }
+      if (e.key === 'Tab') {
+        closeAndRestore();
+        return;
+      }
+
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        onClose();
+        closeAndRestore();
         return;
       }
       if (enabledIndices.length === 0) return;
@@ -204,18 +239,20 @@ export function WorkspaceBackgroundMenu({
         const entry = entries[activeIndex];
         if (entry?.enabled) {
           onAction(entry.id);
-          onClose();
+          closeAndRestore();
         }
       }
     }
 
     window.addEventListener('mousedown', handleOutsidePointer, { capture: true });
+    window.addEventListener('focusin', handleFocusIn, { capture: true });
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => {
       window.removeEventListener('mousedown', handleOutsidePointer, { capture: true });
+      window.removeEventListener('focusin', handleFocusIn, { capture: true });
       window.removeEventListener('keydown', handleKeyDown, { capture: true });
     };
-  }, [activeIndex, enabledIndices, entries, onAction, onClose]);
+  }, [activeIndex, enabledIndices, entries, onAction, onClose, returnFocus]);
 
   return (
     <div
@@ -225,7 +262,7 @@ export function WorkspaceBackgroundMenu({
       style={{ left: `${pos.left}px`, top: `${pos.top}px` }}
       className="fixed z-50 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white/98 py-1.5 shadow-2xl backdrop-blur-xs"
     >
-      <div className="border-b border-slate-100 px-3 py-1.5 text-[11px] font-medium text-slate-500">
+      <div className="border-b border-[#f0f0f1] px-2.5 py-1.5 text-[0.6875rem] font-medium text-[#6b6f76]">
         このフォルダ
       </div>
       <div className="py-1">
@@ -234,24 +271,27 @@ export function WorkspaceBackgroundMenu({
           return (
             <div key={entry.id}>
               {entry.dividerBefore && (
-                <div className="my-1 border-t border-slate-100" />
+                <hr className="my-1 border-[#f0f0f1]" />
               )}
               <button
+                ref={(element) => {
+                  itemRefs.current[index] = element;
+                }}
                 type="button"
                 role="menuitem"
+                tabIndex={-1}
                 aria-disabled={!entry.enabled}
-                disabled={!entry.enabled}
                 onMouseEnter={() => {
                   if (entry.enabled) setActiveIndex(index);
                 }}
                 onClick={() => {
                   if (!entry.enabled) return;
                   onAction(entry.id);
-                  onClose();
+                  closeAndRestore();
                 }}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition ${
+                className={`flex w-full items-center gap-2 px-2.5 py-1 text-left text-[0.75rem] transition ${
                   !entry.enabled
-                    ? 'cursor-not-allowed text-slate-300'
+                    ? 'cursor-not-allowed text-[#b4b4bb]'
                     : isActive
                       ? 'bg-blue-50 text-blue-700'
                       : 'text-slate-700 hover:bg-slate-50'

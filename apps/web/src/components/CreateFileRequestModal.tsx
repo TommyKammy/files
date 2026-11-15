@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { ModalShell } from '@/components/ModalShell';
 import {
   ApiClientError,
   createFileRequest,
@@ -130,14 +131,11 @@ export function CreateFileRequestModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
-      onClick={onClose}
+    <ModalShell
+      label={`外部ファイル収集: ${folderName}`}
+      onClose={onClose}
+      className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
     >
-      <div
-        className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div className="flex items-center gap-2.5 min-w-0">
             <Inbox className="h-4 w-4 shrink-0 text-indigo-600" />
@@ -145,15 +143,16 @@ export function CreateFileRequestModal({
               <h2 className="truncate text-sm font-semibold text-slate-900">
                 外部ファイル収集 (Blind Dropbox): {folderName}
               </h2>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[0.6875rem] text-slate-500">
                 送信者はフォルダ内の既存ファイルを閲覧できません（提出専用ページを発行）
               </p>
             </div>
           </div>
           <button
             type="button"
+            aria-label="閉じる"
             onClick={onClose}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-4 w-4" />
           </button>
@@ -161,7 +160,10 @@ export function CreateFileRequestModal({
 
         <div className="max-h-[78vh] overflow-y-auto p-5 space-y-5">
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700">
+            <div
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700"
+            >
               {error}
             </div>
           )}
@@ -173,6 +175,9 @@ export function CreateFileRequestModal({
               </div>
               <div className="flex items-center gap-2">
                 <input
+                  id="file-request-generated-url"
+                  name="requestUrl"
+                  aria-label="収集リンクURL"
                   readOnly
                   value={generatedUrl}
                   className="flex-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 font-mono text-xs text-slate-800"
@@ -206,6 +211,9 @@ export function CreateFileRequestModal({
               <label className="block text-xs">
                 <span className="font-medium text-slate-700">収集タイトル</span>
                 <input
+                  id="file-request-title"
+                  name="title"
+                  data-autofocus
                   required
                   type="text"
                   maxLength={160}
@@ -220,6 +228,8 @@ export function CreateFileRequestModal({
                   説明文・提出案内 (任意)
                 </span>
                 <input
+                  id="file-request-description"
+                  name="description"
                   type="text"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -232,7 +242,10 @@ export function CreateFileRequestModal({
                 <label className="block text-xs">
                   <span className="font-medium text-slate-700">上限サイズ (MiB)</span>
                   <input
+                    id="file-request-max-size"
+                    name="maxSizeMiB"
                     type="number"
+                    inputMode="numeric"
                     min={1}
                     max={100}
                     value={maxSizeMiB}
@@ -246,7 +259,10 @@ export function CreateFileRequestModal({
                 <label className="block text-xs">
                   <span className="font-medium text-slate-700">有効期限 (日)</span>
                   <input
+                    id="file-request-expires-days"
+                    name="expiresInDays"
                     type="number"
+                    inputMode="numeric"
                     min={1}
                     max={365}
                     value={expiresInDays}
@@ -262,7 +278,11 @@ export function CreateFileRequestModal({
                     許可拡張子 (カンマ区切り)
                   </span>
                   <input
+                    id="file-request-allowed-extensions"
+                    name="allowedExtensions"
                     type="text"
+                    spellCheck={false}
+                    autoCapitalize="none"
                     value={allowedExtText}
                     onChange={(e) => setAllowedExtText(e.target.value)}
                     placeholder="pdf, docx, png"
@@ -274,6 +294,8 @@ export function CreateFileRequestModal({
               <div className="flex items-center justify-between pt-1">
                 <label className="inline-flex items-center gap-2 text-xs text-slate-700">
                   <input
+                    id="file-request-require-email"
+                    name="requireSubmitterEmail"
                     type="checkbox"
                     checked={requireSubmitterEmail}
                     onChange={(e) => setRequireSubmitterEmail(e.target.checked)}
@@ -300,7 +322,7 @@ export function CreateFileRequestModal({
             </div>
 
             {loading ? (
-              <div className="py-6 text-center text-xs text-slate-400">
+              <div className="py-6 text-center text-xs text-slate-500">
                 読み込み中...
               </div>
             ) : requests.length === 0 ? (
@@ -316,7 +338,7 @@ export function CreateFileRequestModal({
                   >
                     <div className="min-w-0 space-y-1">
                       <div className="font-medium text-slate-900">{req.title}</div>
-                      <div className="text-[11px] text-slate-500">
+                      <div className="text-[0.6875rem] text-slate-500">
                         提出数: {req.submissionCount}件 • 上限:{' '}
                         {formatBytes(req.maxFileSizeBytes)} • 期限:{' '}
                         {formatDateTime(req.expiresAt)}
@@ -327,7 +349,7 @@ export function CreateFileRequestModal({
                       <button
                         type="button"
                         onClick={() => handleDeactivate(req.id)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50"
+                        className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1 text-[0.6875rem] font-medium text-red-600 hover:bg-red-50"
                       >
                         <Trash2 className="h-3 w-3" />
                         <span>受付停止</span>
@@ -339,7 +361,6 @@ export function CreateFileRequestModal({
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }
