@@ -10,9 +10,11 @@ import {
   RefreshCw,
   Upload,
 } from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { isImeComposingEvent, keyboardScopes } from '@/lib/keyboard-shortcuts';
-import { clampPopoverPosition } from '@/lib/workspace-actions';
+import { useMemo } from 'react';
+import {
+  MenuSurface,
+  type MenuEntry,
+} from '@/components/MenuSurface';
 
 type BackgroundMenuActionId =
   | 'newFolder'
@@ -22,14 +24,6 @@ type BackgroundMenuActionId =
   | 'selectAll'
   | 'refresh'
   | 'toggleView';
-
-interface BackgroundMenuEntry {
-  id: BackgroundMenuActionId;
-  label: string;
-  icon: React.ReactNode;
-  enabled: boolean;
-  dividerBefore?: boolean;
-}
 
 export function WorkspaceBackgroundMenu({
   anchor,
@@ -54,24 +48,8 @@ export function WorkspaceBackgroundMenu({
   onAction: (action: BackgroundMenuActionId) => void;
   onClose: () => void;
 }) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
-  const scopeTokenRef = useRef<string | null>(null);
-  const [pos, setPos] = useState(() => {
-    if (typeof window === 'undefined') return { left: anchor.x, top: anchor.y };
-    return clampPopoverPosition(
-      anchor.x,
-      anchor.y,
-      248,
-      320,
-      window.innerWidth,
-      window.innerHeight
-    );
-  });
-
-  const entries = useMemo<BackgroundMenuEntry[]>(() => {
-    const list: BackgroundMenuEntry[] = [
+  const entries = useMemo<Array<MenuEntry<BackgroundMenuActionId>>>(() => {
+    return [
       {
         id: 'newFolder',
         label: '新しいフォルダ',
@@ -115,7 +93,10 @@ export function WorkspaceBackgroundMenu({
       },
       {
         id: 'toggleView',
-        label: viewMode === 'grid' ? 'リスト表示に切り替え' : 'グリッド表示に切り替え',
+        label:
+          viewMode === 'grid'
+            ? 'リスト表示に切り替え'
+            : 'グリッド表示に切り替え',
         icon:
           viewMode === 'grid' ? (
             <List className="h-3.5 w-3.5" />
@@ -125,185 +106,29 @@ export function WorkspaceBackgroundMenu({
         enabled: true,
       },
     ];
-    return list;
-  }, [canCreate, canUpload, canUploadFolder, canPaste, clipboardCount, viewMode]);
-
-  const enabledIndices = useMemo(
-    () => entries.map((entry, index) => (entry.enabled ? index : -1)).filter((index) => index >= 0),
-    [entries]
-  );
-  const [activeIndex, setActiveIndex] = useState<number>(
-    () => enabledIndices[0] ?? 0
-  );
-
-  useEffect(() => {
-    setActiveIndex(enabledIndices[0] ?? 0);
-  }, [enabledIndices]);
-
-  const closeAndRestore = () => {
-    const target = returnFocus ?? previouslyFocusedRef.current;
-    if (target?.isConnected) target.focus({ preventScroll: true });
-    onClose();
-  };
-
-  useEffect(() => {
-    itemRefs.current[activeIndex]?.focus({ preventScroll: true });
-  }, [activeIndex]);
-
-  useLayoutEffect(() => {
-    const element = menuRef.current;
-    if (!element || typeof window === 'undefined') return;
-    const rect = element.getBoundingClientRect();
-    setPos(
-      clampPopoverPosition(
-        anchor.x,
-        anchor.y,
-        rect.width || 248,
-        rect.height || 320,
-        window.innerWidth,
-        window.innerHeight
-      )
-    );
-  }, [anchor.x, anchor.y, entries.length]);
-
-  useEffect(() => {
-    const token = keyboardScopes.pushScope('contextMenu');
-    scopeTokenRef.current = token;
-    return () => {
-      keyboardScopes.popScope(token);
-      if (scopeTokenRef.current === token) scopeTokenRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    previouslyFocusedRef.current =
-      returnFocus ??
-      (document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null);
-    function handleOutsidePointer(e: MouseEvent) {
-      if (
-        menuRef.current &&
-        e.target instanceof Node &&
-        menuRef.current.contains(e.target)
-      ) {
-        return;
-      }
-      onClose();
-    }
-
-    function handleFocusIn(e: FocusEvent) {
-      if (
-        menuRef.current &&
-        e.target instanceof Node &&
-        menuRef.current.contains(e.target)
-      ) {
-        return;
-      }
-      onClose();
-    }
-
-    function handleKeyDown(e: KeyboardEvent) {
-      if (isImeComposingEvent(e)) return;
-      if (scopeTokenRef.current && !keyboardScopes.isTopToken(scopeTokenRef.current)) {
-        return;
-      }
-      if (e.key === 'Tab') {
-        closeAndRestore();
-        return;
-      }
-
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        closeAndRestore();
-        return;
-      }
-      if (enabledIndices.length === 0) return;
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        const current = enabledIndices.indexOf(activeIndex);
-        const next = current < 0 ? 0 : (current + 1) % enabledIndices.length;
-        setActiveIndex(enabledIndices[next]!);
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        const current = enabledIndices.indexOf(activeIndex);
-        const prev = current <= 0 ? enabledIndices.length - 1 : current - 1;
-        setActiveIndex(enabledIndices[prev]!);
-        return;
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const entry = entries[activeIndex];
-        if (entry?.enabled) {
-          onAction(entry.id);
-          closeAndRestore();
-        }
-      }
-    }
-
-    window.addEventListener('mousedown', handleOutsidePointer, { capture: true });
-    window.addEventListener('focusin', handleFocusIn, { capture: true });
-    window.addEventListener('keydown', handleKeyDown, { capture: true });
-    return () => {
-      window.removeEventListener('mousedown', handleOutsidePointer, { capture: true });
-      window.removeEventListener('focusin', handleFocusIn, { capture: true });
-      window.removeEventListener('keydown', handleKeyDown, { capture: true });
-    };
-  }, [activeIndex, enabledIndices, entries, onAction, onClose, returnFocus]);
+  }, [
+    canCreate,
+    canUpload,
+    canUploadFolder,
+    canPaste,
+    clipboardCount,
+    viewMode,
+  ]);
 
   return (
-    <div
-      ref={menuRef}
-      role="menu"
-      aria-label="フォルダメニュー"
-      style={{ left: `${pos.left}px`, top: `${pos.top}px` }}
-      className="fixed z-50 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white/98 py-1.5 shadow-2xl backdrop-blur-xs"
-    >
-      <div className="border-b border-[#f0f0f1] px-2.5 py-1.5 text-[0.6875rem] font-medium text-[#6b6f76]">
-        このフォルダ
-      </div>
-      <div className="py-1">
-        {entries.map((entry, index) => {
-          const isActive = index === activeIndex && entry.enabled;
-          return (
-            <div key={entry.id}>
-              {entry.dividerBefore && (
-                <hr className="my-1 border-[#f0f0f1]" />
-              )}
-              <button
-                ref={(element) => {
-                  itemRefs.current[index] = element;
-                }}
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                aria-disabled={!entry.enabled}
-                onMouseEnter={() => {
-                  if (entry.enabled) setActiveIndex(index);
-                }}
-                onClick={() => {
-                  if (!entry.enabled) return;
-                  onAction(entry.id);
-                  closeAndRestore();
-                }}
-                className={`flex w-full items-center gap-2 px-2.5 py-1 text-left text-[0.75rem] transition ${
-                  !entry.enabled
-                    ? 'cursor-not-allowed text-[#b4b4bb]'
-                    : isActive
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <span className="shrink-0">{entry.icon}</span>
-                <span className="truncate">{entry.label}</span>
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <MenuSurface
+      anchor={anchor}
+      entries={entries}
+      ariaLabel="フォルダメニュー"
+      header="このフォルダ"
+      width={248}
+      height={320}
+      widthClass="w-64"
+      submenuWidthClass="w-56"
+      tone="blue"
+      returnFocus={returnFocus}
+      onAction={onAction}
+      onClose={onClose}
+    />
   );
 }
