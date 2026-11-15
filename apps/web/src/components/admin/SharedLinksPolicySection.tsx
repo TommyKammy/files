@@ -1,0 +1,246 @@
+'use client';
+
+import { SlidersHorizontal } from 'lucide-react';
+import type {
+  AdminSharedLinkRow,
+  AiClassificationMode,
+  TenantPolicyRow,
+} from '@/types/files';
+
+export function SharedLinksPolicySection({
+  sharedLinks,
+  policy,
+  policySaving,
+  onEmergencyRevoke,
+  onPolicySubmit,
+  onPolicyChange,
+}: {
+  sharedLinks: AdminSharedLinkRow[];
+  policy: TenantPolicyRow | null;
+  policySaving: boolean;
+  onEmergencyRevoke: (linkId: string) => void;
+  onPolicySubmit: (event: React.FormEvent) => void;
+  onPolicyChange: (next: TenantPolicyRow) => void;
+}) {
+  return (
+    <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <div className="xl:col-span-2 overflow-hidden rounded-lg border border-[#e7e7ea] bg-white">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <h2 className="text-sm font-semibold text-slate-900">
+            稼働中の外部・内部共有リンク監視 ({sharedLinks.length})
+          </h2>
+        </div>
+
+        {sharedLinks.length === 0 ? (
+          <div className="px-5 py-10 text-center text-xs text-slate-500">
+            稼働中の共有リンクはありません
+          </div>
+        ) : (
+          <div
+            role="region"
+            aria-label="稼働中の共有リンク監視"
+            tabIndex={0}
+            className="overflow-x-auto"
+          >
+            <table className="w-full text-left text-xs">
+              <caption className="sr-only">稼働中の共有リンク監視</caption>
+              <thead className="border-b border-slate-200 bg-slate-50 text-[0.6875rem] font-semibold text-slate-500">
+                <tr>
+                  <th scope="col" className="px-4 py-2.5">
+                    対象 / 発行者
+                  </th>
+                  <th scope="col" className="px-4 py-2.5">
+                    スコープ / 状態
+                  </th>
+                  <th scope="col" className="px-4 py-2.5">
+                    失敗試行 / DL数
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 text-right">
+                    緊急失効
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {sharedLinks.map((link) => {
+                  const hasAnomaly =
+                    link.failed_password_attempts > 0 ||
+                    Boolean(link.locked_until);
+                  return (
+                    <tr
+                      key={link.id}
+                      className={
+                        hasAnomaly ? 'bg-red-50/60' : 'hover:bg-slate-50/70'
+                      }
+                    >
+                      <td className="px-4 py-2.5">
+                        <div className="font-medium text-slate-900">
+                          {link.target_name ?? link.target_id}
+                        </div>
+                        <div className="text-[0.6875rem] text-slate-500">
+                          {link.target_type} •{' '}
+                          {link.creator_email ?? link.created_by}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[0.6875rem] text-slate-700">
+                          {link.access_scope}
+                        </span>
+                        {link.locked_until && (
+                          <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-[0.625rem] font-semibold text-red-700">
+                            LOCKED
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-[0.6875rem] text-slate-600">
+                        PW失敗: {link.failed_password_attempts} • DL:{' '}
+                        {link.download_count}
+                        {link.max_downloads ? `/${link.max_downloads}` : ''}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => onEmergencyRevoke(link.id)}
+                          className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[0.6875rem] font-semibold text-red-600 hover:bg-red-50"
+                        >
+                          緊急失効
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {policy && (
+        <form
+          onSubmit={onPolicySubmit}
+          className="rounded-lg border border-[#e7e7ea] bg-white p-5 space-y-4"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <SlidersHorizontal className="h-4 w-4 text-slate-600" />
+            <span>テナントセキュリティポリシー</span>
+          </div>
+
+          <label className="flex items-center justify-between gap-3 text-xs">
+            <span className="text-slate-700">
+              共有リンクを社内SSO限定に強制
+            </span>
+            <input
+              id="policy-enforce-company-only"
+              name="enforceCompanyOnlyLinks"
+              type="checkbox"
+              checked={policy.enforce_company_only_links === 1}
+              onChange={(e) =>
+                onPolicyChange({
+                  ...policy,
+                  enforce_company_only_links: e.target.checked ? 1 : 0,
+                })
+              }
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-3 text-xs">
+            <span className="text-slate-700">
+              Confidential に動的透かしを強制
+            </span>
+            <input
+              id="policy-require-watermark"
+              name="requireWatermarkConfidential"
+              type="checkbox"
+              checked={policy.require_watermark_confidential === 1}
+              onChange={(e) =>
+                onPolicyChange({
+                  ...policy,
+                  require_watermark_confidential: e.target.checked ? 1 : 0,
+                })
+              }
+            />
+          </label>
+
+          <label className="block text-xs">
+            <span className="font-medium text-slate-700">AI 分類モード</span>
+            <select
+              id="policy-ai-classification-mode"
+              name="aiClassificationMode"
+              value={policy.ai_classification_mode}
+              onChange={(e) =>
+                onPolicyChange({
+                  ...policy,
+                  ai_classification_mode: e.target.value as AiClassificationMode,
+                })
+              }
+              className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
+            >
+              <option value="content_excerpt">
+                content_excerpt (本文先頭抽出)
+              </option>
+              <option value="metadata_only">metadata_only (メタデータのみ)</option>
+              <option value="disabled">disabled (停止)</option>
+            </select>
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-xs">
+              <span className="font-medium text-slate-700">
+                最大共有期限 (日)
+              </span>
+              <input
+                id="policy-max-link-expiration-days"
+                name="maxLinkExpirationDays"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={365}
+                value={policy.max_link_expiration_days}
+                onChange={(e) =>
+                  onPolicyChange({
+                    ...policy,
+                    max_link_expiration_days: Number.parseInt(
+                      e.target.value || '30',
+                      10
+                    ),
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
+              />
+            </label>
+
+            <label className="block text-xs">
+              <span className="font-medium text-slate-700">ゴミ箱保持 (日)</span>
+              <input
+                id="policy-trash-retention-days"
+                name="trashRetentionDays"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={3650}
+                value={policy.trash_retention_days}
+                onChange={(e) =>
+                  onPolicyChange({
+                    ...policy,
+                    trash_retention_days: Number.parseInt(
+                      e.target.value || '90',
+                      10
+                    ),
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
+              />
+            </label>
+          </div>
+
+          <button
+            type="submit"
+            disabled={policySaving}
+            className="h-8 w-full rounded-md bg-[#5e6ad2] text-[0.75rem] font-medium text-white transition hover:bg-[#4f5ac2] disabled:opacity-50"
+          >
+            {policySaving ? '保存中...' : 'ポリシーを保存'}
+          </button>
+        </form>
+      )}
+    </section>
+  );
+}

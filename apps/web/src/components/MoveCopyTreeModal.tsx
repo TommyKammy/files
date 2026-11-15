@@ -2,21 +2,18 @@
 
 import {
   AlertTriangle,
-  ChevronDown,
-  ChevronRight,
   Clock,
   Copy,
-  Folder,
-  FolderOpen,
   FolderPlus,
-  Home,
-  Lock,
   MoveRight,
   Search,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ClassificationBadge } from '@/components/ClassificationBadge';
+import {
+  DestinationRowButton,
+  type DestinationRow,
+} from '@/components/DestinationRowButton';
 import { ModalShell } from '@/components/ModalShell';
 import {
   type DragWorkspaceItem,
@@ -32,17 +29,6 @@ import {
 } from '@/lib/workspace-actions';
 import type { AuthUser, ClassificationLabel, ResourceRole } from '@/types/files';
 
-interface DestinationRow {
-  rowKey: string;
-  section: 'recent' | 'tree';
-  folderId: string | null;
-  name: string;
-  depth: number;
-  classification: ClassificationLabel;
-  effectiveRole: ResourceRole;
-  isExpanded: boolean;
-  canExpand: boolean;
-}
 
 export function MoveCopyTreeModal({
   items,
@@ -429,79 +415,18 @@ export function MoveCopyTreeModal({
   const recentRows = visibleRows.filter((r) => r.section === 'recent');
   const treeRows = visibleRows.filter((r) => r.section === 'tree');
 
-  const renderDestinationButton = (row: DestinationRow) => {
-    const { moveEval, copyEval } = evalForRow(row);
-    const isHighlighted = selectedRow?.rowKey === row.rowKey;
-    const locked =
-      modeHint === 'copy' ? !copyEval.allowed : !moveEval.allowed && !copyEval.allowed;
-    const lockReason =
-      modeHint === 'copy'
-        ? copyEval.reason
-        : moveEval.reason ?? copyEval.reason;
+  const renderDestinationRow = (row: DestinationRow) => (
+    <DestinationRowButton
+      key={row.rowKey}
+      row={row}
+      modeHint={modeHint}
+      evaluate={evalForRow}
+      highlighted={selectedRow?.rowKey === row.rowKey}
+      onSelect={() => setHighlightedKey(row.rowKey)}
+      onToggleExpand={toggleExpand}
+    />
+  );
 
-    return (
-      <div
-        key={row.rowKey}
-        style={{ paddingLeft: `${10 + row.depth * 16}px` }}
-        onClick={() => setHighlightedKey(row.rowKey)}
-        onDoubleClick={() => {
-          if (row.folderId && row.canExpand) {
-            toggleExpand(row.folderId);
-          }
-        }}
-        className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg pr-3 py-2 text-xs transition ${
-          isHighlighted
-            ? 'bg-blue-50 text-blue-900 ring-1 ring-inset ring-blue-300'
-            : locked
-              ? 'text-slate-400 hover:bg-slate-50'
-              : 'text-slate-700 hover:bg-slate-50'
-        }`}
-      >
-        <div className="flex min-w-0 items-center gap-1.5">
-          {row.canExpand && row.folderId ? (
-            <button
-              type="button"
-              aria-label={row.isExpanded ? '折りたたむ' : '展開する'}
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleExpand(row.folderId!);
-              }}
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-200/70 hover:text-slate-700"
-            >
-              {row.isExpanded ? (
-                <ChevronDown className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronRight className="h-3.5 w-3.5" />
-              )}
-            </button>
-          ) : (
-            <span className="w-5 shrink-0" />
-          )}
-
-          {row.folderId === null ? (
-            <Home className="h-4 w-4 shrink-0 text-blue-500" />
-          ) : row.isExpanded ? (
-            <FolderOpen className="h-4 w-4 shrink-0 text-amber-500" />
-          ) : (
-            <Folder className="h-4 w-4 shrink-0 text-amber-500" />
-          )}
-
-          <span className="truncate font-medium">{row.name}</span>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1.5">
-          {row.classification !== 'unset' && (
-            <ClassificationBadge classification={row.classification} compact />
-          )}
-          {locked && lockReason && (
-            <span title={lockReason} className="text-slate-500">
-              <Lock className="h-3.5 w-3.5" />
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  };
 
   return (
     <ModalShell
@@ -606,7 +531,7 @@ export function MoveCopyTreeModal({
                 <span>最近の移動先</span>
               </div>
               <div className="space-y-0.5">
-                {recentRows.map(renderDestinationButton)}
+                {recentRows.map(renderDestinationRow)}
               </div>
             </div>
           )}
@@ -616,7 +541,7 @@ export function MoveCopyTreeModal({
               ワークスペースフォルダ
             </div>
             <div className="space-y-0.5">
-              {treeRows.map(renderDestinationButton)}
+              {treeRows.map(renderDestinationRow)}
             </div>
           </div>
         </div>

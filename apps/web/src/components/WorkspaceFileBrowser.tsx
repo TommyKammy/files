@@ -5,7 +5,6 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  Check,
   ChevronRight,
   Clipboard,
   ClipboardPaste,
@@ -65,6 +64,8 @@ import {
   ClassificationPickerModal,
   ShortcutsHelpModal,
 } from '@/components/WorkspaceKeyboardOverlays';
+import { WorkspaceBreadcrumbs } from '@/components/WorkspaceBreadcrumbs';
+import { WorkspaceSelectionCheckbox } from '@/components/WorkspaceSelectionCheckbox';
 import {
   getDropTargetClassName,
   WorkspaceDragProvider,
@@ -101,6 +102,7 @@ import {
 } from '@/lib/sync-store';
 import { useMarqueeSelection } from '@/lib/use-marquee-selection';
 import { useTableVirtualWindow } from '@/lib/use-virtual-window';
+import { useWorkspaceViewPrefs } from '@/lib/use-workspace-view-prefs';
 import {
   getWorkspaceClipboardStore,
   useWorkspaceClipboard,
@@ -114,13 +116,7 @@ import {
 import {
   chunkItemsIntoGridRows,
   getAriaSortValue,
-  loadWorkspaceViewPrefs,
-  nextSortDirection,
-  saveWorkspaceViewPrefs,
   sortWorkspaceFoldersAndFiles,
-  type WorkspaceSortDirection,
-  type WorkspaceSortField,
-  type WorkspaceViewMode,
 } from '@/lib/workspace-sort-and-view';
 import type {
   ClassificationLabel,
@@ -439,11 +435,17 @@ export function WorkspaceFileBrowser() {
     items: DragWorkspaceItem[];
     modeHint: 'move' | 'copy';
   } | null>(null);
-  const [sortBy, setSortBy] = useState<WorkspaceSortField>('name');
-  const [sortDir, setSortDir] = useState<WorkspaceSortDirection>('asc');
-  const [viewMode, setViewMode] = useState<WorkspaceViewMode>('list');
+  const {
+    sortBy,
+    sortDir,
+    viewMode,
+    setSortBy,
+    setSortDir,
+    setViewMode,
+    handleSortHeaderClick,
+    handleToggleViewMode,
+  } = useWorkspaceViewPrefs(user);
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const prefsUserKeyRef = useRef<string | null>(null);
   const sortDrainErrorKeyRef = useRef<string | null>(null);
   const pasteEnqueueFilesRef = useRef<((files: FileList | File[]) => void) | null>(
     null
@@ -456,18 +458,6 @@ export function WorkspaceFileBrowser() {
     clipboardStore.setScope(
       user ? { tenantId: user.tenantId, id: user.id } : null
     );
-    if (!user) {
-      prefsUserKeyRef.current = null;
-      return;
-    }
-    const userKey = `${user.tenantId}:${user.id}`;
-    if (prefsUserKeyRef.current !== userKey) {
-      prefsUserKeyRef.current = userKey;
-      const prefs = loadWorkspaceViewPrefs(user.tenantId, user.id);
-      setSortBy(prefs.sortBy);
-      setSortDir(prefs.sortDir);
-      setViewMode(prefs.viewMode);
-    }
   }, [clipboardStore, user]);
 
   useEffect(() => {
@@ -688,36 +678,6 @@ export function WorkspaceFileBrowser() {
     sortDir,
     syncStore,
   ]);
-
-  const handleSortHeaderClick = useCallback(
-    (field: WorkspaceSortField) => {
-      const next = nextSortDirection(sortBy, sortDir, field);
-      setSortBy(next.sortBy);
-      setSortDir(next.sortDir);
-      if (user) {
-        saveWorkspaceViewPrefs(user.tenantId, user.id, {
-          sortBy: next.sortBy,
-          sortDir: next.sortDir,
-          viewMode,
-        });
-      }
-    },
-    [sortBy, sortDir, user, viewMode]
-  );
-
-  const handleToggleViewMode = useCallback(() => {
-    setViewMode((prev) => {
-      const next: WorkspaceViewMode = prev === 'list' ? 'grid' : 'list';
-      if (user) {
-        saveWorkspaceViewPrefs(user.tenantId, user.id, {
-          sortBy,
-          sortDir,
-          viewMode: next,
-        });
-      }
-      return next;
-    });
-  }, [user, sortBy, sortDir]);
 
   const { folders: sortedFolders, files: sortedFiles } = useMemo(
     () =>
@@ -2387,25 +2347,11 @@ export function WorkspaceFileBrowser() {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   {rowSelectable && (
-                    <button
-                      type="button"
-                      role="checkbox"
-                      aria-label={`${isFolder ? folder!.name : file!.name} を選択`}
-                      aria-checked={isSelected}
-                      data-workspace-row-trigger="true"
+                    <WorkspaceSelectionCheckbox
+                      checked={isSelected}
+                      label={`${isFolder ? folder!.name : file!.name} を選択`}
                       onClick={handleCardCheckboxClick}
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition hover:bg-[#f2f2f4]"
-                    >
-                      <span
-                        className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border transition ${
-                          isSelected
-                            ? 'border-[#5e6ad2] bg-[#5e6ad2] text-white'
-                            : 'border-[#cfcfd4] bg-white text-transparent hover:border-[#9aa4dd]'
-                        }`}
-                      >
-                        <Check className="h-3 w-3" />
-                      </span>
-                    </button>
+                    />
                   )}
                   {isFolder ? (
                     <Folder className="h-4 w-4 shrink-0 text-[#6b6f76]" />
@@ -2601,58 +2547,10 @@ export function WorkspaceFileBrowser() {
                 <h1 className="text-[0.9375rem] font-semibold tracking-[-0.01em] text-[#111214]">ゴミ箱</h1>
               </div>
             ) : (
-              <nav
-                aria-label="パンくずリスト"
-                className="flex flex-wrap items-center gap-1 text-[0.75rem]"
-              >
-                <button
-                  type="button"
-                  data-drop-folder-id={ROOT_DROP_ID}
-                  data-drop-label="マイファイル"
-                  onClick={() => router.push('/workspace')}
-                  className={`min-h-6 rounded px-1.5 py-0.5 font-medium hover:bg-[#ececee] transition ${
-                    !folderId ? 'text-slate-900' : 'text-slate-500'
-                  } ${
-                    dragCtx.isDragging
-                      ? getDropTargetClassName(
-                          null,
-                          dragCtx.hoveredTarget
-                        )
-                      : ''
-                  }`}
-                >
-                  マイファイル
-                </button>
-                {breadcrumbs.map((crumb, idx) => (
-                  <span key={crumb.id} className="flex items-center gap-1">
-                    <ChevronRight className="h-4 w-4 text-[#6b6f76]" />
-                    <button
-                      type="button"
-                      data-drop-folder-id={crumb.id}
-                      data-drop-label={crumb.name}
-                      onClick={() =>
-                        router.push(
-                          `/workspace?folderId=${encodeURIComponent(crumb.id)}`
-                        )
-                      }
-                      className={`min-h-6 rounded px-1.5 py-0.5 font-medium hover:bg-[#ececee] transition ${
-                        idx === breadcrumbs.length - 1
-                          ? 'text-[#111214]'
-                          : 'text-[#6b6f76]'
-                      } ${
-                        dragCtx.isDragging
-                          ? getDropTargetClassName(
-                              crumb.id,
-                              dragCtx.hoveredTarget
-                            )
-                          : ''
-                      }`}
-                    >
-                      {crumb.name}
-                    </button>
-                  </span>
-                ))}
-              </nav>
+              <WorkspaceBreadcrumbs
+                folderId={folderId ?? null}
+                breadcrumbs={breadcrumbs}
+              />
             )}
 
             {!isTrashView &&
@@ -3101,35 +2999,23 @@ export function WorkspaceFileBrowser() {
                     <tr aria-rowindex={1}>
                       <th scope="col" className="w-10 px-3 py-2">
                         {!isTrashView && selectableRowKeys.length > 0 && (
-                          <button
-                            type="button"
-                            role="checkbox"
-                            aria-label="すべて選択"
-                            aria-checked={
+                          <WorkspaceSelectionCheckbox
+                            checked={
                               selectedRows.length > 0 &&
                               selectedRows.length === selectableRowKeys.length
                             }
-                            data-workspace-row-trigger="true"
+                            label="すべて選択"
                             onClick={() => {
-                              if (selectedRows.length === selectableRowKeys.length) {
+                              if (
+                                selectedRows.length ===
+                                selectableRowKeys.length
+                              ) {
                                 setSelectedKeys(new Set());
                               } else {
                                 setSelectedKeys(new Set(selectableRowKeys));
                               }
                             }}
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition hover:bg-[#f2f2f4]"
-                          >
-                            <span
-                              className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border transition ${
-                                selectedRows.length > 0 &&
-                                selectedRows.length === selectableRowKeys.length
-                                  ? 'border-[#5e6ad2] bg-[#5e6ad2] text-white'
-                                  : 'border-[#cfcfd4] bg-white text-transparent hover:border-[#9aa4dd]'
-                              }`}
-                            >
-                              <Check className="h-3 w-3" />
-                            </span>
-                          </button>
+                          />
                         )}
                       </th>
                       {(
@@ -3277,25 +3163,11 @@ export function WorkspaceFileBrowser() {
                         >
                           <td className="w-10 px-3 py-3">
                             {rowSelectable && (
-                              <button
-                                type="button"
-                                role="checkbox"
-                                aria-label={`${folder.name} を選択`}
-                                aria-checked={isSelected}
-                                data-workspace-row-trigger="true"
+                              <WorkspaceSelectionCheckbox
+                                checked={isSelected}
+                                label={`${folder.name} を選択`}
                                 onClick={handleRowSelectionClick}
-                                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition hover:bg-[#f2f2f4]"
-                              >
-                                <span
-                                  className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border transition ${
-                                    isSelected
-                                      ? 'border-[#5e6ad2] bg-[#5e6ad2] text-white'
-                                      : 'border-[#cfcfd4] bg-white text-transparent hover:border-[#9aa4dd]'
-                                  }`}
-                                >
-                                  <Check className="h-3 w-3" />
-                                </span>
-                              </button>
+                              />
                             )}
                           </td>
                           <td className="px-3 py-2">
@@ -3475,25 +3347,11 @@ export function WorkspaceFileBrowser() {
                       >
                         <td className="w-10 px-3 py-3">
                           {rowSelectable && (
-                            <button
-                              type="button"
-                              role="checkbox"
-                              aria-label={`${file.name} を選択`}
-                              aria-checked={isSelected}
-                              data-workspace-row-trigger="true"
+                            <WorkspaceSelectionCheckbox
+                              checked={isSelected}
+                              label={`${file.name} を選択`}
                               onClick={handleRowSelectionClick}
-                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition hover:bg-[#f2f2f4]"
-                            >
-                              <span
-                                className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border transition ${
-                                  isSelected
-                                    ? 'border-[#5e6ad2] bg-[#5e6ad2] text-white'
-                                    : 'border-[#cfcfd4] bg-white text-transparent hover:border-[#9aa4dd]'
-                                }`}
-                              >
-                                <Check className="h-3 w-3" />
-                              </span>
-                            </button>
+                            />
                           )}
                         </td>
                         <td className="px-3 py-2">
