@@ -62,11 +62,12 @@ import {
 } from '@/components/WorkspaceInspectorDrawer';
 import { WorkspaceItemCard } from '@/components/WorkspaceItemCard';
 import { WorkspaceItemRow } from '@/components/WorkspaceItemRow';
-import {
-  ClassificationPickerModal,
-  ShortcutsHelpModal,
-} from '@/components/WorkspaceKeyboardOverlays';
 import { WorkspaceBreadcrumbs } from '@/components/WorkspaceBreadcrumbs';
+import { WorkspaceClipboardBar } from '@/components/WorkspaceClipboardBar';
+import {
+  WorkspaceUtilityOverlays,
+  type ClassificationPickerState,
+} from '@/components/WorkspaceUtilityOverlays';
 import { WorkspaceSelectionBar } from '@/components/WorkspaceSelectionBar';
 import { WorkspaceSelectionCheckbox } from '@/components/WorkspaceSelectionCheckbox';
 import { WorkspaceToolbar } from '@/components/WorkspaceToolbar';
@@ -136,10 +137,6 @@ import type {
   ResourceRole,
   SearchResultItem,
 } from '@/types/files';
-
-type ClassificationPickerState =
-  | { mode: 'single'; file: FileItem }
-  | { mode: 'bulk'; files: FileItem[] };
 
 function toDragWorkspaceItem(
   row: WorkspaceTableRow,
@@ -2919,45 +2916,21 @@ export function WorkspaceFileBrowser() {
         );
       })()}
 
-      {previewTarget && (
-        <SecurePreviewModal
-          file={previewTarget.file}
-          canDownload={previewTarget.canDownload}
-          canNavigatePrev={previewFileIndex > 0}
-          canNavigateNext={
-            previewFileIndex >= 0 &&
-            previewFileIndex < previewableFiles.length - 1
-          }
-          onNavigateFile={handleNavigatePreview}
-          onClose={() => setPreviewTarget(null)}
-        />
-      )}
-
-      {classificationPicker && (
-        <ClassificationPickerModal
-          targetLabel={
-            classificationPicker.mode === 'single'
-              ? classificationPicker.file.name
-              : `${classificationPicker.files.length} 件のファイルを一括変更`
-          }
-          currentClassification={
-            classificationPicker.mode === 'single'
-              ? classificationPicker.file.classification
-              : null
-          }
-          aiSuggestedLabel={
-            classificationPicker.mode === 'single'
-              ? classificationPicker.file.ai_suggested_label
-              : null
-          }
-          onSelect={handleApplyPickedClassification}
-          onClose={() => setClassificationPicker(null)}
-        />
-      )}
-
-      {shortcutsHelpOpen && (
-        <ShortcutsHelpModal onClose={() => setShortcutsHelpOpen(false)} />
-      )}
+      <WorkspaceUtilityOverlays
+        previewTarget={previewTarget}
+        previewCanNavigatePrev={previewFileIndex > 0}
+        previewCanNavigateNext={
+          previewFileIndex >= 0 &&
+          previewFileIndex < previewableFiles.length - 1
+        }
+        classificationPicker={classificationPicker}
+        shortcutsHelpOpen={shortcutsHelpOpen}
+        onNavigatePreview={handleNavigatePreview}
+        onClosePreview={() => setPreviewTarget(null)}
+        onSelectClassification={handleApplyPickedClassification}
+        onCloseClassification={() => setClassificationPicker(null)}
+        onCloseShortcuts={() => setShortcutsHelpOpen(false)}
+      />
 
       {contextMenu && !isTrashView && (() => {
         const targets = resolveTargetRows(contextMenu.row, selectedRows);
@@ -3028,40 +3001,16 @@ export function WorkspaceFileBrowser() {
         />
       )}
 
-      {!isTrashView && clipboardState && clipboardState.items.length > 0 && (
-        <div
-          role="region"
-          aria-label="仮想クリップボード"
-          className="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[#2a2a2e] bg-[#111214]/95 px-3 py-1.5 text-[0.6875rem] text-white shadow-2xl"
-        >
-          <span className="flex items-center gap-1.5 font-medium">
-            {clipboardState.mode === 'cut' ? (
-              <Scissors className="h-3.5 w-3.5 text-[#f1e1bf]" />
-            ) : (
-              <Copy className="h-3.5 w-3.5 text-[#bcc3ea]" />
-            )}
-            <span>
-              {clipboardState.mode === 'cut' ? '切り取り中' : 'コピー中'}:{' '}
-              {clipboardState.items.length} 件
-            </span>
-          </span>
-          <button
-            type="button"
-            onClick={() => handlePasteClipboard()}
-            className="inline-flex h-6 items-center gap-1.5 rounded bg-[#5e6ad2] px-2.5 text-[0.6875rem] font-medium text-white transition hover:bg-[#4f5ac2]"
-          >
-            <ClipboardPaste className="h-3.5 w-3.5" />
-            <span>ここへ貼り付け (⌘V)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => clipboardStore.clear()}
-            className="rounded px-2 py-1 text-[#b4b4bb] transition hover:bg-white/10 hover:text-white"
-          >
-            解除
-          </button>
-        </div>
-      )}
+      {!isTrashView &&
+        clipboardState &&
+        clipboardState.items.length > 0 && (
+          <WorkspaceClipboardBar
+            mode={clipboardState.mode}
+            itemCount={clipboardState.items.length}
+            onPaste={() => handlePasteClipboard()}
+            onClear={() => clipboardStore.clear()}
+          />
+        )}
 
       {activeModal?.kind === 'permissions' && (
         <PermissionsModal
