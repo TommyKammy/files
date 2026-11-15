@@ -40,16 +40,13 @@ import {
 } from '@/components/AppShellRail';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
 import { ClassificationCell } from '@/components/ClassificationCell';
-import { CreateFileRequestModal } from '@/components/CreateFileRequestModal';
 import { FileDropzoneUploader } from '@/components/FileDropzoneUploader';
 import { ModalShell } from '@/components/ModalShell';
 import { MoveCopyTreeModal } from '@/components/MoveCopyTreeModal';
-import { PermissionsModal } from '@/components/PermissionsModal';
 import {
   type PreviewTargetFile,
   SecurePreviewModal,
 } from '@/components/SecurePreviewModal';
-import { SharePopover } from '@/components/SharePopover';
 import { SignInCard } from '@/components/SignInCard';
 import { WorkspaceBackgroundMenu } from '@/components/WorkspaceBackgroundMenu';
 import {
@@ -65,11 +62,16 @@ import { WorkspaceItemRow } from '@/components/WorkspaceItemRow';
 import { WorkspaceBreadcrumbs } from '@/components/WorkspaceBreadcrumbs';
 import { WorkspaceClipboardBar } from '@/components/WorkspaceClipboardBar';
 import {
+  WorkspaceManagementModals,
+  type ActiveModal,
+} from '@/components/WorkspaceManagementModals';
+import {
   WorkspaceUtilityOverlays,
   type ClassificationPickerState,
 } from '@/components/WorkspaceUtilityOverlays';
 import { WorkspaceSelectionBar } from '@/components/WorkspaceSelectionBar';
 import { WorkspaceSelectionCheckbox } from '@/components/WorkspaceSelectionCheckbox';
+import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
 import { WorkspaceToolbar } from '@/components/WorkspaceToolbar';
 import {
   getDropTargetClassName,
@@ -178,14 +180,6 @@ function collectDragItemsForRow(
   }
   return [toDragWorkspaceItem(row, fallbackRole)];
 }
-
-type ActiveModal =
-  | { kind: 'permissions'; targetType: 'folder' | 'file'; targetId: string; targetName: string; effectiveRole: ResourceRole }
-  | { kind: 'share'; targetType: 'folder' | 'file'; targetId: string; targetName: string; classification: ClassificationLabel; canEdit: boolean }
-  | { kind: 'fileRequest'; folderId: string; folderName: string; canEdit: boolean }
-  | { kind: 'createFolder'; parentId: string | null }
-  | { kind: 'renameFolder'; folder: FolderSummary }
-  | { kind: 'renameFile'; file: FileItem };
 
 export function WorkspaceFileBrowser() {
   const router = useRouter();
@@ -3012,158 +3006,24 @@ export function WorkspaceFileBrowser() {
           />
         )}
 
-      {activeModal?.kind === 'permissions' && (
-        <PermissionsModal
-          targetType={activeModal.targetType}
-          targetId={activeModal.targetId}
-          targetName={activeModal.targetName}
-          effectiveRole={activeModal.effectiveRole}
-          onClose={() => setActiveModal(null)}
-        />
-      )}
+      <WorkspaceManagementModals
+        activeModal={activeModal}
+        folderNameInput={folderNameInput}
+        folderClassInput={folderClassInput}
+        modalSubmitting={modalSubmitting}
+        onClose={() => setActiveModal(null)}
+        onSubmit={handleCreateOrRenameSubmit}
+        onFolderNameChange={setFolderNameInput}
+        onFolderClassChange={setFolderClassInput}
+      />
 
-      {activeModal?.kind === 'share' && (
-        <SharePopover
-          targetType={activeModal.targetType}
-          targetId={activeModal.targetId}
-          targetName={activeModal.targetName}
-          classification={activeModal.classification}
-          canEdit={activeModal.canEdit}
-          onClose={() => setActiveModal(null)}
-        />
-      )}
+      <WorkspaceToastStack
+        toasts={snapshot.toasts}
+        canUndo={snapshot.canUndo}
+        onUndo={() => void syncStore.undoLatest()}
+        onDismiss={(id) => syncStore.dismissToast(id)}
+      />
 
-      {activeModal?.kind === 'fileRequest' && (
-        <CreateFileRequestModal
-          folderId={activeModal.folderId}
-          folderName={activeModal.folderName}
-          canEdit={activeModal.canEdit}
-          onClose={() => setActiveModal(null)}
-        />
-      )}
-
-      {(activeModal?.kind === 'createFolder' ||
-        activeModal?.kind === 'renameFolder' ||
-        activeModal?.kind === 'renameFile') && (
-        <ModalShell
-          label={
-            activeModal.kind === 'createFolder'
-              ? '新規フォルダを作成'
-              : activeModal.kind === 'renameFolder'
-                ? 'フォルダ名を変更'
-                : 'ファイル名を変更'
-          }
-          onClose={() => setActiveModal(null)}
-          className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
-        >
-          <form onSubmit={handleCreateOrRenameSubmit} className="space-y-4">
-            <h2 className="text-sm font-semibold text-slate-900">
-              {activeModal.kind === 'createFolder'
-                ? '新規フォルダを作成'
-                : activeModal.kind === 'renameFolder'
-                  ? 'フォルダ名を変更'
-                  : 'ファイル名を変更'}
-            </h2>
-
-            <label className="block text-xs">
-              <span className="font-medium text-slate-700">
-                {activeModal.kind === 'renameFile' ? 'ファイル名' : 'フォルダ名'}
-              </span>
-              <input
-                id="workspace-modal-name"
-                name="name"
-                data-autofocus
-                required
-                autoFocus
-                type="text"
-                value={folderNameInput}
-                onChange={(e) => setFolderNameInput(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-              />
-            </label>
-
-            {activeModal.kind === 'createFolder' && (
-              <label className="block text-xs">
-                <span className="font-medium text-slate-700">機密分類ラベル</span>
-                <select
-                  id="workspace-modal-classification"
-                  name="classification"
-                  value={folderClassInput}
-                  onChange={(e) =>
-                    setFolderClassInput(e.target.value as ClassificationLabel)
-                  }
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900"
-                >
-                  <option value="confidential">Confidential (極秘)</option>
-                  <option value="internal">Internal (社内限定)</option>
-                  <option value="public">Public (社外公開可)</option>
-                  <option value="unset">Unset (未分類)</option>
-                </select>
-              </label>
-            )}
-
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                className="rounded-lg border border-slate-200 px-3.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-              >
-                キャンセル
-              </button>
-              <button
-                type="submit"
-                disabled={modalSubmitting}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                {modalSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                <span>保存</span>
-              </button>
-            </div>
-          </form>
-        </ModalShell>
-      )}
-
-      {snapshot.toasts.length > 0 && (
-        <div
-          aria-live="polite"
-          className="fixed bottom-5 right-5 z-50 flex w-full max-w-sm flex-col gap-2 px-4 sm:px-0"
-        >
-          {snapshot.toasts.map((toast) => (
-            <div
-              key={toast.id}
-              className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-[0.6875rem] shadow-lg ${
-                toast.kind === 'error'
-                  ? 'border-[#5a2a2e] bg-[#2a1416]/95 text-[#fdf0f1]'
-                  : toast.kind === 'warning'
-                    ? 'border-[#5a4a2a] bg-[#2a2314]/95 text-[#fdf6e9]'
-                    : 'border-[#2a2a2e] bg-[#111214]/95 text-[#f9f9fa]'
-              }`}
-            >
-              <span className="min-w-0 flex-1 leading-relaxed">{toast.message}</span>
-              <div className="flex shrink-0 items-center gap-1.5">
-                {toast.canUndo && snapshot.canUndo && (
-                  <button
-                    type="button"
-                    onClick={() => void syncStore.undoLatest()}
-                    className="inline-flex items-center gap-1 rounded-md bg-white/15 px-2.5 py-1 font-medium text-white hover:bg-white/25"
-                  >
-                    <Undo2 className="h-3 w-3" />
-                    <span>{toast.undoLabel ?? '元に戻す'} (⌘Z)</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  aria-label="通知を閉じる"
-                  onClick={() => syncStore.dismissToast(toast.id)}
-                  className="flex h-6 w-6 items-center justify-center rounded text-white/70 hover:bg-white/10 hover:text-white"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
         </div>
         );
       }}
