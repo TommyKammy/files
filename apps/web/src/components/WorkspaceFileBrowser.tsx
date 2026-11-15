@@ -57,6 +57,7 @@ import type { InspectorTarget } from '@/components/WorkspaceInspectorDrawer';
 import { WorkspaceInspectorOverlay } from '@/components/WorkspaceInspectorOverlay';
 import { WorkspaceItemCard } from '@/components/WorkspaceItemCard';
 import { WorkspaceItemRow } from '@/components/WorkspaceItemRow';
+import { WorkspaceActionOverlays } from '@/components/WorkspaceActionOverlays';
 import { WorkspaceBreadcrumbs } from '@/components/WorkspaceBreadcrumbs';
 import { WorkspaceClipboardBar } from '@/components/WorkspaceClipboardBar';
 import {
@@ -2909,74 +2910,42 @@ export function WorkspaceFileBrowser() {
         onCloseShortcuts={() => setShortcutsHelpOpen(false)}
       />
 
-      {contextMenu && !isTrashView && (() => {
-        const targets = resolveTargetRows(contextMenu.row, selectedRows);
-        const clip = clipboardState;
-        const capabilities = buildContextMenuCapabilities({
-          targets,
-          primaryRow: contextMenu.row,
-          currentFolderId: folderId ?? null,
-          folderRole: effectiveRole,
-          isPrivilegedAdmin,
-          isSysAdmin,
-          hasClipboardItems: Boolean(clip && clip.items.length > 0),
-          clipboardHasFiles: Boolean(clip?.items.some((i) => i.type === 'file')),
-          resolveRowRole,
-        });
-        const pasteDestId =
-          !capabilities.isMulti && contextMenu.row?.kind === 'folder'
-            ? contextMenu.row.folder.id
-            : undefined;
-        return (
-          <WorkspaceContextMenu
-            anchor={{ x: contextMenu.x, y: contextMenu.y }}
-            targets={targets}
-            primaryRow={contextMenu.row}
-            capabilities={capabilities}
-            clipboardCount={clip?.items.length ?? 0}
-            returnFocus={contextMenu.trigger}
-            onAction={(action) =>
-              handleContextMenuAction(action, contextMenu.row, targets, pasteDestId)
-            }
-            onClose={() => setContextMenu(null)}
-          />
-        );
-      })()}
-
-      {backgroundMenu && !isTrashView && (
-        <WorkspaceBackgroundMenu
-          anchor={{ x: backgroundMenu.x, y: backgroundMenu.y }}
-          canCreate={canEditCurrentFolder || isPrivilegedAdmin}
-          canUpload={Boolean(currentFolder) && canEditCurrentFolder}
-          canUploadFolder={Boolean(currentFolder) && canEditCurrentFolder}
-          canPaste={Boolean(
-            clipboardState &&
-              clipboardState.items.length > 0 &&
-              (canEditCurrentFolder || isPrivilegedAdmin)
-          )}
-          clipboardCount={clipboardState?.items.length ?? 0}
-          viewMode={viewMode}
-          returnFocus={backgroundMenu.trigger}
-          onAction={handleBackgroundMenuAction}
-          onClose={() => setBackgroundMenu(null)}
-        />
-      )}
-
-      {moveCopyModal && user && (
-        <MoveCopyTreeModal
-          items={moveCopyModal.items}
-          modeHint={moveCopyModal.modeHint}
-          currentFolderId={folderId ?? null}
-          user={user}
-          isSysAdmin={isSysAdmin}
-          syncStore={syncStore}
-          onClose={() => setMoveCopyModal(null)}
-          onSuccess={() => {
-            setSelectedKeys(new Set());
-            setSelectionAnchorKey(null);
-          }}
-        />
-      )}
+      <WorkspaceActionOverlays
+        contextMenu={
+          contextMenu?.row
+            ? {
+                row: contextMenu.row,
+                x: contextMenu.x,
+                y: contextMenu.y,
+                trigger: contextMenu.trigger,
+              }
+            : null
+        }
+        backgroundMenu={backgroundMenu}
+        moveCopyModal={moveCopyModal}
+        isTrashView={isTrashView}
+        selectedRows={selectedRows}
+        folderId={folderId ?? null}
+        effectiveRole={effectiveRole}
+        currentFolder={currentFolder}
+        viewMode={viewMode}
+        canEditCurrentFolder={canEditCurrentFolder}
+        isPrivilegedAdmin={isPrivilegedAdmin}
+        isSysAdmin={isSysAdmin}
+        clipboardState={clipboardState}
+        resolveRowRole={resolveRowRole}
+        user={user}
+        syncStore={syncStore}
+        onContextAction={handleContextMenuAction}
+        onCloseContextMenu={() => setContextMenu(null)}
+        onBackgroundAction={handleBackgroundMenuAction}
+        onCloseBackgroundMenu={() => setBackgroundMenu(null)}
+        onCloseMoveCopy={() => setMoveCopyModal(null)}
+        onMoveCopySuccess={() => {
+          setSelectedKeys(new Set());
+          setSelectionAnchorKey(null);
+        }}
+      />
 
       {!isTrashView &&
         clipboardState &&
