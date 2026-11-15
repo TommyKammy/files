@@ -60,6 +60,7 @@ import {
   type InspectorTarget,
   WorkspaceInspectorDrawer,
 } from '@/components/WorkspaceInspectorDrawer';
+import { WorkspaceItemCard } from '@/components/WorkspaceItemCard';
 import {
   ClassificationPickerModal,
   ShortcutsHelpModal,
@@ -102,6 +103,13 @@ import {
 } from '@/lib/sync-store';
 import { useMarqueeSelection } from '@/lib/use-marquee-selection';
 import { useTableVirtualWindow } from '@/lib/use-virtual-window';
+import {
+  getWorkspaceRowKey,
+  isRowControlTarget,
+  isRowSelectable,
+  type InlineRenameState,
+  type WorkspaceTableRow,
+} from '@/lib/workspace-table-row';
 import { useWorkspaceViewPrefs } from '@/lib/use-workspace-view-prefs';
 import {
   getWorkspaceClipboardStore,
@@ -126,32 +134,9 @@ import type {
   SearchResultItem,
 } from '@/types/files';
 
-type WorkspaceTableRow =
-  | { kind: 'folder'; folder: FolderSummary }
-  | { kind: 'file'; file: FileItem };
-
-type InlineRenameState = {
-  rowKey: string;
-  kind: 'folder' | 'file';
-  id: string;
-  originalName: string;
-  value: string;
-};
-
 type ClassificationPickerState =
   | { mode: 'single'; file: FileItem }
   | { mode: 'bulk'; files: FileItem[] };
-
-function getWorkspaceRowKey(row: WorkspaceTableRow): string {
-  return row.kind === 'folder'
-    ? `folder:${row.folder.id}`
-    : `file:${row.file.id}`;
-}
-
-function isRowSelectable(row: WorkspaceTableRow): boolean {
-  if (row.kind === 'folder') return true;
-  return row.file.upload_state !== 'pending' && !row.file.optimistic;
-}
 
 /**
  * Rows/cards are full click targets (Google Drive parity), but inner controls such as
@@ -189,16 +174,6 @@ function BulkActionButton({
       {icon}
       <span className="hidden lg:inline">{label}</span>
     </button>
-  );
-}
-
-function isRowControlTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  if (target.closest('[data-row-name-trigger="true"]')) return false;
-  return Boolean(
-    target.closest(
-      'button, a, input, select, textarea, [role="menu"], [role="checkbox"], [data-workspace-row-trigger="true"]'
-    )
   );
 }
 
@@ -2259,256 +2234,96 @@ export function WorkspaceFileBrowser() {
       onDropMove={handleDragDropMove}
     >
       {(dragCtx) => {
+        function handleCardCheckboxClick(
+          row: WorkspaceTableRow,
+          rowKey: string,
+          e: React.MouseEvent<HTMLButtonElement>
+        ) {
+          if (!isRowSelectable(row) || isTrashView) return;
+          setFocusedRowKey(rowKey);
+          if (e.shiftKey && selectionAnchorKey) {
+            setSelectedKeys(
+              selectKeyRange(orderedRowKeys, selectionAnchorKey, rowKey)
+            );
+          } else {
+            setSelectedKeys((prev) => toggleKeySelection(prev, rowKey));
+            setSelectionAnchorKey(rowKey);
+          }
+        }
+
+        function handleCardPointerDown(
+          row: WorkspaceTableRow,
+          e: React.PointerEvent<HTMLDivElement>
+        ) {
+          const dragItems = collectDragItemsForRow(
+            row,
+            selectedRows,
+            selectedKeys,
+            isTrashView,
+            effectiveRole
+          );
+          if (dragItems.length > 0) {
+            dragCtx.startPointerDragCandidate(e, dragItems);
+          }
+        }
+
         function renderGridRowCard(row: WorkspaceTableRow, globalIdx: number) {
           const rowKey = getWorkspaceRowKey(row);
-          const isFocused = focusedRowKey === rowKey;
-          const isSelected = selectedKeys.has(rowKey);
-          const rowSelectable = !isTrashView && isRowSelectable(row);
-          const isInlineRenaming = inlineRename?.rowKey === rowKey;
-          const isFolder = row.kind === 'folder';
-          const folder = isFolder ? row.folder : null;
-          const file = !isFolder ? row.file : null;
+          const file = row.kind === 'file' ? row.file : null;
+          const folder = row.kind === 'folder' ? row.folder : null;
           const isPendingUpload = Boolean(
             file && (file.upload_state === 'pending' || file.optimistic)
           );
           const isCut = Boolean(
             clipboardState?.mode === 'cut' &&
-              clipboardStore.isCutPending(row.kind, isFolder ? folder!.id : file!.id)
+              clipboardStore.isCutPending(
+                row.kind,
+                row.kind === 'folder' ? row.folder.id : row.file.id
+              )
           );
           const isDropEligible = Boolean(
             folder && !isTrashView && folder.deleted_at == null
           );
           const dropClass =
             folder && dragCtx.isDragging && isDropEligible
-              ? getDropTargetClassName(
-                  folder.id,
-                  dragCtx.hoveredTarget
-                )
+              ? getDropTargetClassName(folder.id, dragCtx.hoveredTarget)
               : '';
 
-          function handleCardCheckboxClick(e: React.MouseEvent) {
-            e.stopPropagation();
-            if (!rowSelectable) return;
-            setFocusedRowKey(rowKey);
-            if (e.shiftKey && selectionAnchorKey) {
-              setSelectedKeys(
-                selectKeyRange(orderedRowKeys, selectionAnchorKey, rowKey)
-              );
-            } else {
-              setSelectedKeys((prev) => toggleKeySelection(prev, rowKey));
-              setSelectionAnchorKey(rowKey);
-            }
-          }
-
           return (
-            <div
+            <WorkspaceItemCard
               key={rowKey}
-              data-row-index={globalIdx}
-              data-drop-folder-id={isDropEligible && folder ? folder.id : undefined}
-              data-drop-label={isDropEligible && folder ? folder.name : undefined}
-              onContextMenu={(e) => {
-                if (isTrashView || isInlineRenaming || isPendingUpload) return;
-                openRowContextMenu(e, row);
-              }}
-              onPointerDown={(e) => {
-                if (isInlineRenaming || isPendingUpload) return;
-                const dragItems = collectDragItemsForRow(
-                  row,
-                  selectedRows,
-                  selectedKeys,
-                  isTrashView,
-                  effectiveRole
-                );
-                if (dragItems.length > 0) {
-                  dragCtx.startPointerDragCandidate(e, dragItems);
-                }
-              }}
-              onClick={(e) => {
-                if (isInlineRenaming || isRowControlTarget(e.target)) return;
-                selectRowFromPointer(e, rowKey, rowSelectable);
-              }}
-              onDoubleClick={(e) => {
-                if (isTrashView || isInlineRenaming || isPendingUpload) return;
-                if (isRowControlTarget(e.target)) return;
-                openRow(row);
-              }}
-              className={`flex h-[136px] flex-col justify-between rounded-lg border p-3 transition-colors ${
-                dropClass
-                  ? dropClass
-                  : isPendingUpload
-                    ? 'border-blue-200 bg-blue-50/40'
-                    : isSelected
-                      ? 'border-[#c9cfee] bg-[#eef0fb]'
-                      : isFocused
-                        ? 'border-[#bcc3ea] bg-white'
-                        : 'border-[#e7e7ea] bg-white hover:border-[#d7d7dc] hover:bg-[#f6f6f8]'
-              } ${isCut ? 'opacity-50 outline-1 outline-dashed outline-amber-400' : ''}`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  {rowSelectable && (
-                    <WorkspaceSelectionCheckbox
-                      checked={isSelected}
-                      label={`${isFolder ? folder!.name : file!.name} を選択`}
-                      onClick={handleCardCheckboxClick}
-                    />
-                  )}
-                  {isFolder ? (
-                    <Folder className="h-4 w-4 shrink-0 text-[#6b6f76]" />
-                  ) : isPendingUpload ? (
-                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600" />
-                  ) : (
-                    <FileText className="h-4 w-4 shrink-0 text-[#6b6f76]" />
-                  )}
-                  {!isFolder && file && isPendingUpload && (
-                    <span className="rounded-full bg-blue-100 px-1.5 py-0.5 font-mono text-[0.625rem] text-blue-700">
-                      {file.upload_progress ?? 0}%
-                    </span>
-                  )}
-                  {!isFolder && file && !isPendingUpload && file.current_version_num > 1 && (
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.625rem] text-slate-500">
-                      v{file.current_version_num}
-                    </span>
-                  )}
-                </div>
-
-                {isTrashView ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (folder) handleRestoreFolder(folder);
-                      else if (file) handleRestoreFile(file);
-                    }}
-                    className="inline-flex min-h-6 items-center gap-1 rounded border border-slate-200 px-1.5 py-0.5 text-[0.625rem] font-medium text-slate-700 hover:bg-slate-100"
-                  >
-                    <RotateCcw className="h-2.5 w-2.5" />
-                    <span>復元</span>
-                  </button>
-                ) : !isPendingUpload ? (
-                  <button
-                    type="button"
-                    title="その他の操作"
-                    aria-haspopup="menu"
-                    aria-label={`${isFolder ? folder!.name : file!.name} のその他の操作`}
-                    data-row-action-trigger="true"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      openRowContextMenu(e, row);
-                    }}
-                    className="rounded p-1 text-[#a0a0a7] transition hover:bg-[#f0f0f2] hover:text-[#111214]"
-                  >
-                    <MoreHorizontal className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
-              </div>
-
-              <div className="min-w-0">
-                {isInlineRenaming && inlineRename ? (
-                  <input
-                    ref={inlineInputRef}
-                    name="renameValue"
-                    aria-label="名前を変更"
-                    type="text"
-                    value={inlineRename.value}
-                    onChange={(e) =>
-                      setInlineRename((prev) =>
-                        prev ? { ...prev, value: e.target.value } : null
-                      )
-                    }
-                    onKeyDown={(e) => {
-                      if (isImeComposingEvent(e)) return;
-                      if (e.key === 'Escape') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        inlineCommittedRef.current = inlineRename.rowKey;
-                        setInlineRename(null);
-                        return;
-                      }
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        commitInlineRename();
-                      }
-                    }}
-                    onBlur={() => commitInlineRename()}
-                    className="w-full rounded border border-blue-500 bg-white px-2 py-1 text-xs font-medium text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    data-row-name-trigger="true"
-                    data-workspace-row-trigger="true"
-                    aria-haspopup="menu"
-                    aria-expanded={
-                      contextMenu?.row
-                        ? getWorkspaceRowKey(contextMenu.row) === rowKey
-                        : false
-                    }
-                    disabled={isTrashView || isPendingUpload}
-                    title={
-                      isTrashView
-                        ? undefined
-                        : 'クリックで選択、ダブルクリックで開く'
-                    }
-                    onMouseEnter={() => {
-                      if (isTrashView || isPendingUpload) return;
-                      if (folder) prefetcher.scheduleHoverPrefetch(folder.id);
-                      else if (file && isPdfFile(file.name, file.mime_type)) {
-                        prefetcher.warmPdfPreviewRuntime();
-                      }
-                    }}
-                    onMouseLeave={() => {
-                      if (!isTrashView && folder) prefetcher.cancel(folder.id);
-                    }}
-                    onFocus={() => {
-                      setFocusedRowKey(rowKey);
-                      if (!isTrashView && folder) {
-                        prefetcher.scheduleCursorPrefetch(folder.id);
-                      }
-                    }}
-                    onBlur={() => {
-                      if (!isTrashView && folder) prefetcher.cancel(folder.id);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Enter' || isTrashView || isPendingUpload) {
-                        return;
-                      }
-                      e.preventDefault();
-                      openRow(row);
-                    }}
-                    className="w-full text-left text-[0.8125rem] font-semibold text-[#111214] transition hover:text-[#4f5ac2] disabled:cursor-default disabled:hover:text-[#111214]"
-                  >
-                    <span className="line-clamp-2 break-all">
-                      {folder ? folder.name : file!.name}
-                    </span>
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between gap-2 text-[0.6875rem] text-[#6b6f76]">
-                <div className="flex items-center gap-1 min-w-0">
-                  <ClassificationBadge
-                    classification={folder ? folder.classification : file!.classification}
-                    compact
-                  />
-                  {file?.ai_suggested_label && (
-                    <span
-                      title="AI 分類提案あり"
-                      className="inline-flex items-center rounded bg-indigo-50 px-1 py-0.5 text-[0.625rem] font-medium text-indigo-700"
-                    >
-                      <Sparkles className="h-2.5 w-2.5" />
-                    </span>
-                  )}
-                </div>
-                <span className="shrink-0 font-mono text-[0.625rem] text-[#6b6f76]">
-                  {folder
-                    ? formatDateTime(isTrashView ? folder.deleted_at : folder.updated_at)
-                    : formatBytes(file!.size_bytes)}
-                </span>
-              </div>
-            </div>
+              row={row}
+              globalIdx={globalIdx}
+              isFocused={focusedRowKey === rowKey}
+              isSelected={selectedKeys.has(rowKey)}
+              rowSelectable={!isTrashView && isRowSelectable(row)}
+              isTrashView={isTrashView}
+              isInlineRenaming={inlineRename?.rowKey === rowKey}
+              isPendingUpload={isPendingUpload}
+              isCut={isCut}
+              isContextMenuOpen={
+                contextMenu?.row
+                  ? getWorkspaceRowKey(contextMenu.row) === rowKey
+                  : false
+              }
+              dropClass={dropClass}
+              inlineRename={inlineRename}
+              inlineInputRef={inlineInputRef}
+              inlineCommittedRef={inlineCommittedRef}
+              prefetcher={prefetcher}
+              onCheckboxClick={(e) =>
+                handleCardCheckboxClick(row, rowKey, e)
+              }
+              onPointerDown={(e) => handleCardPointerDown(row, e)}
+              onSelectRow={selectRowFromPointer}
+              onOpenRow={openRow}
+              onOpenContextMenu={openRowContextMenu}
+              onRestoreFolder={handleRestoreFolder}
+              onRestoreFile={handleRestoreFile}
+              onSetInlineRename={setInlineRename}
+              onCommitInlineRename={commitInlineRename}
+              onFocusRow={setFocusedRowKey}
+            />
           );
         }
 
