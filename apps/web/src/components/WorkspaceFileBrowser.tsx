@@ -53,10 +53,8 @@ import {
   type ContextMenuActionId,
   WorkspaceContextMenu,
 } from '@/components/WorkspaceContextMenu';
-import {
-  type InspectorTarget,
-  WorkspaceInspectorDrawer,
-} from '@/components/WorkspaceInspectorDrawer';
+import type { InspectorTarget } from '@/components/WorkspaceInspectorDrawer';
+import { WorkspaceInspectorOverlay } from '@/components/WorkspaceInspectorOverlay';
 import { WorkspaceItemCard } from '@/components/WorkspaceItemCard';
 import { WorkspaceItemRow } from '@/components/WorkspaceItemRow';
 import { WorkspaceBreadcrumbs } from '@/components/WorkspaceBreadcrumbs';
@@ -700,6 +698,37 @@ export function WorkspaceFileBrowser() {
     () => rows.filter(isRowSelectable).map(getWorkspaceRowKey),
     [rows]
   );
+
+  function handleOpenInspectorShare(target: InspectorTarget) {
+    const targetIsFolder = target.kind === 'folder';
+    const targetEffectiveRole = targetIsFolder
+      ? target.folder.effectiveRole ?? effectiveRole
+      : effectiveRole;
+    setActiveModal({
+      kind: 'share',
+      targetType: target.kind,
+      targetId: targetIsFolder ? target.folder.id : target.file.id,
+      targetName: targetIsFolder ? target.folder.name : target.file.name,
+      classification: targetIsFolder
+        ? target.folder.classification
+        : target.file.classification,
+      canEdit: hasRoleAtLeast(targetEffectiveRole, 'editor'),
+    });
+  }
+
+  function handleOpenInspectorPermissions(target: InspectorTarget) {
+    const targetIsFolder = target.kind === 'folder';
+    const targetEffectiveRole = targetIsFolder
+      ? target.folder.effectiveRole ?? effectiveRole
+      : effectiveRole;
+    setActiveModal({
+      kind: 'permissions',
+      targetType: target.kind,
+      targetId: targetIsFolder ? target.folder.id : target.file.id,
+      targetName: targetIsFolder ? target.folder.name : target.file.name,
+      effectiveRole: targetEffectiveRole,
+    });
+  }
 
   const previewableFiles = useMemo(
     () => sortedFiles.filter((f) => !f.optimistic && f.upload_state !== 'pending'),
@@ -2842,73 +2871,27 @@ export function WorkspaceFileBrowser() {
 
       {marquee.overlay}
 
-      {!isTrashView && inspectorOpen && inspectorTarget && (() => {
-        const targetRole =
-          inspectorTarget.kind === 'folder'
-            ? inspectorTarget.folder.effectiveRole ?? effectiveRole
-            : effectiveRole;
-        const targetCanEdit =
-          inspectorTarget.kind === 'folder'
-            ? hasRoleAtLeast(targetRole, 'editor')
-            : canEditCurrentFolder;
-        const targetCanDownload =
-          inspectorTarget.kind === 'folder'
-            ? hasRoleAtLeast(targetRole, 'viewer')
-            : canDownloadCurrentFolder;
-        const targetCanManagePerms =
-          inspectorTarget.kind === 'folder'
-            ? hasRoleAtLeast(targetRole, 'co_owner')
-            : canManageCurrentFolderPerms;
-
-        return (
-          <WorkspaceInspectorDrawer
-            target={inspectorTarget}
-            effectiveRole={targetRole}
-            breadcrumbs={breadcrumbs}
-            canEdit={targetCanEdit}
-            canDownload={targetCanDownload}
-            canManagePerms={targetCanManagePerms}
-            isPrivilegedAdmin={isPrivilegedAdmin}
-            syncStore={syncStore}
-            onClose={() => setInspectorOpen(false)}
-            onPreview={openPreviewForFile}
-            onDownload={handleDownloadFile}
-            onOpenClassification={(file) =>
-              setClassificationPicker({ mode: 'single', file })
-            }
-            onOpenShare={(target) => {
-              const targetIsFolder = target.kind === 'folder';
-              const targetEffectiveRole = targetIsFolder
-                ? target.folder.effectiveRole ?? effectiveRole
-                : effectiveRole;
-              setActiveModal({
-                kind: 'share',
-                targetType: target.kind,
-                targetId: targetIsFolder ? target.folder.id : target.file.id,
-                targetName: targetIsFolder ? target.folder.name : target.file.name,
-                classification: targetIsFolder
-                  ? target.folder.classification
-                  : target.file.classification,
-                canEdit: hasRoleAtLeast(targetEffectiveRole, 'editor'),
-              });
-            }}
-            onOpenPermissions={(target) => {
-              const targetIsFolder = target.kind === 'folder';
-              const targetEffectiveRole = targetIsFolder
-                ? target.folder.effectiveRole ?? effectiveRole
-                : effectiveRole;
-              setActiveModal({
-                kind: 'permissions',
-                targetType: target.kind,
-                targetId: targetIsFolder ? target.folder.id : target.file.id,
-                targetName: targetIsFolder ? target.folder.name : target.file.name,
-                effectiveRole: targetEffectiveRole,
-              });
-            }}
-            onApproveAi={handleApproveSingleAi}
-          />
-        );
-      })()}
+      <WorkspaceInspectorOverlay
+        open={inspectorOpen}
+        isTrashView={isTrashView}
+        target={inspectorTarget}
+        breadcrumbs={breadcrumbs}
+        effectiveRole={effectiveRole}
+        canEditCurrentFolder={canEditCurrentFolder}
+        canDownloadCurrentFolder={canDownloadCurrentFolder}
+        canManageCurrentFolderPerms={canManageCurrentFolderPerms}
+        isPrivilegedAdmin={isPrivilegedAdmin}
+        syncStore={syncStore}
+        onClose={() => setInspectorOpen(false)}
+        onPreview={openPreviewForFile}
+        onDownload={handleDownloadFile}
+        onOpenClassification={(file) =>
+          setClassificationPicker({ mode: 'single', file })
+        }
+        onOpenShare={handleOpenInspectorShare}
+        onOpenPermissions={handleOpenInspectorPermissions}
+        onApproveAi={handleApproveSingleAi}
+      />
 
       <WorkspaceUtilityOverlays
         previewTarget={previewTarget}
