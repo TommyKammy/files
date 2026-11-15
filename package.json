@@ -1,0 +1,19 @@
+{
+  "name": "files-monorepo",
+  "private": true,
+  "packageManager": "pnpm@10.34.9",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:migrate:local": "pnpm --filter @files/api exec wrangler d1 migrations apply files-local --local",
+    "db:seed:local": "pnpm --filter @files/api exec wrangler d1 execute files-local --local --file scripts/seed-local.sql",
+    "db:seed:1m": "node scripts/seed-d1-1m.mjs",
+    "db:bench": "node scripts/run-d1-benchmark.mjs"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.11",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,5 @@
+# ローカル開発専用の環境変数雛形
+# コピーして apps/api/.dev.vars を作成してください（.dev.vars は Git 追跡対象外）
+LOCAL_PROXY_SECRET=dev-only-random-secret-change-me-32chars
+OIDC_STATE_COOKIE_KEY=dev-only-32byte-hex-or-base64-key-change-me
+ALLOW_DEV_AUTH=true

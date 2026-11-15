@@ -1,0 +1,145 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "files-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "vars": {
+    "ENVIRONMENT": "local",
+    "APP_ORIGIN": "http://localhost:3000",
+    "DEFAULT_TENANT_ID": "tenant-default",
+    "STORAGE_MODE": "local_proxy",
+    "LLM_PROVIDER": "local_openai",
+    "LOCAL_LLM_BASE_URL": "http://127.0.0.1:11434/v1",
+    "LOCAL_LLM_MODEL": "qwen2.5:14b-instruct",
+    "WORKERS_AI_MODEL": "@cf/meta/llama-3.1-8b-instruct-fast",
+    "MIN_SUGGESTION_CONFIDENCE": "0.70"
+  },
+
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "files-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "files-local"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SYNC_HUB",
+        "class_name": "TenantSyncHub"
+      }
+    ]
+  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["TenantSyncHub"]
+    }
+  ],
+
+  "queues": {
+    "producers": [
+      {
+        "binding": "JOBS_QUEUE",
+        "queue": "files-jobs"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "files-jobs",
+        // Workers Free 枠の CPU 10ms 上限に収めるため検証時は 2 に抑制（Paid プランは 10 へ引き上げ可）
+        "max_batch_size": 2,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "files-jobs-dlq"
+      }
+    ]
+  },
+
+  "env": {
+    "staging": {
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "APP_ORIGIN": "https://files.example.com",
+        "DEFAULT_TENANT_ID": "tenant-example",
+        "STORAGE_MODE": "s3_presigned",
+        "LLM_PROVIDER": "workers_ai",
+        "WORKERS_AI_MODEL": "@cf/meta/llama-3.1-8b-instruct-fast",
+        "MIN_SUGGESTION_CONFIDENCE": "0.70"
+      },
+      "ai": {
+        "binding": "AI"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "files-staging",
+          "database_id": "<YOUR_STAGING_D1_ID>"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "BUCKET",
+          "bucket_name": "files-staging"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "SYNC_HUB",
+            "class_name": "TenantSyncHub"
+          }
+        ]
+      },
+      // Worker Routes direct /api, /auth, /scim traffic straight to files-api
+      // avoiding double CPU consumption through OpenNext files-web worker
+      "routes": [
+        {
+          "pattern": "files.example.com/api/*",
+          "zone_name": "example.com"
+        },
+        {
+          "pattern": "files.example.com/auth/*",
+          "zone_name": "example.com"
+        },
+        {
+          "pattern": "files.example.com/scim/*",
+          "zone_name": "example.com"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "JOBS_QUEUE",
+            "queue": "files-jobs-staging"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "files-jobs-staging",
+            "max_batch_size": 2,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "files-jobs-staging-dlq"
+          }
+        ]
+      }
+    }
+  }
+}
