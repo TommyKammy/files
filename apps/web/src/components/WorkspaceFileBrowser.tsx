@@ -66,6 +66,7 @@ import {
   ShortcutsHelpModal,
 } from '@/components/WorkspaceKeyboardOverlays';
 import { WorkspaceBreadcrumbs } from '@/components/WorkspaceBreadcrumbs';
+import { WorkspaceSelectionBar } from '@/components/WorkspaceSelectionBar';
 import { WorkspaceSelectionCheckbox } from '@/components/WorkspaceSelectionCheckbox';
 import {
   getDropTargetClassName,
@@ -137,45 +138,6 @@ import type {
 type ClassificationPickerState =
   | { mode: 'single'; file: FileItem }
   | { mode: 'bulk'; files: FileItem[] };
-
-/**
- * Rows/cards are full click targets (Google Drive parity), but inner controls such as
- * action icons, checkboxes, menus, and rename inputs must not trigger row selection.
- * The row name button is deliberately allowed so clicking the name selects the row.
- */
-function BulkActionButton({
-  label,
-  shortcut,
-  icon,
-  onClick,
-  variant = 'default',
-}: {
-  label: string;
-  shortcut?: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-  variant?: 'default' | 'primary' | 'danger';
-}) {
-  const title = shortcut ? `${label} (${shortcut})` : label;
-  return (
-    <button
-      type="button"
-      title={title}
-      aria-label={label}
-      onClick={onClick}
-      className={`inline-flex h-6 shrink-0 items-center gap-1 rounded border px-2 text-[0.6875rem] font-medium transition ${
-        variant === 'primary'
-          ? 'border-[#5e6ad2] bg-[#5e6ad2] text-white hover:bg-[#4f5ac2]'
-          : variant === 'danger'
-            ? 'border-[#f3d3d5] bg-white text-[#d9343f] hover:bg-[#fdf0f1]'
-            : 'border-[#dfe2f5] bg-white text-[#3c3f46] hover:bg-[#f2f2f4]'
-      }`}
-    >
-      {icon}
-      <span className="hidden lg:inline">{label}</span>
-    </button>
-  );
-}
 
 function toDragWorkspaceItem(
   row: WorkspaceTableRow,
@@ -2547,72 +2509,19 @@ export function WorkspaceFileBrowser() {
             </div>
 
             {!isTrashView && selectedRows.length > 0 && (
-              <div
-                role="toolbar"
-                aria-label="一括操作"
-                className="absolute inset-0 z-20 flex items-center gap-1 overflow-x-auto whitespace-nowrap rounded-md border border-[#dfe2f5] bg-[#eef0fb]/95 px-2 py-1 text-[0.6875rem] text-[#3c3f46]"
-              >
-                <span className="shrink-0 font-semibold">
-                  {selectedRows.length} 件選択中
-                </span>
-                <BulkActionButton
-                  label="コピー"
-                  shortcut="⌘C"
-                  icon={<Copy className="h-3.5 w-3.5 text-slate-500" />}
-                  onClick={() => handleCopyTargets(selectedRows)}
-                />
-                <BulkActionButton
-                  label="切り取り"
-                  shortcut="⌘X"
-                  icon={<Scissors className="h-3.5 w-3.5 text-slate-500" />}
-                  onClick={() => handleCutTargets(selectedRows)}
-                />
-                <BulkActionButton
-                  label="複製"
-                  shortcut="⌘D"
-                  icon={<Clipboard className="h-3.5 w-3.5 text-slate-500" />}
-                  onClick={() => handleDuplicateTargets(selectedRows)}
-                />
-                <BulkActionButton
-                  label="移動 / コピー"
-                  shortcut="m"
-                  icon={<FolderInput className="h-3.5 w-3.5 text-blue-600" />}
-                  onClick={() => handleOpenMoveCopyModal(selectedRows, 'move')}
-                />
-                {selectedRows.some(
-                  (row) => row.kind === 'file' && row.file.ai_suggested_label != null
-                ) &&
-                  (canEditCurrentFolder || isPrivilegedAdmin) && (
-                    <BulkActionButton
-                      label="AI提案を一括承認"
-                      icon={<Sparkles className="h-3.5 w-3.5" />}
-                      variant="primary"
-                      onClick={handleBulkApproveAi}
-                    />
-                  )}
-                {selectedRows.some((row) => row.kind === 'file') &&
-                  (canEditCurrentFolder || isPrivilegedAdmin) && (
-                    <BulkActionButton
-                      label="機密変更"
-                      shortcut="c"
-                      icon={<Tag className="h-3.5 w-3.5 text-slate-500" />}
-                      onClick={openClassificationPickerFromTarget}
-                    />
-                  )}
-                <BulkActionButton
-                  label="ゴミ箱"
-                  variant="danger"
-                  icon={<Trash2 className="h-3.5 w-3.5" />}
-                  onClick={trashSelectedOrFocused}
-                />
-                <button
-                  type="button"
-                  onClick={() => setSelectedKeys(new Set())}
-                  className="shrink-0 rounded-lg px-2 py-1 text-slate-700 hover:bg-indigo-100 hover:text-slate-900"
-                >
-                  解除
-                </button>
-              </div>
+              <WorkspaceSelectionBar
+                selectedRows={selectedRows}
+                canEditCurrentFolder={canEditCurrentFolder}
+                isPrivilegedAdmin={isPrivilegedAdmin}
+                onCopy={() => handleCopyTargets(selectedRows)}
+                onCut={() => handleCutTargets(selectedRows)}
+                onDuplicate={() => handleDuplicateTargets(selectedRows)}
+                onMoveCopy={() => handleOpenMoveCopyModal(selectedRows, 'move')}
+                onBulkApproveAi={handleBulkApproveAi}
+                onClassify={openClassificationPickerFromTarget}
+                onTrash={trashSelectedOrFocused}
+                onClear={() => setSelectedKeys(new Set())}
+              />
             )}
           </div>
         </header>
