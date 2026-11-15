@@ -108,6 +108,7 @@ import {
 } from '@/lib/sync-store';
 import { useMarqueeSelection } from '@/lib/use-marquee-selection';
 import { useTableVirtualWindow } from '@/lib/use-virtual-window';
+import { useWorkspaceSelection } from '@/lib/use-workspace-selection';
 import {
   getWorkspaceRowKey,
   isRowControlTarget,
@@ -628,6 +629,25 @@ export function WorkspaceFileBrowser() {
     [sortedFolders, sortedFiles]
   );
 
+  const {
+    orderedRowKeys,
+    focusedRowIndex,
+    focusedRow,
+    selectedRows,
+    selectableRowKeys,
+    selectRowFromPointer,
+    selectRowCheckbox,
+  } = useWorkspaceSelection({
+    rows,
+    isTrashView,
+    focusedRowKey,
+    setFocusedRowKey,
+    selectedKeys,
+    setSelectedKeys,
+    selectionAnchorKey,
+    setSelectionAnchorKey,
+  });
+
   const GRID_COLUMNS = 4;
   const gridRows = useMemo(
     () => chunkItemsIntoGridRows(rows, GRID_COLUMNS),
@@ -666,24 +686,6 @@ export function WorkspaceFileBrowser() {
     [viewMode, virtualWindow]
   );
 
-  const orderedRowKeys = useMemo(() => rows.map(getWorkspaceRowKey), [rows]);
-
-  const focusedRowIndex = useMemo(() => {
-    if (!focusedRowKey) return -1;
-    return orderedRowKeys.indexOf(focusedRowKey);
-  }, [orderedRowKeys, focusedRowKey]);
-
-  const focusedRow =
-    focusedRowIndex >= 0 ? rows[focusedRowIndex] ?? null : null;
-
-  const selectedRows = useMemo(
-    () =>
-      rows.filter(
-        (row) => isRowSelectable(row) && selectedKeys.has(getWorkspaceRowKey(row))
-      ),
-    [rows, selectedKeys]
-  );
-
   const inspectorTarget = useMemo<InspectorTarget | null>(() => {
     if (isTrashView) return null;
     const candidate = focusedRow ?? selectedRows[0] ?? null;
@@ -694,11 +696,6 @@ export function WorkspaceFileBrowser() {
     }
     return currentFolder ? { kind: 'folder', folder: currentFolder } : null;
   }, [isTrashView, focusedRow, selectedRows, currentFolder]);
-
-  const selectableRowKeys = useMemo(
-    () => rows.filter(isRowSelectable).map(getWorkspaceRowKey),
-    [rows]
-  );
 
   function handleOpenInspectorShare(target: InspectorTarget) {
     const targetIsFolder = target.kind === 'folder';
@@ -793,33 +790,6 @@ export function WorkspaceFileBrowser() {
     openedPreviewParamRef.current = previewFileId;
     openPreviewForFile(file);
   }, [previewFileId, isTrashView, files, openPreviewForFile]);
-
-  /**
-   * Google Drive-compatible pointer selection:
-   * - plain click: exclusive selection
-   * - ⌘/Ctrl+click: toggle
-   * - Shift+click: range from the anchor
-   */
-  const selectRowFromPointer = useCallback(
-    (
-      event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean },
-      rowKey: string,
-      selectable: boolean
-    ) => {
-      if (!selectable) return;
-      setFocusedRowKey(rowKey);
-      const resolved = resolvePointerSelection({
-        orderedKeys: orderedRowKeys,
-        selectedKeys,
-        anchorKey: selectionAnchorKey,
-        rowKey,
-        modifiers: event,
-      });
-      setSelectedKeys(resolved.selectedKeys);
-      setSelectionAnchorKey(resolved.anchorKey);
-    },
-    [orderedRowKeys, selectedKeys, selectionAnchorKey]
-  );
 
   /**
    * Google Drive-compatible right-click normalization: right-clicking outside the
@@ -1880,6 +1850,7 @@ export function WorkspaceFileBrowser() {
     rows,
     focusedRowIndex,
     orderedRowKeys,
+    focusedRowIndex,
     focusedRow,
     selectedRows,
     virtualWindow,
@@ -2224,16 +2195,7 @@ export function WorkspaceFileBrowser() {
           rowKey: string,
           e: React.MouseEvent<HTMLButtonElement>
         ) {
-          if (!isRowSelectable(row) || isTrashView) return;
-          setFocusedRowKey(rowKey);
-          if (e.shiftKey && selectionAnchorKey) {
-            setSelectedKeys(
-              selectKeyRange(orderedRowKeys, selectionAnchorKey, rowKey)
-            );
-          } else {
-            setSelectedKeys((prev) => toggleKeySelection(prev, rowKey));
-            setSelectionAnchorKey(rowKey);
-          }
+          selectRowCheckbox(e, row, rowKey);
         }
 
         function handleCardPointerDown(
