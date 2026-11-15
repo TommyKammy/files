@@ -11,8 +11,6 @@ import {
   ClipboardPaste,
   Copy,
   Download,
-  Edit3,
-  Eye,
   FileText,
   Folder,
   FolderInput,
@@ -24,6 +22,7 @@ import {
   Link2,
   List,
   Loader2,
+  MoreHorizontal,
   RotateCcw,
   Scissors,
   Shield,
@@ -52,6 +51,7 @@ import {
 } from '@/components/SecurePreviewModal';
 import { SharePopover } from '@/components/SharePopover';
 import { SignInCard } from '@/components/SignInCard';
+import { WorkspaceBackgroundMenu } from '@/components/WorkspaceBackgroundMenu';
 import {
   type ContextMenuActionId,
   WorkspaceContextMenu,
@@ -98,6 +98,7 @@ import {
   getWorkspaceSyncStore,
   useWorkspaceDirectory,
 } from '@/lib/sync-store';
+import { useMarqueeSelection } from '@/lib/use-marquee-selection';
 import { useTableVirtualWindow } from '@/lib/use-virtual-window';
 import {
   getWorkspaceClipboardStore,
@@ -105,6 +106,8 @@ import {
 } from '@/lib/workspace-clipboard';
 import {
   buildContextMenuCapabilities,
+  resolveContextSelection,
+  resolvePointerSelection,
   resolveTargetRows,
 } from '@/lib/workspace-actions';
 import {
@@ -151,6 +154,55 @@ function getWorkspaceRowKey(row: WorkspaceTableRow): string {
 function isRowSelectable(row: WorkspaceTableRow): boolean {
   if (row.kind === 'folder') return true;
   return row.file.upload_state !== 'pending' && !row.file.optimistic;
+}
+
+/**
+ * Rows/cards are full click targets (Google Drive parity), but inner controls such as
+ * action icons, checkboxes, menus, and rename inputs must not trigger row selection.
+ * The row name button is deliberately allowed so clicking the name selects the row.
+ */
+function BulkActionButton({
+  label,
+  shortcut,
+  icon,
+  onClick,
+  variant = 'default',
+}: {
+  label: string;
+  shortcut?: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  variant?: 'default' | 'primary' | 'danger';
+}) {
+  const title = shortcut ? `${label} (${shortcut})` : label;
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={label}
+      onClick={onClick}
+      className={`inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 font-medium transition ${
+        variant === 'primary'
+          ? 'border-indigo-300 bg-indigo-600 text-white hover:bg-indigo-700'
+          : variant === 'danger'
+            ? 'border-red-200 bg-white text-red-600 hover:bg-red-50'
+            : 'border-indigo-200 bg-white text-slate-700 hover:bg-slate-50'
+      }`}
+    >
+      {icon}
+      <span className="hidden 2xl:inline">{label}</span>
+    </button>
+  );
+}
+
+function isRowControlTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target.closest('[data-row-name-trigger="true"]')) return false;
+  return Boolean(
+    target.closest(
+      'button, a, input, select, textarea, [role="menu"], [role="checkbox"], [data-workspace-row-trigger="true"]'
+    )
+  );
 }
 
 function toDragWorkspaceItem(
@@ -206,6 +258,7 @@ export function WorkspaceFileBrowser() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const folderId = searchParams.get('folderId');
+  const previewFileId = searchParams.get('preview');
   const isTrashView = searchParams.get('view') === 'trash';
 
   const syncStore = getWorkspaceSyncStore();
@@ -274,6 +327,8 @@ export function WorkspaceFileBrowser() {
     setSelectionAnchorKey(null);
     setInlineRename(null);
     setClassificationPicker(null);
+    setContextMenu(null);
+    setBackgroundMenu(null);
   }, [folderId, isTrashView]);
 
   useEffect(() => {
@@ -370,6 +425,13 @@ export function WorkspaceFileBrowser() {
     y: number;
     row: WorkspaceTableRow | null;
   } | null>(null);
+  const [backgroundMenu, setBackgroundMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const backgroundFileInputRef = useRef<HTMLInputElement>(null);
+  const backgroundFolderInputRef = useRef<HTMLInputElement>(null);
+  const marqueeSurfaceRef = useRef<HTMLDivElement>(null);
   const [moveCopyModal, setMoveCopyModal] = useState<{
     items: DragWorkspaceItem[];
     modeHint: 'move' | 'copy';
@@ -385,6 +447,7 @@ export function WorkspaceFileBrowser() {
   );
   const lastOsPasteAtRef = useRef(0);
   const lastVirtualPasteAtRef = useRef(0);
+  const openedPreviewParamRef = useRef<string | null>(null);
 
   useEffect(() => {
     clipboardStore.setScope(
@@ -410,6 +473,7 @@ export function WorkspaceFileBrowser() {
         clipboardStore.purge();
         setInspectorOpen(false);
         setContextMenu(null);
+        setBackgroundMenu(null);
         setMoveCopyModal(null);
         setPreviewTarget(null);
         setActiveModal(null);
@@ -539,31 +603,6 @@ export function WorkspaceFileBrowser() {
     const res = syncStore.optimisticToggleFolderPin(folder);
     if (!res.ok) {
       setError(res.error ?? 'ピン留めの変更に失敗しました');
-    }
-  }
-
-  function handleDeleteFolder(folder: FolderSummary) {
-    setError(null);
-    const res = syncStore.optimisticSoftDeleteFolder(folder);
-    if (!res.ok) {
-      setError(res.error ?? 'フォルダの削除に失敗しました');
-      return;
-    }
-    if (currentFolder?.id === folder.id) {
-      router.push(
-        folder.parent_id
-          ? `/workspace?folderId=${encodeURIComponent(folder.parent_id)}`
-          : '/workspace'
-      );
-    }
-  }
-
-  function handleDeleteFile(file: FileItem) {
-    setError(null);
-    if (isTrashView) return;
-    const res = syncStore.optimisticSoftDeleteFile(file, folderId, effectiveRole);
-    if (!res.ok) {
-      setError(res.error ?? 'ファイルの削除に失敗しました');
     }
   }
 
@@ -809,6 +848,83 @@ export function WorkspaceFileBrowser() {
     },
     [canDownloadCurrentFolder, isTrashView]
   );
+
+  const openRow = useCallback(
+    (row: WorkspaceTableRow) => {
+      if (isTrashView) return;
+      if (row.kind === 'folder') {
+        router.push(`/workspace?folderId=${encodeURIComponent(row.folder.id)}`);
+        return;
+      }
+      openPreviewForFile(row.file);
+    },
+    [isTrashView, router, openPreviewForFile]
+  );
+
+  // Deep link: /workspace?folderId=...&preview=<fileId> opens the preview once.
+  useEffect(() => {
+    if (!previewFileId || isTrashView) return;
+    if (openedPreviewParamRef.current === previewFileId) return;
+    const file = files.find((candidate) => candidate.id === previewFileId);
+    if (!file) return;
+    openedPreviewParamRef.current = previewFileId;
+    openPreviewForFile(file);
+  }, [previewFileId, isTrashView, files, openPreviewForFile]);
+
+  /**
+   * Google Drive-compatible pointer selection:
+   * - plain click: exclusive selection
+   * - ⌘/Ctrl+click: toggle
+   * - Shift+click: range from the anchor
+   */
+  const selectRowFromPointer = useCallback(
+    (
+      event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean },
+      rowKey: string,
+      selectable: boolean
+    ) => {
+      if (!selectable) return;
+      setFocusedRowKey(rowKey);
+      const resolved = resolvePointerSelection({
+        orderedKeys: orderedRowKeys,
+        selectedKeys,
+        anchorKey: selectionAnchorKey,
+        rowKey,
+        modifiers: event,
+      });
+      setSelectedKeys(resolved.selectedKeys);
+      setSelectionAnchorKey(resolved.anchorKey);
+    },
+    [orderedRowKeys, selectedKeys, selectionAnchorKey]
+  );
+
+  /**
+   * Google Drive-compatible right-click normalization: right-clicking outside the
+   * current selection selects that row first so the menu target and the visible
+   * selection never disagree.
+   */
+  const openRowContextMenu = useCallback(
+    (event: React.MouseEvent, row: WorkspaceTableRow) => {
+      if (isTrashView) return;
+      event.preventDefault();
+      const rowKey = getWorkspaceRowKey(row);
+      setFocusedRowKey(rowKey);
+      const resolved = resolveContextSelection(selectedKeys, rowKey);
+      if (resolved.changed) {
+        setSelectedKeys(resolved.selectedKeys);
+        setSelectionAnchorKey(resolved.anchorKey);
+      }
+      setBackgroundMenu(null);
+      setContextMenu({ x: event.clientX, y: event.clientY, row });
+    },
+    [isTrashView, selectedKeys]
+  );
+
+  const clearSelection = useCallback(() => {
+    setSelectedKeys(new Set());
+    setSelectionAnchorKey(null);
+    setFocusedRowKey(null);
+  }, []);
 
   const handleNavigatePreview = useCallback(
     (direction: -1 | 1) => {
@@ -1338,6 +1454,129 @@ export function WorkspaceFileBrowser() {
     [isTrashView, getShortcutTargets, syncStore, effectiveRole]
   );
 
+  const openCreateFolderModal = useCallback(() => {
+    setFolderNameInput('');
+    setFolderClassInput(
+      currentFolder?.classification === 'confidential'
+        ? 'confidential'
+        : 'internal'
+    );
+    setActiveModal({ kind: 'createFolder', parentId: folderId ?? null });
+  }, [currentFolder?.classification, folderId]);
+
+  const enqueueBackgroundUpload = useCallback(
+    (files: FileList | null, source: 'files' | 'folder') => {
+      if (!files || files.length === 0) return;
+      if (!currentFolder || !canEditCurrentFolder || !pasteEnqueueFilesRef.current) {
+        syncStore.pushToast({
+          kind: 'warning',
+          message: 'アップロードは編集可能なフォルダ内で行えます',
+        });
+        return;
+      }
+      pasteEnqueueFilesRef.current(files);
+      if (source === 'folder') {
+        syncStore.pushToast({
+          kind: 'info',
+          message:
+            'フォルダ内のファイルを現在のフォルダへ追加します（階層は保持されません）',
+        });
+      }
+    },
+    [currentFolder, canEditCurrentFolder, syncStore]
+  );
+
+  const handleBackgroundMenuAction = useCallback(
+    (action: string) => {
+      switch (action) {
+        case 'newFolder':
+          openCreateFolderModal();
+          break;
+        case 'uploadFiles':
+          backgroundFileInputRef.current?.click();
+          break;
+        case 'uploadFolder':
+          backgroundFolderInputRef.current?.click();
+          break;
+        case 'paste':
+          handlePasteClipboard(folderId ?? null);
+          break;
+        case 'selectAll':
+          setSelectedKeys(new Set(selectableRowKeys));
+          setSelectionAnchorKey(selectableRowKeys[0] ?? null);
+          break;
+        case 'refresh':
+          void loadActiveView({ force: true });
+          break;
+        case 'toggleView':
+          handleToggleViewMode();
+          break;
+      }
+    },
+    [
+      openCreateFolderModal,
+      handlePasteClipboard,
+      folderId,
+      selectableRowKeys,
+      loadActiveView,
+      handleToggleViewMode,
+    ]
+  );
+
+  const handleBackgroundContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      if (isTrashView) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          '[data-row-index], thead, th, button, a, input, select, textarea, [role="menu"], [role="checkbox"], [data-marquee-ignore="true"]'
+        )
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setContextMenu(null);
+      setBackgroundMenu({ x: event.clientX, y: event.clientY });
+    },
+    [isTrashView]
+  );
+
+  const handleBackgroundEmptyClick = useCallback(
+    (event: React.MouseEvent) => {
+      if (isTrashView) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          '[data-row-index], thead, th, button, a, input, select, textarea, [role="menu"], [data-marquee-ignore="true"]'
+        )
+      ) {
+        return;
+      }
+      clearSelection();
+    },
+    [isTrashView, clearSelection]
+  );
+
+  useEffect(() => {
+    const input = backgroundFolderInputRef.current;
+    if (!input) return;
+    input.setAttribute('webkitdirectory', '');
+    input.setAttribute('directory', '');
+  }, []);
+
+  const marquee = useMarqueeSelection({
+    containerRef: virtualWindow.containerRef,
+    surfaceRef: marqueeSurfaceRef,
+    orderedRowKeys,
+    selectedKeys,
+    setSelectedKeys,
+    setSelectionAnchorKey,
+    enabled: !isTrashView && rows.length > 0 && Boolean(user),
+    onBackgroundClick: clearSelection,
+  });
+
   // OS Paste upload (screenshots / copied local files) + virtual clipboard Cmd+V resolution
   useEffect(() => {
     if (!authChecked || !user || isTrashView) return;
@@ -1475,6 +1714,12 @@ export function WorkspaceFileBrowser() {
         if (!targetRow) return;
         e.preventDefault();
         const rowKey = getWorkspaceRowKey(targetRow);
+        setFocusedRowKey(rowKey);
+        const resolved = resolveContextSelection(selectedKeys, rowKey);
+        if (resolved.changed) {
+          setSelectedKeys(resolved.selectedKeys);
+          setSelectionAnchorKey(resolved.anchorKey);
+        }
         const targetIdx = orderedRowKeys.indexOf(rowKey);
         const tableContainer = virtualWindow.containerRef.current;
         const rowEl =
@@ -1545,6 +1790,10 @@ export function WorkspaceFileBrowser() {
             setSelectionAnchorKey(anchor);
           }
           setSelectedKeys(selectKeyRange(orderedRowKeys, anchor, nextKey));
+        } else if (!isTrashView) {
+          // Google Drive parity: a bare arrow moves focus and selection together.
+          setSelectedKeys(new Set([nextKey]));
+          setSelectionAnchorKey(nextKey);
         }
         setFocusedRowKey(nextKey);
         scrollLinearRowIntoView(nextIdx);
@@ -1681,7 +1930,7 @@ export function WorkspaceFileBrowser() {
     isTrashView,
     syncStore,
     selectableRowKeys,
-    selectedKeys.size,
+    selectedKeys,
     inspectorOpen,
     selectionAnchorKey,
     focusedRowKey,
@@ -1720,12 +1969,52 @@ export function WorkspaceFileBrowser() {
       switch (action) {
         case 'open':
           if (!primary) return;
-          if (primary.kind === 'folder') {
-            router.push(`/workspace?folderId=${encodeURIComponent(primary.folder.id)}`);
-          } else {
-            openPreviewForFile(primary.file);
+          openRow(primary);
+          break;
+        case 'openInNewTab':
+          if (primary?.kind === 'folder') {
+            window.open(
+              `/workspace?folderId=${encodeURIComponent(primary.folder.id)}`,
+              '_blank',
+              'noopener,noreferrer'
+            );
+          } else if (primary?.kind === 'file') {
+            const parentQuery = primary.file.folder_id
+              ? `folderId=${encodeURIComponent(primary.file.folder_id)}&`
+              : '';
+            window.open(
+              `/workspace?${parentQuery}preview=${encodeURIComponent(primary.file.id)}`,
+              '_blank',
+              'noopener,noreferrer'
+            );
           }
           break;
+        case 'copyLink': {
+          if (!primary) return;
+          const fileParentQuery =
+            primary.kind === 'file' && primary.file.folder_id
+              ? `folderId=${encodeURIComponent(primary.file.folder_id)}&`
+              : '';
+          const url =
+            primary.kind === 'folder'
+              ? `${window.location.origin}/workspace?folderId=${encodeURIComponent(primary.folder.id)}`
+              : `${window.location.origin}/workspace?${fileParentQuery}preview=${encodeURIComponent(primary.file.id)}`;
+          void navigator.clipboard
+            .writeText(url)
+            .then(() =>
+              syncStore.pushToast({
+                kind: 'info',
+                message: '内部リンクをコピーしました',
+              })
+            )
+            .catch(() =>
+              syncStore.pushToast({
+                kind: 'error',
+                message: 'リンクをコピーできませんでした',
+              })
+            );
+          break;
+        }
         case 'download':
           if (primary?.kind === 'file') {
             handleDownloadFile(primary.file.id);
@@ -1783,6 +2072,18 @@ export function WorkspaceFileBrowser() {
             handleTogglePin(primary.folder);
           }
           break;
+        case 'permissions':
+          if (primary) {
+            setActiveModal({
+              kind: 'permissions',
+              targetType: primary.kind,
+              targetId: primary.kind === 'folder' ? primary.folder.id : primary.file.id,
+              targetName:
+                primary.kind === 'folder' ? primary.folder.name : primary.file.name,
+              effectiveRole: resolveRowRole(primary),
+            });
+          }
+          break;
         case 'inspector':
           if (primary) {
             setFocusedRowKey(getWorkspaceRowKey(primary));
@@ -1806,6 +2107,7 @@ export function WorkspaceFileBrowser() {
     },
     [
       router,
+      openRow,
       openPreviewForFile,
       handleDownloadFile,
       orderedRowKeys,
@@ -1817,6 +2119,7 @@ export function WorkspaceFileBrowser() {
       handleOpenMoveCopyModal,
       canEditRow,
       handleTogglePin,
+      resolveRowRole,
       syncStore,
       folderId,
       effectiveRole,
@@ -2024,11 +2327,10 @@ export function WorkspaceFileBrowser() {
               data-row-index={globalIdx}
               data-drop-folder-id={isDropEligible && folder ? folder.id : undefined}
               data-drop-label={isDropEligible && folder ? folder.name : undefined}
+              aria-selected={isSelected}
               onContextMenu={(e) => {
                 if (isTrashView || isInlineRenaming || isPendingUpload) return;
-                e.preventDefault();
-                setFocusedRowKey(rowKey);
-                setContextMenu({ x: e.clientX, y: e.clientY, row });
+                openRowContextMenu(e, row);
               }}
               onPointerDown={(e) => {
                 if (isInlineRenaming || isPendingUpload) return;
@@ -2044,20 +2346,13 @@ export function WorkspaceFileBrowser() {
                 }
               }}
               onClick={(e) => {
-                if (isInlineRenaming) return;
-                setFocusedRowKey(rowKey);
-                if (e.shiftKey && rowSelectable) {
-                  setSelectedKeys(
-                    selectKeyRange(
-                      orderedRowKeys,
-                      selectionAnchorKey ?? rowKey,
-                      rowKey
-                    )
-                  );
-                  if (!selectionAnchorKey) {
-                    setSelectionAnchorKey(rowKey);
-                  }
-                }
+                if (isInlineRenaming || isRowControlTarget(e.target)) return;
+                selectRowFromPointer(e, rowKey, rowSelectable);
+              }}
+              onDoubleClick={(e) => {
+                if (isTrashView || isInlineRenaming || isPendingUpload) return;
+                if (isRowControlTarget(e.target)) return;
+                openRow(row);
               }}
               className={`flex h-[144px] flex-col justify-between rounded-xl border p-3 transition-colors ${
                 dropClass
@@ -2125,15 +2420,18 @@ export function WorkspaceFileBrowser() {
                 ) : !isPendingUpload ? (
                   <button
                     type="button"
-                    title="詳細インスペクタ"
+                    title="その他の操作"
+                    aria-haspopup="menu"
+                    aria-label={`${isFolder ? folder!.name : file!.name} のその他の操作`}
+                    data-row-action-trigger="true"
                     onClick={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
-                      setFocusedRowKey(rowKey);
-                      setInspectorOpen(true);
+                      openRowContextMenu(e, row);
                     }}
-                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
+                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                   >
-                    <Info className="h-3.5 w-3.5" />
+                    <MoreHorizontal className="h-3.5 w-3.5" />
                   </button>
                 ) : null}
               </div>
@@ -2170,8 +2468,14 @@ export function WorkspaceFileBrowser() {
                 ) : (
                   <button
                     type="button"
+                    data-row-name-trigger="true"
                     data-workspace-row-trigger="true"
                     disabled={isTrashView || isPendingUpload}
+                    title={
+                      isTrashView
+                        ? undefined
+                        : 'クリックで選択、ダブルクリックで開く'
+                    }
                     onMouseEnter={() => {
                       if (isTrashView || isPendingUpload) return;
                       if (folder) prefetcher.scheduleHoverPrefetch(folder.id);
@@ -2191,15 +2495,12 @@ export function WorkspaceFileBrowser() {
                     onBlur={() => {
                       if (!isTrashView && folder) prefetcher.cancel(folder.id);
                     }}
-                    onClick={(e) => {
-                      if (e.shiftKey || isPendingUpload) return;
-                      if (folder) {
-                        router.push(
-                          `/workspace?folderId=${encodeURIComponent(folder.id)}`
-                        );
-                      } else if (file) {
-                        openPreviewForFile(file);
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter' || isTrashView || isPendingUpload) {
+                        return;
                       }
+                      e.preventDefault();
+                      openRow(row);
                     }}
                     className="w-full text-left text-xs font-semibold text-slate-900 hover:text-blue-600 disabled:cursor-default disabled:hover:text-slate-900"
                   >
@@ -2333,7 +2634,14 @@ export function WorkspaceFileBrowser() {
               )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex w-full flex-wrap items-center gap-2">
+            <div
+              aria-hidden={!isTrashView && selectedRows.length > 0}
+              inert={!isTrashView && selectedRows.length > 0}
+              className={`flex flex-wrap items-center gap-2 ${
+                !isTrashView && selectedRows.length > 0 ? 'invisible' : ''
+              }`}
+            >
             {!isTrashView && (
               <>
               {canEditCurrentFolder && (
@@ -2479,6 +2787,76 @@ export function WorkspaceFileBrowser() {
               <Keyboard className="h-3.5 w-3.5 text-slate-500" />
               <kbd className="font-mono text-[10px] text-slate-500">?</kbd>
             </button>
+            </div>
+
+            {!isTrashView && selectedRows.length > 0 && (
+              <div
+                role="toolbar"
+                aria-label="一括操作"
+                className="absolute inset-0 z-20 flex items-center gap-1.5 overflow-x-auto whitespace-nowrap rounded-xl border border-indigo-200 bg-indigo-50/95 px-3 py-1.5 text-xs text-indigo-950 shadow-2xs"
+              >
+                <span className="shrink-0 font-semibold">
+                  {selectedRows.length} 件選択中
+                </span>
+                <BulkActionButton
+                  label="コピー"
+                  shortcut="⌘C"
+                  icon={<Copy className="h-3.5 w-3.5 text-slate-500" />}
+                  onClick={() => handleCopyTargets(selectedRows)}
+                />
+                <BulkActionButton
+                  label="切り取り"
+                  shortcut="⌘X"
+                  icon={<Scissors className="h-3.5 w-3.5 text-slate-500" />}
+                  onClick={() => handleCutTargets(selectedRows)}
+                />
+                <BulkActionButton
+                  label="複製"
+                  shortcut="⌘D"
+                  icon={<Clipboard className="h-3.5 w-3.5 text-slate-500" />}
+                  onClick={() => handleDuplicateTargets(selectedRows)}
+                />
+                <BulkActionButton
+                  label="移動 / コピー"
+                  shortcut="m"
+                  icon={<FolderInput className="h-3.5 w-3.5 text-blue-600" />}
+                  onClick={() => handleOpenMoveCopyModal(selectedRows, 'move')}
+                />
+                {selectedRows.some(
+                  (row) => row.kind === 'file' && row.file.ai_suggested_label != null
+                ) &&
+                  (canEditCurrentFolder || isPrivilegedAdmin) && (
+                    <BulkActionButton
+                      label="AI提案を一括承認"
+                      icon={<Sparkles className="h-3.5 w-3.5" />}
+                      variant="primary"
+                      onClick={handleBulkApproveAi}
+                    />
+                  )}
+                {selectedRows.some((row) => row.kind === 'file') &&
+                  (canEditCurrentFolder || isPrivilegedAdmin) && (
+                    <BulkActionButton
+                      label="機密変更"
+                      shortcut="c"
+                      icon={<Tag className="h-3.5 w-3.5 text-slate-500" />}
+                      onClick={openClassificationPickerFromTarget}
+                    />
+                  )}
+                <BulkActionButton
+                  label="ゴミ箱"
+                  variant="danger"
+                  icon={<Trash2 className="h-3.5 w-3.5" />}
+                  onClick={trashSelectedOrFocused}
+                />
+                <button
+                  type="button"
+                  onClick={() => setSelectedKeys(new Set())}
+                  className="shrink-0 rounded-lg px-2 py-1 text-slate-500 hover:bg-indigo-100 hover:text-slate-800"
+                >
+                  解除
+                </button>
+              </div>
+            )}
           </div>
         </header>
 
@@ -2574,87 +2952,19 @@ export function WorkspaceFileBrowser() {
           />
         )}
 
-        {!isTrashView && selectedRows.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-200 bg-indigo-50/80 px-4 py-2 text-xs text-indigo-950">
-            <span className="font-semibold">
-              {selectedRows.length} 件選択中
-            </span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleCopyTargets(selectedRows)}
-                className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50"
-              >
-                <Copy className="h-3.5 w-3.5 text-slate-500" />
-                <span>コピー (⌘C)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleCutTargets(selectedRows)}
-                className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50"
-              >
-                <Scissors className="h-3.5 w-3.5 text-slate-500" />
-                <span>切り取り (⌘X)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDuplicateTargets(selectedRows)}
-                className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50"
-              >
-                <Clipboard className="h-3.5 w-3.5 text-slate-500" />
-                <span>複製 (⌘D)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleOpenMoveCopyModal(selectedRows, 'move')}
-                className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50"
-              >
-                <FolderInput className="h-3.5 w-3.5 text-blue-600" />
-                <span>移動 / コピー (m)</span>
-              </button>
-              {selectedRows.some(
-                (r) => r.kind === 'file' && r.file.ai_suggested_label != null
-              ) &&
-                (canEditCurrentFolder || isPrivilegedAdmin) && (
-                  <button
-                    type="button"
-                    onClick={handleBulkApproveAi}
-                    className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-600 px-2.5 py-1 font-medium text-white hover:bg-indigo-700"
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    <span>AI提案を一括承認</span>
-                  </button>
-                )}
-              {selectedRows.some((r) => r.kind === 'file') &&
-                (canEditCurrentFolder || isPrivilegedAdmin) && (
-                  <button
-                    type="button"
-                    onClick={openClassificationPickerFromTarget}
-                    className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    <Tag className="h-3.5 w-3.5 text-slate-500" />
-                    <span>機密変更 (c)</span>
-                  </button>
-                )}
-              <button
-                type="button"
-                onClick={trashSelectedOrFocused}
-                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1 font-medium text-red-600 hover:bg-red-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                <span>ゴミ箱</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedKeys(new Set())}
-                className="rounded-lg px-2 py-1 text-slate-500 hover:bg-indigo-100 hover:text-slate-800"
-              >
-                解除
-              </button>
-            </div>
-          </div>
-        )}
+        <div className="sr-only" aria-live="polite" aria-atomic="true">
+          {selectedRows.length > 0
+            ? `${selectedRows.length} 件選択中`
+            : '選択なし'}
+        </div>
 
+        <div
+          ref={marqueeSurfaceRef}
+          data-marquee-surface="true"
+          onPointerDown={marquee.onPointerDown}
+          onContextMenu={handleBackgroundContextMenu}
+          className="-mx-6 px-6 lg:-mx-8 lg:px-8"
+        >
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
           {isInitialLoading ? (
             <div className="flex h-48 items-center justify-center text-sm text-slate-500">
@@ -2662,7 +2972,11 @@ export function WorkspaceFileBrowser() {
               読み込み中...
             </div>
           ) : rows.length === 0 ? (
-            <div className="px-6 py-14 text-center text-sm text-slate-500">
+            <div
+              className="px-6 py-14 text-center text-sm text-slate-500"
+              onContextMenu={handleBackgroundContextMenu}
+              onClick={handleBackgroundEmptyClick}
+            >
               {isTrashView
                 ? 'ゴミ箱は空です'
                 : folderId
@@ -2677,9 +2991,10 @@ export function WorkspaceFileBrowser() {
                 dragCtx.registerScrollContainer(el);
               }}
               onScroll={virtualWindow.onScroll}
+              onContextMenu={handleBackgroundContextMenu}
               tabIndex={-1}
               data-workspace-table="true"
-              className={`overflow-x-auto focus:outline-none ${
+              className={`min-h-[420px] overflow-x-auto focus:outline-none ${
                 virtualWindow.virtualized ? 'max-h-[68vh] overflow-y-auto' : ''
               }`}
             >
@@ -2712,7 +3027,11 @@ export function WorkspaceFileBrowser() {
                   )}
                 </div>
               ) : (
-                <table className="w-full text-left text-xs">
+                <table
+                  role="grid"
+                  aria-multiselectable="true"
+                  className="w-full text-left text-xs"
+                >
                   <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 text-[11px] font-semibold uppercase tracking-wide text-slate-500 backdrop-blur-xs">
                     <tr>
                       <th className="w-10 px-3 py-3">
@@ -2824,10 +3143,6 @@ export function WorkspaceFileBrowser() {
 
                     if (row.kind === 'folder') {
                       const folder = row.folder;
-                      const rowCanEdit = folder.effectiveRole
-                        ? hasRoleAtLeast(folder.effectiveRole, 'editor')
-                        : canEditCurrentFolder;
-                      const rowPermsRole = folder.effectiveRole ?? effectiveRole;
                       const isCutFolder = Boolean(
                         clipboardState?.mode === 'cut' &&
                           clipboardStore.isCutPending('folder', folder.id)
@@ -2849,11 +3164,10 @@ export function WorkspaceFileBrowser() {
                           data-row-index={globalIdx}
                           data-drop-folder-id={isDropEligible ? folder.id : undefined}
                           data-drop-label={isDropEligible ? folder.name : undefined}
+                          aria-selected={isSelected}
                           onContextMenu={(e) => {
                             if (isTrashView || isInlineRenaming) return;
-                            e.preventDefault();
-                            setFocusedRowKey(rowKey);
-                            setContextMenu({ x: e.clientX, y: e.clientY, row });
+                            openRowContextMenu(e, row);
                           }}
                           onPointerDown={(e) => {
                             if (isInlineRenaming) return;
@@ -2869,20 +3183,13 @@ export function WorkspaceFileBrowser() {
                             }
                           }}
                           onClick={(e) => {
-                            if (isInlineRenaming) return;
-                            setFocusedRowKey(rowKey);
-                            if (e.shiftKey && rowSelectable) {
-                              setSelectedKeys(
-                                selectKeyRange(
-                                  orderedRowKeys,
-                                  selectionAnchorKey ?? rowKey,
-                                  rowKey
-                                )
-                              );
-                              if (!selectionAnchorKey) {
-                                setSelectionAnchorKey(rowKey);
-                              }
-                            }
+                            if (isInlineRenaming || isRowControlTarget(e.target)) return;
+                            selectRowFromPointer(e, rowKey, rowSelectable);
+                          }}
+                          onDoubleClick={(e) => {
+                            if (isTrashView || isInlineRenaming) return;
+                            if (isRowControlTarget(e.target)) return;
+                            openRow(row);
                           }}
                           className={`h-[52px] transition-colors ${
                             folderDropClass
@@ -2950,8 +3257,14 @@ export function WorkspaceFileBrowser() {
                             ) : (
                               <button
                                 type="button"
+                                data-row-name-trigger="true"
                                 data-workspace-row-trigger="true"
                                 disabled={isTrashView}
+                                title={
+                                  isTrashView
+                                    ? undefined
+                                    : 'クリックで選択、ダブルクリックで開く'
+                                }
                                 onMouseEnter={() => {
                                   if (!isTrashView) {
                                     prefetcher.scheduleHoverPrefetch(folder.id);
@@ -2969,11 +3282,10 @@ export function WorkspaceFileBrowser() {
                                 onBlur={() => {
                                   if (!isTrashView) prefetcher.cancel(folder.id);
                                 }}
-                                onClick={(e) => {
-                                  if (e.shiftKey) return;
-                                  router.push(
-                                    `/workspace?folderId=${encodeURIComponent(folder.id)}`
-                                  );
+                                onKeyDown={(e) => {
+                                  if (e.key !== 'Enter' || isTrashView) return;
+                                  e.preventDefault();
+                                  openRow(row);
                                 }}
                                 className="flex items-center gap-2.5 font-medium text-slate-900 hover:text-blue-600 disabled:hover:text-slate-900"
                               >
@@ -3005,85 +3317,21 @@ export function WorkspaceFileBrowser() {
                                 <span>復元</span>
                               </button>
                             ) : (
-                              <div className="inline-flex items-center gap-1">
-                                {hasRoleAtLeast(rowPermsRole, 'co_owner') && (
-                                  <button
-                                    type="button"
-                                    title="権限"
-                                    onClick={() =>
-                                      setActiveModal({
-                                        kind: 'permissions',
-                                        targetType: 'folder',
-                                        targetId: folder.id,
-                                        targetName: folder.name,
-                                        effectiveRole: rowPermsRole,
-                                      })
-                                    }
-                                    className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                                  >
-                                    <Shield className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-                                {rowCanEdit && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      title="共有リンク"
-                                      onClick={() =>
-                                        setActiveModal({
-                                          kind: 'share',
-                                          targetType: 'folder',
-                                          targetId: folder.id,
-                                          targetName: folder.name,
-                                          classification: folder.classification,
-                                          canEdit: rowCanEdit,
-                                        })
-                                      }
-                                      className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-                                    >
-                                      <Link2 className="h-3.5 w-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      title={
-                                        folder.is_pinned === 1
-                                          ? 'ピン留め解除'
-                                          : 'ピン留め'
-                                      }
-                                      onClick={() => handleTogglePin(folder)}
-                                      className={`rounded p-1.5 hover:bg-slate-100 ${
-                                        folder.is_pinned === 1
-                                          ? 'text-amber-500'
-                                          : 'text-slate-400 hover:text-amber-500'
-                                      }`}
-                                    >
-                                      <Star
-                                        className={`h-3.5 w-3.5 ${
-                                          folder.is_pinned === 1
-                                            ? 'fill-amber-400'
-                                            : ''
-                                        }`}
-                                      />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      title="名前を変更 (r)"
-                                      onClick={() => startInlineRename(row, globalIdx)}
-                                      className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                                    >
-                                      <Edit3 className="h-3.5 w-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      title="ゴミ箱へ移動"
-                                      onClick={() => handleDeleteFolder(folder)}
-                                      className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </button>
-                                  </>
-                                )}
-                              </div>
+                              <button
+                                type="button"
+                                title="その他の操作"
+                                aria-haspopup="menu"
+                                aria-label={`${folder.name} のその他の操作`}
+                                data-row-action-trigger="true"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openRowContextMenu(e, row);
+                                }}
+                                className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </button>
                             )}
                           </td>
                         </tr>
@@ -3101,11 +3349,10 @@ export function WorkspaceFileBrowser() {
                       <tr
                         key={rowKey}
                         data-row-index={globalIdx}
+                        aria-selected={isSelected}
                         onContextMenu={(e) => {
                           if (isTrashView || isInlineRenaming || isPendingUpload) return;
-                          e.preventDefault();
-                          setFocusedRowKey(rowKey);
-                          setContextMenu({ x: e.clientX, y: e.clientY, row });
+                          openRowContextMenu(e, row);
                         }}
                         onPointerDown={(e) => {
                           if (isInlineRenaming || isPendingUpload) return;
@@ -3121,20 +3368,13 @@ export function WorkspaceFileBrowser() {
                           }
                         }}
                         onClick={(e) => {
-                          if (isInlineRenaming) return;
-                          setFocusedRowKey(rowKey);
-                          if (e.shiftKey && rowSelectable) {
-                            setSelectedKeys(
-                              selectKeyRange(
-                                orderedRowKeys,
-                                selectionAnchorKey ?? rowKey,
-                                rowKey
-                              )
-                            );
-                            if (!selectionAnchorKey) {
-                              setSelectionAnchorKey(rowKey);
-                            }
-                          }
+                          if (isInlineRenaming || isRowControlTarget(e.target)) return;
+                          selectRowFromPointer(e, rowKey, rowSelectable);
+                        }}
+                        onDoubleClick={(e) => {
+                          if (isTrashView || isInlineRenaming || isPendingUpload) return;
+                          if (isRowControlTarget(e.target)) return;
+                          openRow(row);
                         }}
                         className={`h-[52px] transition-colors ${
                           isPendingUpload
@@ -3202,8 +3442,14 @@ export function WorkspaceFileBrowser() {
                           ) : (
                             <button
                               type="button"
+                              data-row-name-trigger="true"
                               data-workspace-row-trigger="true"
                               disabled={isTrashView || isPendingUpload}
+                              title={
+                                isTrashView || isPendingUpload
+                                  ? undefined
+                                  : 'クリックで選択、ダブルクリックで開く'
+                              }
                               onMouseEnter={() => {
                                 if (
                                   !isTrashView &&
@@ -3214,9 +3460,16 @@ export function WorkspaceFileBrowser() {
                                 }
                               }}
                               onFocus={() => setFocusedRowKey(rowKey)}
-                              onClick={(e) => {
-                                if (e.shiftKey || isPendingUpload) return;
-                                openPreviewForFile(file);
+                              onKeyDown={(e) => {
+                                if (
+                                  e.key !== 'Enter' ||
+                                  isTrashView ||
+                                  isPendingUpload
+                                ) {
+                                  return;
+                                }
+                                e.preventDefault();
+                                openRow(row);
                               }}
                               className="flex items-center gap-2.5 text-left font-medium text-slate-900 hover:text-blue-600 disabled:cursor-default disabled:hover:text-slate-900"
                             >
@@ -3286,94 +3539,34 @@ export function WorkspaceFileBrowser() {
                             </span>
                           ) : (
                             <div className="inline-flex items-center gap-1">
-                              <button
-                                type="button"
-                                title="プレビュー"
-                                onClick={() =>
-                                  setPreviewTarget({
-                                    file: {
-                                      id: file.id,
-                                      folderId: file.folder_id,
-                                      name: file.name,
-                                      mimeType: file.mime_type,
-                                      sizeBytes: file.size_bytes,
-                                      classification: file.classification,
-                                    },
-                                    canDownload: canDownloadCurrentFolder,
-                                  })
-                                }
-                                className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-                              >
-                                <Eye className="h-3.5 w-3.5" />
-                              </button>
-
                               {canDownloadCurrentFolder && (
                                 <button
                                   type="button"
                                   title="ダウンロード"
-                                  onClick={() => handleDownloadFile(file.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownloadFile(file.id);
+                                  }}
                                   className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                                 >
                                   <Download className="h-3.5 w-3.5" />
                                 </button>
                               )}
-
-                              {canManageCurrentFolderPerms && (
-                                <button
-                                  type="button"
-                                  title="ファイル権限"
-                                  onClick={() =>
-                                    setActiveModal({
-                                      kind: 'permissions',
-                                      targetType: 'file',
-                                      targetId: file.id,
-                                      targetName: file.name,
-                                      effectiveRole,
-                                    })
-                                  }
-                                  className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                                >
-                                  <Shield className="h-3.5 w-3.5" />
-                                </button>
-                              )}
-
-                              {canEditCurrentFolder && (
-                                <>
-                                  <button
-                                    type="button"
-                                    title="共有リンク"
-                                    onClick={() =>
-                                      setActiveModal({
-                                        kind: 'share',
-                                        targetType: 'file',
-                                        targetId: file.id,
-                                        targetName: file.name,
-                                        classification: file.classification,
-                                        canEdit: canEditCurrentFolder,
-                                      })
-                                    }
-                                    className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-                                  >
-                                    <Link2 className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    title="名前を変更 (r)"
-                                    onClick={() => startInlineRename(row, globalIdx)}
-                                    className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                                  >
-                                    <Edit3 className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    title="ゴミ箱へ移動"
-                                    onClick={() => handleDeleteFile(file)}
-                                    className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </>
-                              )}
+                              <button
+                                type="button"
+                                title="その他の操作"
+                                aria-haspopup="menu"
+                                aria-label={`${file.name} のその他の操作`}
+                                data-row-action-trigger="true"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openRowContextMenu(e, row);
+                                }}
+                                className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </button>
                             </div>
                           )}
                         </td>
@@ -3413,7 +3606,38 @@ export function WorkspaceFileBrowser() {
             </div>
           )}
         </section>
+        <div
+          aria-hidden="true"
+          data-background-surface="true"
+          className="min-h-[96px]"
+          onClick={handleBackgroundEmptyClick}
+          onContextMenu={handleBackgroundContextMenu}
+        />
+        </div>
       </main>
+
+      <input
+        ref={backgroundFileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          enqueueBackgroundUpload(e.target.files, 'files');
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={backgroundFolderInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          enqueueBackgroundUpload(e.target.files, 'folder');
+          e.target.value = '';
+        }}
+      />
+
+      {marquee.overlay}
 
       {!isTrashView && inspectorOpen && inspectorTarget && (() => {
         const targetRole =
@@ -3555,6 +3779,24 @@ export function WorkspaceFileBrowser() {
           />
         );
       })()}
+
+      {backgroundMenu && !isTrashView && (
+        <WorkspaceBackgroundMenu
+          anchor={{ x: backgroundMenu.x, y: backgroundMenu.y }}
+          canCreate={canEditCurrentFolder || isPrivilegedAdmin}
+          canUpload={Boolean(currentFolder) && canEditCurrentFolder}
+          canUploadFolder={Boolean(currentFolder) && canEditCurrentFolder}
+          canPaste={Boolean(
+            clipboardState &&
+              clipboardState.items.length > 0 &&
+              (canEditCurrentFolder || isPrivilegedAdmin)
+          )}
+          clipboardCount={clipboardState?.items.length ?? 0}
+          viewMode={viewMode}
+          onAction={handleBackgroundMenuAction}
+          onClose={() => setBackgroundMenu(null)}
+        />
+      )}
 
       {moveCopyModal && user && (
         <MoveCopyTreeModal

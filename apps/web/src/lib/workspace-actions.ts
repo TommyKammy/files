@@ -6,6 +6,7 @@ import {
   hasRoleAtLeast,
   pickStricterClassification,
 } from '@/lib/formatters';
+import { selectKeyRange, toggleKeySelection } from '@/lib/keyboard-shortcuts';
 import type {
   ClassificationLabel,
   FileItem,
@@ -160,6 +161,53 @@ export function resolveTargetRows(
   return [primaryRow];
 }
 
+export interface PointerSelectionModifiers {
+  shiftKey: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+}
+
+/**
+ * Google Drive-compatible pointer selection:
+ * plain click replaces, ⌘/Ctrl+click toggles, Shift+click extends from the anchor.
+ */
+export function resolvePointerSelection(input: {
+  orderedKeys: readonly string[];
+  selectedKeys: ReadonlySet<string>;
+  anchorKey: string | null;
+  rowKey: string;
+  modifiers: PointerSelectionModifiers;
+}): { selectedKeys: Set<string>; anchorKey: string } {
+  const { orderedKeys, selectedKeys, anchorKey, rowKey, modifiers } = input;
+  if (modifiers.shiftKey) {
+    return {
+      selectedKeys: selectKeyRange(orderedKeys, anchorKey ?? rowKey, rowKey),
+      anchorKey: anchorKey ?? rowKey,
+    };
+  }
+  if (modifiers.metaKey || modifiers.ctrlKey) {
+    return {
+      selectedKeys: toggleKeySelection(selectedKeys, rowKey),
+      anchorKey: rowKey,
+    };
+  }
+  return { selectedKeys: new Set([rowKey]), anchorKey: rowKey };
+}
+
+/**
+ * Right-click normalization: an unselected row becomes the sole selection before
+ * the context menu opens, so the menu target and the highlight always agree.
+ */
+export function resolveContextSelection(
+  selectedKeys: ReadonlySet<string>,
+  rowKey: string
+): { selectedKeys: Set<string>; anchorKey: string | null; changed: boolean } {
+  if (selectedKeys.has(rowKey)) {
+    return { selectedKeys: new Set(selectedKeys), anchorKey: null, changed: false };
+  }
+  return { selectedKeys: new Set([rowKey]), anchorKey: rowKey, changed: true };
+}
+
 export interface ContextMenuCapabilities {
   isMulti: boolean;
   canOpen: boolean;
@@ -172,7 +220,9 @@ export interface ContextMenuCapabilities {
   canMoveCopy: boolean;
   canClassify: boolean;
   canShare: boolean;
+  canCopyLink: boolean;
   canPin: boolean;
+  canPermissions: boolean;
   canTrash: boolean;
   canInspector: boolean;
 }
@@ -257,10 +307,15 @@ export function buildContextMenuCapabilities(options: {
       !isMulti &&
       Boolean(primaryRow) &&
       (isSysAdmin || hasRoleAtLeast(primaryRole, 'editor')),
+    canCopyLink: !isMulti && Boolean(primaryRow),
     canPin:
       !isMulti &&
       primaryIsFolder &&
       (isSysAdmin || hasRoleAtLeast(primaryRole, 'editor')),
+    canPermissions:
+      !isMulti &&
+      Boolean(primaryRow) &&
+      (isSysAdmin || hasRoleAtLeast(primaryRole, 'co_owner')),
     canTrash: allEditorPlus,
     canInspector: !isMulti && Boolean(primaryRow),
   };
