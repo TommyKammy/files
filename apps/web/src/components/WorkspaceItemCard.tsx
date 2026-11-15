@@ -65,7 +65,7 @@ export function WorkspaceItemCard({
   inlineCommittedRef: React.MutableRefObject<string | null>;
   prefetcher: IntentPrefetcher;
   onCheckboxClick: (event: MouseEvent<HTMLButtonElement>) => void;
-  onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerDown: (event: React.PointerEvent<HTMLElement>) => void;
   onSelectRow: (
     event: MouseEvent<HTMLDivElement>,
     rowKey: string,
