@@ -69,6 +69,7 @@ import {
 import { WorkspaceBreadcrumbs } from '@/components/WorkspaceBreadcrumbs';
 import { WorkspaceSelectionBar } from '@/components/WorkspaceSelectionBar';
 import { WorkspaceSelectionCheckbox } from '@/components/WorkspaceSelectionCheckbox';
+import { WorkspaceToolbar } from '@/components/WorkspaceToolbar';
 import {
   getDropTargetClassName,
   WorkspaceDragProvider,
@@ -2355,159 +2356,61 @@ export function WorkspaceFileBrowser() {
           </div>
 
           <div className="relative flex w-full flex-wrap items-center gap-1.5">
-            <div
-              aria-hidden={!isTrashView && selectedRows.length > 0}
-              inert={!isTrashView && selectedRows.length > 0}
-              className={`flex flex-wrap items-center gap-2 ${
-                !isTrashView && selectedRows.length > 0 ? 'invisible' : ''
-              }`}
-            >
-            {!isTrashView && (
-              <>
-              {canEditCurrentFolder && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFolderNameInput('');
-                    setFolderClassInput(
-                      currentFolder?.classification === 'confidential'
-                        ? 'confidential'
-                        : 'internal'
-                    );
-                    setActiveModal({
-                      kind: 'createFolder',
-                      parentId: folderId ?? null,
-                    });
-                  }}
-                  className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
-                >
-                  <FolderPlus className="h-3.5 w-3.5 text-blue-600" />
-                  <span>新規フォルダ</span>
-                </button>
-              )}
-
-              {currentFolder && canEditCurrentFolder && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => handleTogglePin(currentFolder)}
-                    className={`inline-flex items-center gap-1.5 h-7 rounded-md border px-2.5 text-[0.75rem] font-medium transition ${
-                      currentFolder.is_pinned === 1
-                        ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Star
-                      className={`h-3.5 w-3.5 ${
-                        currentFolder.is_pinned === 1
-                          ? 'fill-amber-400 text-[#6b6f76]'
-                          : 'text-slate-500'
-                      }`}
-                    />
-                    <span>
-                      {currentFolder.is_pinned === 1 ? 'ピン留め中' : 'ピン留め'}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setActiveModal({
-                        kind: 'fileRequest',
-                        folderId: currentFolder.id,
-                        folderName: currentFolder.name,
-                        canEdit: canEditCurrentFolder,
-                      })
-                    }
-                    className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
-                  >
-                    <Inbox className="h-3.5 w-3.5 text-indigo-600" />
-                    <span>ファイル収集</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setActiveModal({
-                        kind: 'share',
-                        targetType: 'folder',
-                        targetId: currentFolder.id,
-                        targetName: currentFolder.name,
-                        classification: currentFolder.classification,
-                        canEdit: canEditCurrentFolder,
-                      })
-                    }
-                    className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
-                  >
-                    <Link2 className="h-3.5 w-3.5 text-blue-600" />
-                    <span>フォルダ共有</span>
-                  </button>
-                </>
-              )}
-
-              {currentFolder && canManageCurrentFolderPerms && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setActiveModal({
-                        kind: 'permissions',
-                        targetType: 'folder',
-                        targetId: currentFolder.id,
-                        targetName: currentFolder.name,
-                        effectiveRole,
-                      })
-                    }
-                    className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
-                  >
-                    <Shield className="h-3.5 w-3.5 text-slate-600" />
-                    <span>権限管理</span>
-                  </button>
-                )}
-              </>
-            )}
-
-            <button
-              type="button"
-              title="リスト / グリッド表示切替 (v)"
-              aria-pressed={viewMode === 'grid'}
-              onClick={handleToggleViewMode}
-              className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
-            >
-              {viewMode === 'grid' ? (
-                <List className="h-3.5 w-3.5 text-slate-600" />
-              ) : (
-                <LayoutGrid className="h-3.5 w-3.5 text-slate-600" />
-              )}
-              <span>{viewMode === 'grid' ? 'リスト' : 'グリッド'}</span>
-            </button>
-
-            {!isTrashView && (
-              <button
-                type="button"
-                title="詳細インスペクタ (i)"
-                aria-pressed={inspectorOpen}
-                onClick={() => setInspectorOpen((prev) => !prev)}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-2xs transition ${
-                  inspectorOpen
-                    ? 'border-[#bcc3ea] bg-[#eef0fb] text-[#4f5ac2]'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <Info className="h-3.5 w-3.5" />
-                <span>詳細</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              title="キーボードショートカット (?)"
-              onClick={() => setShortcutsHelpOpen(true)}
-              className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
-            >
-              <Keyboard className="h-3.5 w-3.5 text-slate-500" />
-              <kbd className="font-mono text-[0.625rem] text-slate-500">?</kbd>
-            </button>
-            </div>
+            <WorkspaceToolbar
+              isTrashView={isTrashView}
+              hasSelection={!isTrashView && selectedRows.length > 0}
+              canEditCurrentFolder={canEditCurrentFolder}
+              canManageCurrentFolderPerms={canManageCurrentFolderPerms}
+              currentFolder={currentFolder}
+              viewMode={viewMode}
+              inspectorOpen={inspectorOpen}
+              onNewFolder={() => {
+                setFolderNameInput('');
+                setFolderClassInput(
+                  currentFolder?.classification === 'confidential'
+                    ? 'confidential'
+                    : 'internal'
+                );
+                setActiveModal({
+                  kind: 'createFolder',
+                  parentId: folderId ?? null,
+                });
+              }}
+              onTogglePin={handleTogglePin}
+              onOpenFileRequest={() => {
+                if (!currentFolder) return;
+                setActiveModal({
+                  kind: 'fileRequest',
+                  folderId: currentFolder.id,
+                  folderName: currentFolder.name,
+                  canEdit: canEditCurrentFolder,
+                });
+              }}
+              onOpenShare={() => {
+                if (!currentFolder) return;
+                setActiveModal({
+                  kind: 'share',
+                  targetType: 'folder',
+                  targetId: currentFolder.id,
+                  targetName: currentFolder.name,
+                  classification: currentFolder.classification,
+                  canEdit: canEditCurrentFolder,
+                });
+              }}
+              onOpenPermissions={() => {
+                if (!currentFolder) return;
+                setActiveModal({
+                  kind: 'permissions',
+                  targetType: 'folder',
+                  targetId: currentFolder.id,
+                  targetName: currentFolder.name,
+                  effectiveRole,
+                });
+              }}
+              onToggleViewMode={handleToggleViewMode}
+              onToggleInspector={() => setInspectorOpen((prev) => !prev)}
+              onOpenShortcuts={() => setShortcutsHelpOpen(true)}
+            />
 
             {!isTrashView && selectedRows.length > 0 && (
               <WorkspaceSelectionBar
