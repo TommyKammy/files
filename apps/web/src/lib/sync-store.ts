@@ -42,6 +42,13 @@ import {
   MutationOutbox,
   type OutboxExecutionResult,
 } from '@/lib/mutation-outbox';
+import { applyDeltaChangesToCache } from '@/lib/sync-store/delta';
+import { planOptimisticCopy } from '@/lib/sync-store/optimistic-copy-plan';
+import { planOptimisticMove } from '@/lib/sync-store/optimistic-move-plan';
+import {
+  applyOutboxRollback,
+  applyOutboxSuccess,
+} from '@/lib/sync-store/outbox-result';
 import {
   getSyncDbName,
   IndexedDbSyncPersistence,
@@ -1878,174 +1885,37 @@ export class WorkspaceSyncStore {
   } {
     const targetParentId = input.targetParentId;
     const conflictPolicy: WorkspaceConflictPolicy = input.conflictPolicy ?? 'fail';
-
-    // Dedupe references and resolve temp aliases
-    const deduped = new Map<string, { type: 'file' | 'folder'; id: string }>();
-    for (const raw of input.items) {
-      const resolvedId = this.idAliasMap.get(raw.id) ?? raw.id;
-      deduped.set(`${raw.type}:${resolvedId}`, { type: raw.type, id: resolvedId });
-    }
-    if (deduped.size === 0) {
-      return { ok: false, error: '移動するアイテムを選択してください', movedCount: 0, skippedCount: 0 };
-    }
-
-    const resolvedFolders: FolderSummary[] = [];
-    const resolvedFiles: FileItem[] = [];
-
-    for (const ref of deduped.values()) {
-      if (ref.type === 'folder') {
-        const folder = this.foldersById.get(ref.id);
-        if (!folder || folder.deleted_at != null) {
-          return { ok: false, error: '移動対象のフォルダが見つかりません', movedCount: 0, skippedCount: 0 };
-        }
-        if (folder.optimistic) {
-          return { ok: false, error: '作成完了後に移動できます', movedCount: 0, skippedCount: 0 };
-        }
-        resolvedFolders.push(folder);
-      } else {
-        const file = this.filesById.get(ref.id);
-        if (!file || file.deleted_at != null) {
-          return { ok: false, error: '移動対象のファイルが見つかりません', movedCount: 0, skippedCount: 0 };
-        }
-        if (file.upload_state === 'pending' || file.optimistic) {
-          return { ok: false, error: 'アップロード完了後に移動できます', movedCount: 0, skippedCount: 0 };
-        }
-        resolvedFiles.push(file);
-      }
-    }
-
-    // Prune redundant descendants when an ancestor folder is also selected
-    const selectedFolderIds = new Set(resolvedFolders.map((f) => f.id));
-    const rootFolders = resolvedFolders.filter(
-      (folder) =>
-        !Array.from(selectedFolderIds).some(
-          (otherId) => otherId !== folder.id && this.isFolderAncestorOf(otherId, folder.id)
-        )
-    );
-    const rootFiles = resolvedFiles.filter(
-      (file) =>
-        file.folder_id === null ||
-        (!selectedFolderIds.has(file.folder_id) &&
-          !Array.from(selectedFolderIds).some((ancId) =>
-            this.isFolderAncestorOf(ancId, file.folder_id)
-          ))
-    );
-
     const destView = this.getDirectoryView(targetParentId);
-    if (destView.existsInCache) {
-      const destRole = checkRoleGuard(destView.effectiveRole, 'editor', {
-        isPrivilegedAdmin: this.user?.role === 'sys_admin',
-        allowAdminOverride: true,
-      });
-      if (!destRole.ok) {
-        return { ok: false, error: destRole.message, movedCount: 0, skippedCount: 0 };
-      }
+
+    const plan = planOptimisticMove(input, {
+      idAliasMap: this.idAliasMap,
+      foldersById: this.foldersById,
+      filesById: this.filesById,
+      userRole: this.user?.role,
+      isFolderAncestorOf: (ancestorId, descendantId) =>
+        this.isFolderAncestorOf(ancestorId, descendantId),
+      resolveItemEffectiveRole: (type, item) =>
+        this.resolveItemEffectiveRole(type, item),
+      getDestinationNames: (folderId) => this.collectDestNameSets(folderId),
+      destinationRole: destView.effectiveRole,
+      getAncestorClassifications: (folderId) =>
+        this.getAncestorClassifications(folderId),
+      now: this.now,
+    });
+
+    if (!plan.ok) {
+      return {
+        ok: false,
+        error: plan.error,
+        movedCount: 0,
+        skippedCount: 0,
+      };
+    }
+    if (plan.movedCount === 0) {
+      return { ok: true, movedCount: 0, skippedCount: plan.skippedCount };
     }
 
-    let skippedCount = 0;
-    const foldersToMove: Array<{ prev: FolderSummary; targetName: string }> = [];
-    const filesToMove: Array<{ prev: FileItem; targetName: string; targetExt: string | null }> = [];
-    const destNames = this.collectDestNameSets(targetParentId);
-
-    for (const folder of rootFolders) {
-      if (folder.parent_id === targetParentId) {
-        skippedCount += 1;
-        continue;
-      }
-      if (folder.id === targetParentId || this.isFolderAncestorOf(folder.id, targetParentId)) {
-        return {
-          ok: false,
-          error: '自分自身または配下のフォルダには移動できません',
-          movedCount: 0,
-          skippedCount: 0,
-        };
-      }
-      const role = this.resolveItemEffectiveRole('folder', folder);
-      const roleCheck = checkRoleGuard(role, 'editor', {
-        isPrivilegedAdmin: this.user?.role === 'sys_admin',
-        allowAdminOverride: true,
-      });
-      if (!roleCheck.ok) {
-        return { ok: false, error: roleCheck.message, movedCount: 0, skippedCount: 0 };
-      }
-      if (targetParentId === null && folder.parent_id !== null) {
-        const rootOwnerCheck = checkRoleGuard(role, 'owner', {
-          isPrivilegedAdmin: this.user?.role === 'sys_admin',
-          allowAdminOverride: true,
-        });
-        if (!rootOwnerCheck.ok) {
-          return {
-            ok: false,
-            error: 'ルートへ移動するには Owner 権限が必要です',
-            movedCount: 0,
-            skippedCount: 0,
-          };
-        }
-      }
-
-      let targetName = folder.name;
-      if (destNames.existsInCache && destNames.folderNames.has(targetName)) {
-        if (conflictPolicy === 'fail') {
-          return {
-            ok: false,
-            error: `移動先に同名フォルダ「${targetName}」がすでに存在します`,
-            movedCount: 0,
-            skippedCount: 0,
-          };
-        }
-        targetName = allocateCopyDisplayName(targetName, 'folder', destNames.folderNames);
-      } else {
-        destNames.folderNames.add(targetName);
-      }
-
-      foldersToMove.push({ prev: { ...folder }, targetName });
-    }
-
-    for (const file of rootFiles) {
-      if (file.folder_id === targetParentId) {
-        skippedCount += 1;
-        continue;
-      }
-      const role = this.resolveItemEffectiveRole('file', file);
-      const roleCheck = checkRoleGuard(role, 'editor', {
-        isPrivilegedAdmin: this.user?.role === 'sys_admin',
-        allowAdminOverride: true,
-      });
-      if (!roleCheck.ok) {
-        return { ok: false, error: roleCheck.message, movedCount: 0, skippedCount: 0 };
-      }
-
-      let targetName = file.name;
-      if (destNames.existsInCache && destNames.fileNames.has(targetName)) {
-        if (conflictPolicy === 'fail') {
-          return {
-            ok: false,
-            error: `移動先に同名ファイル「${targetName}」がすでに存在します`,
-            movedCount: 0,
-            skippedCount: 0,
-          };
-        }
-        targetName = allocateCopyDisplayName(targetName, 'file', destNames.fileNames);
-      } else {
-        destNames.fileNames.add(targetName);
-      }
-      const targetExt = getExtensionFromName(targetName) || null;
-      filesToMove.push({ prev: { ...file }, targetName, targetExt });
-    }
-
-    const movedCount = foldersToMove.length + filesToMove.length;
-    if (movedCount === 0) {
-      return { ok: true, movedCount: 0, skippedCount };
-    }
-
-    const nowIso = new Date(this.now()).toISOString();
-    const destAncestors = this.getAncestorClassifications(targetParentId);
-    const destFloor: ClassificationLabel = destAncestors.includes('confidential')
-      ? 'confidential'
-      : 'unset';
-
-    const batchRefs: WorkspaceBatchItemRef[] = [];
-    const involvedEntityKeys: string[] = [];
+    const { nowIso, destFloor, foldersToMove, filesToMove } = plan;
 
     for (const { prev, targetName } of foldersToMove) {
       const oldDir = this.directoriesByKey.get(dirKeyForFolder(prev.parent_id));
@@ -2068,9 +1938,6 @@ export class WorkspaceSyncStore {
       };
       this.upsertFolderInCache(nextFolder);
       this.markCachedSubtreeStale(prev.id);
-
-      batchRefs.push({ type: 'folder', id: prev.id, expectedVersion: prev.version });
-      involvedEntityKeys.push(`folder:${prev.id}`);
     }
 
     for (const { prev, targetName, targetExt } of filesToMove) {
@@ -2091,9 +1958,6 @@ export class WorkspaceSyncStore {
         updated_at: nowIso,
       };
       this.upsertFileInCache(nextFile);
-
-      batchRefs.push({ type: 'file', id: prev.id, expectedVersion: prev.meta_version });
-      involvedEntityKeys.push(`file:${prev.id}`);
     }
 
     const prevFolders = foldersToMove.map((m) => m.prev);
@@ -2117,9 +1981,9 @@ export class WorkspaceSyncStore {
 
       const labelText =
         input.labelOverride ??
-        (movedCount === 1
+        (plan.movedCount === 1
           ? `「${foldersToMove[0]?.prev.name ?? filesToMove[0]?.prev.name}」を移動しました`
-          : `${movedCount} 件のアイテムを移動しました`);
+          : `${plan.movedCount} 件のアイテムを移動しました`);
 
       this.pushUndo(
         {
@@ -2166,16 +2030,17 @@ export class WorkspaceSyncStore {
         },
       });
     } else {
-      const singleFileOnly = foldersToMove.length === 0 && filesToMove.length === 1;
+      const singleFileOnly =
+        foldersToMove.length === 0 && filesToMove.length === 1;
       const mutId = makeClientMutationId('mut');
       this.outbox.enqueue({
         id: mutId,
         entityType: singleFileOnly ? 'file' : 'folder',
         entityId: singleFileOnly ? filesToMove[0]!.prev.id : `batch:${mutId}`,
-        involvedEntityKeys,
+        involvedEntityKeys: plan.involvedEntityKeys,
         kind: singleFileOnly ? 'file.move' : 'workspace.batch_move',
         payload: {
-          items: batchRefs,
+          items: plan.batchRefs,
           targetParentId,
           conflictPolicy,
         },
@@ -2190,7 +2055,7 @@ export class WorkspaceSyncStore {
       });
     }
 
-    return { ok: true, movedCount, skippedCount };
+    return { ok: true, movedCount: plan.movedCount, skippedCount: plan.skippedCount };
   }
 
   optimisticCopyItems(input: {
@@ -2205,199 +2070,44 @@ export class WorkspaceSyncStore {
     tempIds: string[];
     mutationId?: string;
   } {
-    const mode = input.mode ?? 'copy';
-    const duplicateInPlace = mode === 'duplicate';
     const targetParentId = input.targetParentId;
-    const conflictPolicy: WorkspaceConflictPolicy = input.conflictPolicy ?? 'rename';
+    const destView = this.getDirectoryView(targetParentId);
+    const plan = planOptimisticCopy(input, {
+      idAliasMap: this.idAliasMap,
+      foldersById: this.foldersById,
+      filesById: this.filesById,
+      userRole: this.user?.role,
+      isFolderAncestorOf: (ancestorId, descendantId) =>
+        this.isFolderAncestorOf(ancestorId, descendantId),
+      resolveItemEffectiveRole: (type, item) =>
+        this.resolveItemEffectiveRole(type, item),
+      getDestinationNames: (folderId) => this.collectDestNameSets(folderId),
+      destinationRole: destView.effectiveRole,
+      getAncestorClassifications: (folderId) =>
+        this.getAncestorClassifications(folderId),
+      now: this.now,
+      nextId: (prefix) => makeClientMutationId(prefix),
+    });
 
-    const deduped = new Map<string, { type: 'file' | 'folder'; id: string }>();
-    for (const raw of input.items) {
-      const resolvedId = this.idAliasMap.get(raw.id) ?? raw.id;
-      deduped.set(`${raw.type}:${resolvedId}`, { type: raw.type, id: resolvedId });
-    }
-    if (deduped.size === 0) {
-      return { ok: false, error: 'コピーするアイテムを選択してください', tempIds: [] };
-    }
-
-    const srcFolders: FolderSummary[] = [];
-    const srcFiles: FileItem[] = [];
-    for (const ref of deduped.values()) {
-      if (ref.type === 'folder') {
-        const f = this.foldersById.get(ref.id);
-        if (!f || f.deleted_at != null) {
-          return { ok: false, error: 'コピー元のフォルダが見つかりません', tempIds: [] };
-        }
-        if (f.optimistic) {
-          return { ok: false, error: 'フォルダ作成完了後にコピーできます', tempIds: [] };
-        }
-        srcFolders.push(f);
-      } else {
-        const fl = this.filesById.get(ref.id);
-        if (!fl || fl.deleted_at != null) {
-          return { ok: false, error: 'コピー元のファイルが見つかりません', tempIds: [] };
-        }
-        if (fl.upload_state === 'pending' || fl.optimistic) {
-          return { ok: false, error: 'アップロード完了後にコピーできます', tempIds: [] };
-        }
-        srcFiles.push(fl);
-      }
+    if (!plan.ok) {
+      return { ok: false, error: plan.error, tempIds: [] };
     }
 
-    // Prune redundant selected descendants
-    const selectedFolderIds = new Set(srcFolders.map((f) => f.id));
-    const rootFolders = srcFolders.filter(
-      (f) =>
-        !Array.from(selectedFolderIds).some(
-          (otherId) => otherId !== f.id && this.isFolderAncestorOf(otherId, f.id)
-        )
-    );
-    const rootFiles = srcFiles.filter(
-      (fl) =>
-        fl.folder_id === null ||
-        (!selectedFolderIds.has(fl.folder_id) &&
-          !Array.from(selectedFolderIds).some((ancId) =>
-            this.isFolderAncestorOf(ancId, fl.folder_id)
-          ))
-    );
+    const {
+      mutationId,
+      tempFolderIds,
+      tempFileIds,
+      totalCount,
+      duplicateInPlace,
+    } = plan;
 
-    // Zero-Trust DLP client guardrail: viewer+ required on source (previewer blocked at 0ms)
-    for (const f of rootFolders) {
-      const role = this.resolveItemEffectiveRole('folder', f);
-      if (!hasRoleAtLeast(role, 'viewer') && this.user?.role !== 'sys_admin') {
-        return {
-          ok: false,
-          error: 'Previewer 権限のフォルダはコピーできません (DLP 保護)',
-          tempIds: [],
-        };
-      }
+    for (const folder of plan.tempFolders) {
+      this.upsertFolderInCache(folder);
     }
-    for (const fl of rootFiles) {
-      const role = this.resolveItemEffectiveRole('file', fl);
-      if (!hasRoleAtLeast(role, 'viewer') && this.user?.role !== 'sys_admin') {
-        return {
-          ok: false,
-          error: 'Previewer 権限のファイルはコピーできません (DLP 保護)',
-          tempIds: [],
-        };
-      }
+    for (const file of plan.tempFiles) {
+      this.upsertFileInCache(file);
     }
 
-    if (!duplicateInPlace) {
-      const destView = this.getDirectoryView(targetParentId);
-      if (destView.existsInCache) {
-        const destRole = checkRoleGuard(destView.effectiveRole, 'editor', {
-          isPrivilegedAdmin: this.user?.role === 'sys_admin',
-          allowAdminOverride: true,
-        });
-        if (!destRole.ok) {
-          return { ok: false, error: destRole.message, tempIds: [] };
-        }
-      }
-    }
-
-    const namesCache = new Map<string, ReturnType<typeof this.collectDestNameSets>>();
-    const getDestNames = (parentId: string | null) => {
-      const key = dirKeyForFolder(parentId);
-      let entry = namesCache.get(key);
-      if (!entry) {
-        entry = this.collectDestNameSets(parentId);
-        namesCache.set(key, entry);
-      }
-      return entry;
-    };
-
-    const nowIso = new Date(this.now()).toISOString();
-    const mutationId = makeClientMutationId('mut');
-    const tempFolderIds: string[] = [];
-    const tempFileIds: string[] = [];
-    const apiItems: Array<{ type: 'file' | 'folder'; id: string }> = [];
-    const involvedEntityKeys: string[] = [];
-
-    for (const f of rootFolders) {
-      const destParentId = duplicateInPlace ? f.parent_id : targetParentId;
-      const destNames = getDestNames(destParentId);
-      if (
-        conflictPolicy === 'fail' &&
-        !duplicateInPlace &&
-        destNames.existsInCache &&
-        destNames.folderNames.has(f.name)
-      ) {
-        return {
-          ok: false,
-          error: `コピー先に同名フォルダ「${f.name}」がすでに存在します`,
-          tempIds: [],
-        };
-      }
-      const nextName = allocateCopyDisplayName(f.name, 'folder', destNames.folderNames);
-      const destFloor: ClassificationLabel = this.getAncestorClassifications(destParentId).includes(
-        'confidential'
-      )
-        ? 'confidential'
-        : 'unset';
-      const tempId = makeClientMutationId('tmp-copy-folder');
-      const tempFolder: FolderSummary = {
-        id: tempId,
-        parent_id: destParentId,
-        name: nextName,
-        classification: pickStricterClassification(f.classification, destFloor),
-        is_pinned: 0,
-        version: 1,
-        updated_at: nowIso,
-        effectiveRole: 'owner',
-        optimistic: true,
-      };
-      tempFolderIds.push(tempId);
-      apiItems.push({ type: 'folder', id: f.id });
-      involvedEntityKeys.push(`folder:${f.id}`);
-      this.upsertFolderInCache(tempFolder);
-    }
-
-    for (const fl of rootFiles) {
-      const destParentId = duplicateInPlace ? fl.folder_id : targetParentId;
-      const destNames = getDestNames(destParentId);
-      if (
-        conflictPolicy === 'fail' &&
-        !duplicateInPlace &&
-        destNames.existsInCache &&
-        destNames.fileNames.has(fl.name)
-      ) {
-        return {
-          ok: false,
-          error: `コピー先に同名ファイル「${fl.name}」がすでに存在します`,
-          tempIds: [],
-        };
-      }
-      const nextName = allocateCopyDisplayName(fl.name, 'file', destNames.fileNames);
-      const destFloor: ClassificationLabel = this.getAncestorClassifications(destParentId).includes(
-        'confidential'
-      )
-        ? 'confidential'
-        : 'unset';
-      const tempId = makeClientMutationId('tmp-copy-file');
-      const tempFile: FileItem = {
-        id: tempId,
-        folder_id: destParentId,
-        name: nextName,
-        extension: getExtensionFromName(nextName) || fl.extension,
-        mime_type: fl.mime_type,
-        size_bytes: fl.size_bytes,
-        current_version_num: 1,
-        meta_version: 1,
-        classification: pickStricterClassification(fl.classification, destFloor),
-        ai_suggested_label: null,
-        ai_confidence: null,
-        ai_reason: null,
-        updated_at: nowIso,
-        upload_state: 'active',
-        optimistic: true,
-      };
-      tempFileIds.push(tempId);
-      apiItems.push({ type: 'file', id: fl.id });
-      involvedEntityKeys.push(`file:${fl.id}`);
-      this.upsertFileInCache(tempFile);
-    }
-
-    const totalCount = tempFolderIds.length + tempFileIds.length;
     if (!input.skipUndo) {
       this.pushUndo(
         {
@@ -2421,7 +2131,8 @@ export class WorkspaceSyncStore {
             }
 
             // Undone before server ACK arrived (or still queued inside 100ms coalesce window)
-            const canceledFromQueue = this.outbox.cancelQueuedMutation(mutationId);
+            const canceledFromQueue =
+              this.outbox.cancelQueuedMutation(mutationId);
             if (!canceledFromQueue) {
               this.cancelledCopyMutationIds.add(mutationId);
             }
@@ -2445,13 +2156,13 @@ export class WorkspaceSyncStore {
       id: mutationId,
       entityType: 'folder',
       entityId: `copy:${mutationId}`,
-      involvedEntityKeys,
+      involvedEntityKeys: plan.involvedEntityKeys,
       kind: 'workspace.copy',
       payload: {
-        items: apiItems,
+        items: plan.apiItems,
         targetParentId,
         duplicateInPlace,
-        conflictPolicy,
+        conflictPolicy: plan.conflictPolicy,
         tempFolderIds,
         tempFileIds,
       },
@@ -2742,190 +2453,44 @@ export class WorkspaceSyncStore {
     item: OutboxMutationRecord,
     result: OutboxExecutionResult | void
   ): void {
-    if (item.kind === 'folder.create' && result?.folder) {
-      this.idAliasMap.set(item.entityId, result.folder.id);
-      const oldTemp = this.foldersById.get(item.entityId);
-      if (oldTemp) {
-        this.removeFolderFromCache(oldTemp);
-      }
-      this.upsertFolderInCache({ ...result.folder, optimistic: false });
-      return;
-    }
-
-    if (item.kind === 'folder.restore') {
-      void this.syncDelta();
-      const parentId = (item.payload.parentId as string | null | undefined) ?? null;
-      void this.ensureDirectoryLoaded(parentId, { force: true }).catch(() => undefined);
-      return;
-    }
-
-    if (item.kind === 'file.move' || item.kind === 'workspace.batch_move') {
-      if (result?.movedFolders) {
-        for (const folder of result.movedFolders) {
-          const existing = this.foldersById.get(folder.id);
-          this.upsertFolderInCache({
-            ...folder,
-            effectiveRole: folder.effectiveRole ?? existing?.effectiveRole,
-            optimistic: false,
-          });
-          this.markCachedSubtreeStale(folder.id);
-        }
-      }
-      if (result?.movedFiles) {
-        for (const file of result.movedFiles) {
-          this.upsertFileInCache({
-            ...file,
-            upload_state: 'active',
-            optimistic: false,
-          });
-        }
-      }
-      return;
-    }
-
-    if (item.kind === 'workspace.copy') {
-      const tempFolderIds = (item.payload.tempFolderIds as string[]) ?? [];
-      const tempFileIds = (item.payload.tempFileIds as string[]) ?? [];
-      const copiedFolders = result?.copiedFolders ?? [];
-      const copiedFiles = result?.copiedFiles ?? [];
-
-      const copiedFolderIdSet = new Set(copiedFolders.map((f) => f.id));
-      const rootCopiedFolders = copiedFolders.filter(
-        (f) => f.parent_id === null || !copiedFolderIdSet.has(f.parent_id)
-      );
-      const rootCopiedFiles = copiedFiles.filter(
-        (fl) => fl.folder_id === null || !copiedFolderIdSet.has(fl.folder_id)
-      );
-
-      // If user already triggered Undo while HTTP copy was in-flight, delete server roots cleanly
-      if (this.cancelledCopyMutationIds.has(item.id)) {
-        this.cancelledCopyMutationIds.delete(item.id);
-        for (const tmpId of tempFolderIds) {
-          const tmp = this.foldersById.get(tmpId);
-          if (tmp) this.removeFolderFromCache(tmp);
-        }
-        for (const tmpId of tempFileIds) {
-          const tmp = this.filesById.get(tmpId);
-          if (tmp) this.removeFileFromCache(tmp.id, tmp.folder_id);
-        }
-        for (const f of rootCopiedFolders) {
-          void this.softDeleteFolderFn(f.id, f.version).catch(() => undefined);
-        }
-        for (const fl of rootCopiedFiles) {
-          void this.softDeleteFileFn(fl.id, fl.meta_version).catch(() => undefined);
-        }
-        return;
-      }
-
-      if (result?.queued && result.jobId) {
-        const refreshSet = new Set<string | null>([
-          (item.payload.targetParentId as string | null | undefined) ?? null,
-        ]);
-        for (const tmpId of tempFolderIds) {
-          const tmp = this.foldersById.get(tmpId);
-          if (tmp) {
-            refreshSet.add(tmp.parent_id);
-            this.removeFolderFromCache(tmp);
-          }
-        }
-        for (const tmpId of tempFileIds) {
-          const tmp = this.filesById.get(tmpId);
-          if (tmp) {
-            refreshSet.add(tmp.folder_id);
-            this.removeFileFromCache(tmp.id, tmp.folder_id);
-          }
-        }
-        const rawItems =
-          (item.payload.items as Array<{ type: 'file' | 'folder'; id: string }>) ?? [];
-        this.scheduleAsyncCopyJobPoll(
-          result.jobId,
-          Array.from(refreshSet),
-          Math.max(rawItems.length, copiedFolders.length + copiedFiles.length)
+    const self = this;
+    applyOutboxSuccess(item, result, {
+      idAliasMap: this.idAliasMap,
+      foldersById: this.foldersById,
+      filesById: this.filesById,
+      directoriesByKey: this.directoriesByKey,
+      get rootFolderIds() {
+        return self.rootFolderIds;
+      },
+      set rootFolderIds(next) {
+        self.rootFolderIds = next;
+      },
+      cancelledCopyMutationIds: this.cancelledCopyMutationIds,
+      copiedRootsByMutationId: this.copiedRootsByMutationId,
+      removeFolderFromCache: (folder) => this.removeFolderFromCache(folder),
+      removeFileFromCache: (fileId, folderId) =>
+        this.removeFileFromCache(fileId, folderId),
+      upsertFolderInCache: (folder) => this.upsertFolderInCache(folder),
+      upsertFileInCache: (file) => this.upsertFileInCache(file),
+      markCachedSubtreeStale: (folderId) =>
+        this.markCachedSubtreeStale(folderId),
+      scheduleAsyncCopyJobPoll: (jobId, refreshFolderIds, totalItems) =>
+        this.scheduleAsyncCopyJobPoll(jobId, refreshFolderIds, totalItems),
+      syncDelta: () => {
+        void this.syncDelta();
+      },
+      ensureDirectoryLoadedForce: (folderId) => {
+        void this.ensureDirectoryLoaded(folderId, { force: true }).catch(
+          () => undefined
         );
-        return;
-      }
-
-      rootCopiedFolders.forEach((realFolder, idx) => {
-        const tempId = tempFolderIds[idx];
-        if (tempId) {
-          this.idAliasMap.set(tempId, realFolder.id);
-          this.foldersById.delete(tempId);
-          const dir = this.directoriesByKey.get(dirKeyForFolder(realFolder.parent_id));
-          if (dir) {
-            dir.folderIds = replaceIdInList(dir.folderIds, tempId, realFolder.id);
-          }
-          if (realFolder.parent_id === null) {
-            this.rootFolderIds = replaceIdInList(
-              this.rootFolderIds,
-              tempId,
-              realFolder.id
-            );
-          }
-        }
-      });
-
-      rootCopiedFiles.forEach((realFile, idx) => {
-        const tempId = tempFileIds[idx];
-        if (tempId) {
-          this.idAliasMap.set(tempId, realFile.id);
-          this.filesById.delete(tempId);
-          const dir = this.directoriesByKey.get(dirKeyForFolder(realFile.folder_id));
-          if (dir) {
-            dir.fileIds = replaceIdInList(dir.fileIds, tempId, realFile.id);
-          }
-        }
-      });
-
-      // Remove any leftover unmatched temp nodes
-      for (const tmpId of tempFolderIds) {
-        if (this.foldersById.has(tmpId)) {
-          const tmp = this.foldersById.get(tmpId)!;
-          this.removeFolderFromCache(tmp);
-        }
-      }
-      for (const tmpId of tempFileIds) {
-        if (this.filesById.has(tmpId)) {
-          const tmp = this.filesById.get(tmpId)!;
-          this.removeFileFromCache(tmp.id, tmp.folder_id);
-        }
-      }
-
-      for (const folder of copiedFolders) {
-        this.upsertFolderInCache({
-          ...folder,
-          effectiveRole: folder.effectiveRole ?? 'owner',
-          optimistic: false,
-        });
-      }
-      for (const file of copiedFiles) {
-        this.upsertFileInCache({
-          ...file,
-          upload_state: 'active',
-          optimistic: false,
-        });
-      }
-
-      this.copiedRootsByMutationId.set(item.id, {
-        folders: rootCopiedFolders,
-        files: rootCopiedFiles,
-      });
-      return;
-    }
-
-    if (result?.folder) {
-      const existing = this.foldersById.get(result.folder.id);
-      this.upsertFolderInCache({
-        ...result.folder,
-        effectiveRole: result.folder.effectiveRole ?? existing?.effectiveRole,
-        optimistic: false,
-      });
-    } else if (result?.file) {
-      this.upsertFileInCache({
-        ...result.file,
-        upload_state: 'active',
-        optimistic: false,
-      });
-    }
+      },
+      softDeleteFolder: (folderId, version) => {
+        void this.softDeleteFolderFn(folderId, version).catch(() => undefined);
+      },
+      softDeleteFile: (fileId, version) => {
+        void this.softDeleteFileFn(fileId, version).catch(() => undefined);
+      },
+    });
   }
 
   private handleOutboxRollback(
@@ -2933,109 +2498,36 @@ export class WorkspaceSyncStore {
     error: unknown,
     latestFromServer?: FolderSummary | FileItem
   ): void {
-    const status =
-      typeof error === 'object' && error !== null && 'status' in error
-        ? (error as { status?: number }).status
-        : undefined;
-    const message =
-      error instanceof Error && error.message
-        ? error.message
-        : '変更の保存に失敗しました';
-
-    if (item.kind === 'workspace.copy') {
-      for (const tmpId of item.rollback?.tempFolderIds ?? []) {
-        const tmp = this.foldersById.get(tmpId);
-        if (tmp) this.removeFolderFromCache(tmp);
-      }
-      for (const tmpId of item.rollback?.tempFileIds ?? []) {
-        const tmp = this.filesById.get(tmpId);
-        if (tmp) this.removeFileFromCache(tmp.id, tmp.folder_id);
-      }
-    } else if (
-      item.kind === 'folder.move' ||
-      item.kind === 'file.move' ||
-      item.kind === 'workspace.batch_move'
-    ) {
-      const targetParentId = item.rollback?.targetParentId ?? null;
-      const targetDir = this.directoriesByKey.get(dirKeyForFolder(targetParentId));
-      for (const origFolder of item.rollback?.folders ?? []) {
-        if (targetDir) {
-          targetDir.folderIds = removeFromIdList(targetDir.folderIds, origFolder.id);
-        }
-        if (targetParentId === null && origFolder.parent_id !== null) {
-          this.rootFolderIds = removeFromIdList(this.rootFolderIds, origFolder.id);
-        }
-        this.upsertFolderInCache(origFolder);
-        this.markCachedSubtreeStale(origFolder.id);
-      }
-      for (const origFile of item.rollback?.files ?? []) {
-        if (targetDir) {
-          targetDir.fileIds = removeFromIdList(targetDir.fileIds, origFile.id);
-        }
-        this.upsertFileInCache(origFile);
-      }
-      if (latestFromServer) {
-        if (item.entityType === 'folder') {
-          const existing = this.foldersById.get(latestFromServer.id);
-          this.upsertFolderInCache({
-            ...(latestFromServer as FolderSummary),
-            effectiveRole:
-              (latestFromServer as FolderSummary).effectiveRole ?? existing?.effectiveRole,
-          });
-        } else {
-          this.upsertFileInCache(latestFromServer as FileItem);
-        }
-      }
-    } else if (item.entityType === 'folder') {
-      if (item.kind === 'folder.create') {
-        const temp = this.foldersById.get(item.entityId);
-        if (temp) {
-          this.removeFolderFromCache(temp);
-        }
-      } else if (latestFromServer) {
-        const existing = this.foldersById.get(latestFromServer.id);
-        this.upsertFolderInCache({
-          ...(latestFromServer as FolderSummary),
-          effectiveRole:
-            (latestFromServer as FolderSummary).effectiveRole ??
-            existing?.effectiveRole,
-        });
-      } else if (item.rollback?.folder) {
-        this.upsertFolderInCache(item.rollback.folder);
-      } else if (item.kind === 'folder.restore') {
-        const folderId = this.idAliasMap.get(item.entityId) ?? item.entityId;
-        const f = this.foldersById.get(folderId);
-        if (f) this.removeFolderFromCache(f);
-      }
-    } else if (item.entityType === 'file') {
-      if (latestFromServer) {
-        this.upsertFileInCache(latestFromServer as FileItem);
-      } else if (item.rollback?.file) {
-        this.upsertFileInCache(item.rollback.file);
-      } else if (item.kind === 'file.restore') {
-        this.removeFileFromCache(
-          item.entityId,
-          item.rollback?.parentId ?? null
-        );
-      }
-    }
-
-    const prefix =
-      status === 409
-        ? '別のユーザーによる更新と競合したため最新状態にロールバックしました'
-        : status === 403
-          ? '権限またはポリシー制限により変更が拒否されました'
-          : '変更を保存できなかったためロールバックしました';
-
-    this.pushToast(
+    const self = this;
+    applyOutboxRollback(
+      item,
+      error,
       {
-        kind: status === 409 ? 'warning' : 'error',
-        message: `${prefix}: ${message}`,
+        idAliasMap: this.idAliasMap,
+        foldersById: this.foldersById,
+        filesById: this.filesById,
+        directoriesByKey: this.directoriesByKey,
+        get rootFolderIds() {
+          return self.rootFolderIds;
+        },
+        set rootFolderIds(next) {
+          self.rootFolderIds = next;
+        },
+        removeFolderFromCache: (folder) =>
+          this.removeFolderFromCache(folder),
+        removeFileFromCache: (fileId, folderId) =>
+          this.removeFileFromCache(fileId, folderId),
+        upsertFolderInCache: (folder) => this.upsertFolderInCache(folder),
+        upsertFileInCache: (file) => this.upsertFileInCache(file),
+        markCachedSubtreeStale: (folderId) =>
+          this.markCachedSubtreeStale(folderId),
+        pushToast: (toast, ttlMs) => this.pushToast(toast, ttlMs),
+        syncDelta: () => {
+          void this.syncDelta();
+        },
       },
-      8000
+      latestFromServer
     );
-
-    void this.syncDelta();
   }
 
   private resetMemoryOnly(): void {
@@ -3143,324 +2635,40 @@ export class WorkspaceSyncStore {
     shouldRevokeAll: boolean;
     shouldRevalidateActive: boolean;
   } {
-    let shouldRevokeAll = false;
-    let shouldRevalidateActive = false;
-    const myUserId = this.user?.id;
-
-    for (const change of changes) {
-      const p = change.payload ?? {};
-
-      if (change.entityType === 'user') {
-        if (change.action === 'user.suspended' && change.entityId === myUserId) {
-          shouldRevokeAll = true;
-          break;
-        }
-        continue;
-      }
-
-      if (change.entityType === 'policy') {
+    const self = this;
+    return applyDeltaChangesToCache(changes, {
+      get userId() {
+        return self.user?.id;
+      },
+      foldersById: this.foldersById,
+      filesById: this.filesById,
+      directoriesByKey: this.directoriesByKey,
+      get rootFolderIds() {
+        return self.rootFolderIds;
+      },
+      set rootFolderIds(next) {
+        self.rootFolderIds = next;
+      },
+      get pinnedFolderIds() {
+        return self.pinnedFolderIds;
+      },
+      set pinnedFolderIds(next) {
+        self.pinnedFolderIds = next;
+      },
+      get activeDirKey() {
+        return self.activeDirKey;
+      },
+      setActiveDirectoryNotice: (notice) => {
+        this.activeDirectoryNotice = notice;
+      },
+      evictSubtreeFromCache: (folderId) =>
+        this.evictSubtreeFromCache(folderId),
+      bootstrapForce: () => {
         void this.bootstrap({ force: true });
-        continue;
-      }
-
-      if (change.entityType === 'permission') {
-        const targetType = p.targetType as 'folder' | 'file' | undefined;
-        const targetId = p.targetId as string | undefined;
-        const granteeType = p.granteeType as 'user' | 'group' | undefined;
-
-        if (change.action === 'permission.revoke' && targetType && targetId) {
-          const affectsMe =
-            (granteeType === 'user' && change.targetUserId === myUserId) ||
-            granteeType === 'group';
-          if (affectsMe) {
-            if (targetType === 'folder') {
-              const hitActive = this.evictSubtreeFromCache(targetId);
-              if (hitActive) {
-                shouldRevalidateActive = true;
-                this.activeDirectoryNotice = 'このフォルダへのアクセス権限が変更されました';
-              }
-            } else {
-              this.filesById.delete(targetId);
-              const dir = this.directoriesByKey.get(dirKeyForFolder(change.folderId));
-              if (dir) {
-                dir.fileIds = removeFromIdList(dir.fileIds, targetId);
-              }
-            }
-          }
-        } else if (
-          (change.action === 'permission.grant' || change.action === 'permission.update') &&
-          targetId
-        ) {
-          if (targetType === 'folder') {
-            const dir = this.directoriesByKey.get(targetId);
-            if (dir) dir.stale = true;
-            if (change.targetUserId === myUserId) {
-              const root = this.directoriesByKey.get(ROOT_DIR_KEY);
-              if (root) root.stale = true;
-              if (this.activeDirKey === ROOT_DIR_KEY || this.activeDirKey === targetId) {
-                shouldRevalidateActive = true;
-              }
-            }
-          }
-        }
-        continue;
-      }
-
-      if (change.entityType === 'folder') {
-        if (change.action === 'folder.create') {
-          const folder = p.folder as FolderSummary | undefined;
-          if (folder) {
-            this.foldersById.set(folder.id, folder);
-            const parentDir = this.directoriesByKey.get(dirKeyForFolder(folder.parent_id));
-            if (parentDir && !parentDir.folderIds.includes(folder.id)) {
-              parentDir.folderIds = dedupePush(parentDir.folderIds, folder.id);
-            }
-            if (folder.parent_id === null) {
-              this.rootFolderIds = dedupePush(this.rootFolderIds, folder.id);
-            }
-          } else {
-            const dir = this.directoriesByKey.get(dirKeyForFolder(change.folderId));
-            if (dir) dir.stale = true;
-            if (dirKeyForFolder(change.folderId) === this.activeDirKey) {
-              shouldRevalidateActive = true;
-            }
-          }
-          continue;
-        }
-
-        if (change.action === 'folder.update' || change.action === 'folder.classification_propagated') {
-          const existing = this.foldersById.get(change.entityId);
-          if (existing) {
-            const nextPinned =
-              typeof p.isPinned === 'number' ? p.isPinned : existing.is_pinned;
-            const updated: FolderSummary = {
-              ...existing,
-              name: typeof p.name === 'string' ? p.name : existing.name,
-              is_pinned: nextPinned,
-              classification:
-                (p.classification as ClassificationLabel | undefined) ??
-                existing.classification,
-              version:
-                typeof p.version === 'number' ? p.version : existing.version + 1,
-              updated_at:
-                typeof p.updatedAt === 'string' ? p.updatedAt : change.createdAt,
-            };
-            this.foldersById.set(change.entityId, updated);
-            if (nextPinned === 1) {
-              this.pinnedFolderIds = dedupePush(this.pinnedFolderIds, change.entityId);
-            } else if (typeof p.isPinned === 'number') {
-              this.pinnedFolderIds = removeFromIdList(this.pinnedFolderIds, change.entityId);
-            }
-          }
-          continue;
-        }
-
-        if (change.action === 'folder.moved_out') {
-          const oldDir = this.directoriesByKey.get(dirKeyForFolder(change.folderId));
-          if (oldDir) {
-            oldDir.folderIds = removeFromIdList(oldDir.folderIds, change.entityId);
-          }
-          continue;
-        }
-
-        if (change.action === 'folder.move') {
-          const fromParentId = (p.fromParentId as string | null | undefined) ?? null;
-          const toParentId = (p.toParentId as string | null | undefined) ?? change.folderId;
-          const oldDir = this.directoriesByKey.get(dirKeyForFolder(fromParentId));
-          if (oldDir) {
-            oldDir.folderIds = removeFromIdList(oldDir.folderIds, change.entityId);
-          }
-          const existing = this.foldersById.get(change.entityId);
-          if (existing) {
-            this.foldersById.set(change.entityId, {
-              ...existing,
-              parent_id: toParentId,
-              name: typeof p.name === 'string' ? p.name : existing.name,
-              classification:
-                (p.classification as ClassificationLabel | undefined) ??
-                existing.classification,
-              version:
-                typeof p.version === 'number'
-                  ? Math.max(existing.version, p.version)
-                  : existing.version,
-              updated_at: typeof p.updatedAt === 'string' ? p.updatedAt : change.createdAt,
-            });
-            if (fromParentId === null && toParentId !== null) {
-              this.rootFolderIds = removeFromIdList(this.rootFolderIds, change.entityId);
-            } else if (toParentId === null) {
-              this.rootFolderIds = dedupePush(this.rootFolderIds, change.entityId, true);
-            }
-            const newDir = this.directoriesByKey.get(dirKeyForFolder(toParentId));
-            if (newDir && !newDir.folderIds.includes(change.entityId)) {
-              newDir.folderIds = dedupePush(newDir.folderIds, change.entityId);
-            }
-          }
-          const cachedTargetDir = this.directoriesByKey.get(change.entityId);
-          if (cachedTargetDir) {
-            cachedTargetDir.stale = true;
-            if (this.activeDirKey === change.entityId) {
-              shouldRevalidateActive = true;
-            }
-          }
-          continue;
-        }
-
-        if (change.action === 'folder.soft_delete') {
-          const hitActive = this.evictSubtreeFromCache(change.entityId);
-          if (hitActive) {
-            this.activeDirectoryNotice = 'このフォルダは別のユーザーによって削除されました';
-          }
-          continue;
-        }
-
-        if (change.action === 'folder.restore') {
-          const folder = p.folder as FolderSummary | undefined;
-          if (folder) {
-            this.upsertFolderInCache(folder);
-          } else {
-            const parent = this.directoriesByKey.get(dirKeyForFolder(change.folderId));
-            if (parent) parent.stale = true;
-          }
-          continue;
-        }
-      }
-
-      if (change.entityType === 'file') {
-        const targetFolderId =
-          p.folderId !== undefined ? (p.folderId as string | null) : change.folderId;
-
-        if (change.action === 'file.soft_delete') {
-          this.filesById.delete(change.entityId);
-          const dir = this.directoriesByKey.get(dirKeyForFolder(change.folderId));
-          if (dir) {
-            dir.fileIds = removeFromIdList(dir.fileIds, change.entityId);
-          }
-          continue;
-        }
-
-        if (change.action === 'file.moved_out') {
-          const oldDir = this.directoriesByKey.get(dirKeyForFolder(change.folderId));
-          if (oldDir) {
-            oldDir.fileIds = removeFromIdList(oldDir.fileIds, change.entityId);
-          }
-          continue;
-        }
-
-        if (change.action === 'file.upload_complete') {
-          const item: FileItem = {
-            id: change.entityId,
-            folder_id: targetFolderId,
-            name: String(p.name ?? 'untitled'),
-            extension: (p.extension as string | null) ?? null,
-            mime_type: (p.mimeType as string | null) ?? null,
-            size_bytes: Number(p.sizeBytes ?? 0),
-            current_version_num: Number(p.currentVersionNum ?? 1),
-            meta_version: Number(p.metaVersion ?? 1),
-            classification: (p.classification as ClassificationLabel) ?? 'unset',
-            ai_suggested_label: null,
-            ai_confidence: null,
-            ai_reason: null,
-            updated_at: String(p.updatedAt ?? change.createdAt),
-          };
-          this.upsertFileInCache(item);
-          continue;
-        }
-
-        if (change.action === 'file.update') {
-          const prevFolderId = p.previousFolderId as string | null | undefined;
-          if (prevFolderId !== undefined && prevFolderId !== targetFolderId) {
-            const oldDir = this.directoriesByKey.get(dirKeyForFolder(prevFolderId));
-            if (oldDir) {
-              oldDir.fileIds = removeFromIdList(oldDir.fileIds, change.entityId);
-            }
-          }
-
-          const existing = this.filesById.get(change.entityId);
-          if (existing) {
-            const updated: FileItem = {
-              ...existing,
-              folder_id: targetFolderId,
-              name: typeof p.name === 'string' ? p.name : existing.name,
-              extension:
-                p.extension !== undefined
-                  ? (p.extension as string | null)
-                  : existing.extension,
-              classification:
-                (p.classification as ClassificationLabel | undefined) ??
-                existing.classification,
-              meta_version:
-                typeof p.metaVersion === 'number'
-                  ? p.metaVersion
-                  : (existing.meta_version ?? 1) + 1,
-              updated_at:
-                typeof p.updatedAt === 'string' ? p.updatedAt : change.createdAt,
-            };
-            this.upsertFileInCache(updated);
-          } else {
-            const newDir = this.directoriesByKey.get(dirKeyForFolder(targetFolderId));
-            if (newDir) {
-              newDir.stale = true;
-              if (dirKeyForFolder(targetFolderId) === this.activeDirKey) {
-                shouldRevalidateActive = true;
-              }
-            }
-          }
-          continue;
-        }
-
-        if (change.action === 'file.restore') {
-          const dir = this.directoriesByKey.get(dirKeyForFolder(change.folderId));
-          if (dir) {
-            dir.stale = true;
-            if (dirKeyForFolder(change.folderId) === this.activeDirKey) {
-              shouldRevalidateActive = true;
-            }
-          }
-          continue;
-        }
-
-        if (change.action === 'ai.suggestion_recorded') {
-          const existing = this.filesById.get(change.entityId);
-          if (existing) {
-            this.filesById.set(change.entityId, {
-              ...existing,
-              ai_suggested_label:
-                (p.aiSuggestedLabel as ClassificationLabel | null) ??
-                existing.ai_suggested_label,
-              ai_confidence:
-                typeof p.aiConfidence === 'number'
-                  ? p.aiConfidence
-                  : existing.ai_confidence,
-              ai_reason:
-                typeof p.aiReason === 'string' ? p.aiReason : existing.ai_reason,
-              meta_version: (existing.meta_version ?? 1) + 1,
-              updated_at:
-                typeof p.updatedAt === 'string' ? p.updatedAt : change.createdAt,
-            });
-          }
-          continue;
-        }
-
-        // Classification change actions (`file.classification_updated`, `ai.*`, `admin.*`)
-        const existing = this.filesById.get(change.entityId);
-        if (existing) {
-          this.filesById.set(change.entityId, {
-            ...existing,
-            classification:
-              (p.classification as ClassificationLabel | undefined) ??
-              existing.classification,
-            ...(p.clearSuggestion
-              ? { ai_suggested_label: null, ai_confidence: null, ai_reason: null }
-              : {}),
-            meta_version: (existing.meta_version ?? 1) + 1,
-            updated_at:
-              typeof p.updatedAt === 'string' ? p.updatedAt : change.createdAt,
-          });
-        }
-      }
-    }
-
-    return { shouldRevokeAll, shouldRevalidateActive };
+      },
+      upsertFolderInCache: (folder) => this.upsertFolderInCache(folder),
+      upsertFileInCache: (file) => this.upsertFileInCache(file),
+    });
   }
 }
 
