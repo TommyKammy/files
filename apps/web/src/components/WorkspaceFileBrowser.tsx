@@ -64,6 +64,8 @@ import {
   WorkspaceManagementModals,
   type ActiveModal,
 } from '@/components/WorkspaceManagementModals';
+import { WorkspaceNotices } from '@/components/WorkspaceNotices';
+import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
 import {
   WorkspaceUtilityOverlays,
   type ClassificationPickerState,
@@ -2413,82 +2415,25 @@ export function WorkspaceFileBrowser() {
           </div>
         </header>
 
-        {snapshot.activeDirectoryNotice && (
-          <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{snapshot.activeDirectoryNotice}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => syncStore.clearActiveDirectoryNotice()}
-              className="rounded px-2 py-0.5 text-[0.6875rem] font-medium hover:bg-amber-100"
-            >
-              閉じる
-            </button>
-          </div>
-        )}
+        <WorkspaceNotices
+          activeDirectoryNotice={snapshot.activeDirectoryNotice}
+          error={error}
+          onDismissNotice={() => syncStore.clearActiveDirectoryNotice()}
+        />
 
-        {error && (
-          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {!isTrashView && !folderId && pinnedFolders.length > 0 && (
-          <section className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                ピン留めされたワークスペース
-              </h2>
-              {snapshot.revalidating && (
-                <span className="text-[0.6875rem] text-[#6b6f76]">同期中...</span>
-              )}
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {pinnedFolders.map((pinned) => {
-                const pinnedDropClass = dragCtx.isDragging
-                  ? getDropTargetClassName(
-                      pinned.id,
-                      dragCtx.hoveredTarget
-                    )
-                  : '';
-                return (
-                  <button
-                    key={`pinned:${pinned.id}`}
-                    type="button"
-                    data-drop-folder-id={pinned.id}
-                    data-drop-label={pinned.name}
-                    onMouseEnter={() => prefetcher.scheduleHoverPrefetch(pinned.id)}
-                    onMouseLeave={() => prefetcher.cancel(pinned.id)}
-                    onFocus={() => prefetcher.scheduleCursorPrefetch(pinned.id)}
-                    onBlur={() => prefetcher.cancel(pinned.id)}
-                    onClick={() =>
-                      router.push(`/workspace?folderId=${encodeURIComponent(pinned.id)}`)
-                    }
-                    className={`flex items-center gap-3 rounded-lg border border-[#e7e7ea] bg-white p-3 text-left transition hover:border-[#d7d7dc] hover:bg-[#f6f6f8] ${pinnedDropClass}`}
-                  >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#f4f4f5] text-[#6b6f76]">
-                      <Folder className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[0.8125rem] font-medium text-[#111214]">
-                        {pinned.name}
-                      </p>
-                      <div className="mt-1">
-                        <ClassificationBadge
-                          classification={pinned.classification}
-                          compact
-                        />
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
+        <WorkspacePinnedFolders
+          isTrashView={isTrashView}
+          folderId={folderId}
+          pinnedFolders={pinnedFolders}
+          revalidating={snapshot.revalidating}
+          dragCtx={dragCtx}
+          prefetcher={prefetcher}
+          onOpenFolder={(targetFolderId) =>
+            router.push(
+              `/workspace?folderId=${encodeURIComponent(targetFolderId)}`
+            )
+          }
+        />
 
         {!isTrashView && currentFolder && canEditCurrentFolder && (
           <FileDropzoneUploader
