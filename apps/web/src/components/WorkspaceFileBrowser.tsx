@@ -19,8 +19,11 @@ import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
 import { WorkspaceUtilityOverlays } from '@/components/WorkspaceUtilityOverlays';
 import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
+import { WopiEditorModal } from '@/components/WopiEditorModal';
 import { useWorkspaceContextMenuActions } from '@/lib/use-workspace-context-menu-actions';
 import { useWorkspacePaletteActions } from '@/lib/use-workspace-palette-actions';
+import { useFileLocks } from '@/lib/use-file-locks';
+import { isWopiEditableFile, type WopiEditorFile } from '@/lib/wopi';
 import {
   getDropTargetClassName,
   WorkspaceDragProvider,
@@ -160,6 +163,8 @@ export function WorkspaceFileBrowser() {
     items: DragWorkspaceItem[];
     modeHint: 'move' | 'copy';
   } | null>(null);
+  const [wopiTarget, setWopiTarget] = useState<WopiEditorFile | null>(null);
+  const fileLocks = useFileLocks(syncStore);
   const {
     sortBy,
     sortDir,
@@ -236,6 +241,15 @@ export function WorkspaceFileBrowser() {
   function handleSearchSelect(item: SearchResultItem) {
     if (item.folderId && item.folderId !== folderId) {
       router.push(`/workspace?folderId=${encodeURIComponent(item.folderId)}`);
+    }
+    const searchFile = {
+      id: item.id,
+      name: item.name,
+      extension: null,
+    };
+    if (isWopiEditableFile(searchFile)) {
+      setWopiTarget(searchFile);
+      return;
     }
     setPreviewTarget({
       file: {
@@ -468,6 +482,17 @@ export function WorkspaceFileBrowser() {
     removeTrashFile: trash.removeFile,
   });
 
+  const openFileOrEditor = useCallback(
+    (file: FileItem) => {
+      if (isWopiEditableFile(file)) {
+        setWopiTarget(file);
+        return;
+      }
+      openPreviewForFile(file);
+    },
+    [openPreviewForFile]
+  );
+
   const openRow = useCallback(
     (row: WorkspaceTableRow) => {
       if (isTrashView) return;
@@ -475,9 +500,9 @@ export function WorkspaceFileBrowser() {
         router.push(`/workspace?folderId=${encodeURIComponent(row.folder.id)}`);
         return;
       }
-      openPreviewForFile(row.file);
+      openFileOrEditor(row.file);
     },
-    [isTrashView, router, openPreviewForFile]
+    [isTrashView, router, openFileOrEditor]
   );
 
   /**
@@ -714,6 +739,7 @@ export function WorkspaceFileBrowser() {
       handlePasteClipboard,
       handleDuplicateTargets,
       handleOpenMoveCopyModal,
+      onOpenWopiEditor: setWopiTarget,
       openCreateFolderModal,
       backgroundFileInputRef,
       backgroundFolderInputRef,
@@ -751,7 +777,7 @@ export function WorkspaceFileBrowser() {
     setContextMenu,
     scrollLinearRowIntoView,
     navigateToParentFolder,
-    openPreviewForFile,
+    openPreviewForFile: openFileOrEditor,
     startInlineRename,
     openClassificationPickerFromTarget,
     openShareFromTarget,
@@ -878,6 +904,7 @@ export function WorkspaceFileBrowser() {
               isInlineRenaming={inlineRename?.rowKey === rowKey}
               isPendingUpload={isPendingUpload}
               isCut={isCut}
+              lock={file ? fileLocks[file.id] ?? null : null}
               isContextMenuOpen={
                 contextMenu?.row
                   ? getWorkspaceRowKey(contextMenu.row) === rowKey
@@ -947,6 +974,7 @@ export function WorkspaceFileBrowser() {
                             : false
                         }
                         isCut={isCut}
+                        lock={file ? fileLocks[file.id] ?? null : null}
                         dropClass={dropClass}
                         inlineRename={inlineRename}
                         inlineInputRef={inlineInputRef}
@@ -1170,6 +1198,11 @@ export function WorkspaceFileBrowser() {
       {marquee.overlay}
 
       <WorkspaceInspectorOverlay
+        lock={
+          inspectorTarget?.kind === 'file'
+            ? fileLocks[inspectorTarget.file.id] ?? null
+            : null
+        }
         open={inspectorOpen}
         isTrashView={isTrashView}
         target={inspectorTarget}
@@ -1181,7 +1214,7 @@ export function WorkspaceFileBrowser() {
         isPrivilegedAdmin={isPrivilegedAdmin}
         syncStore={syncStore}
         onClose={() => setInspectorOpen(false)}
-        onPreview={openPreviewForFile}
+        onPreview={openFileOrEditor}
         onDownload={handleDownloadFile}
         onOpenClassification={(file) =>
           setClassificationPicker({ mode: 'single', file })
@@ -1254,6 +1287,16 @@ export function WorkspaceFileBrowser() {
             onClear={() => clipboardStore.clear()}
           />
         )}
+
+      {wopiTarget && (
+        <WopiEditorModal
+          file={wopiTarget}
+          onClose={() => {
+            setWopiTarget(null);
+            void loadActiveView({ force: true });
+          }}
+        />
+      )}
 
       <WorkspaceManagementModals
         activeModal={activeModal}

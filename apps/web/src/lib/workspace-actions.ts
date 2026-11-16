@@ -7,6 +7,7 @@ import {
   pickStricterClassification,
 } from '@/lib/formatters';
 import { selectKeyRange, toggleKeySelection } from '@/lib/keyboard-shortcuts';
+import { isWopiEditableFile } from '@/lib/wopi';
 import type {
   ClassificationLabel,
   FileItem,
@@ -211,6 +212,7 @@ export function resolveContextSelection(
 export interface ContextMenuCapabilities {
   isMulti: boolean;
   canOpen: boolean;
+  canWopiOpen: boolean;
   canDownload: boolean;
   canRename: boolean;
   canCopy: boolean;
@@ -283,6 +285,11 @@ export function buildContextMenuCapabilities(options: {
   return {
     isMulti,
     canOpen: !isMulti && Boolean(primaryRow),
+    canWopiOpen:
+      !isMulti &&
+      primaryRow?.kind === 'file' &&
+      isWopiEditableFile(primaryRow.file) &&
+      (isSysAdmin || hasRoleAtLeast(primaryRole, 'previewer')),
     canDownload:
       !isMulti &&
       primaryIsFile &&

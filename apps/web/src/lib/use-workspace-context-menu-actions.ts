@@ -35,6 +35,7 @@ export function useWorkspaceContextMenuActions({
   handlePasteClipboard,
   handleDuplicateTargets,
   handleOpenMoveCopyModal,
+  onOpenWopiEditor,
   openCreateFolderModal,
   backgroundFileInputRef,
   backgroundFolderInputRef,
@@ -69,6 +70,7 @@ export function useWorkspaceContextMenuActions({
     targets?: WorkspaceTableRow[],
     modeHint?: 'move' | 'copy'
   ) => void;
+  onOpenWopiEditor: (file: FileItem) => void;
   openCreateFolderModal: () => void;
   backgroundFileInputRef: RefObject<HTMLInputElement | null>;
   backgroundFolderInputRef: RefObject<HTMLInputElement | null>;
@@ -128,6 +130,11 @@ export function useWorkspaceContextMenuActions({
         case 'open':
           if (!primary) return;
           openRow(primary);
+          break;
+        case 'wopiOpen':
+          if (primary?.kind === 'file') {
+            onOpenWopiEditor(primary.file);
+          }
           break;
         case 'openInNewTab':
           if (primary?.kind === 'folder') {
@@ -287,6 +294,7 @@ export function useWorkspaceContextMenuActions({
       handlePasteClipboard,
       handleDuplicateTargets,
       handleOpenMoveCopyModal,
+      onOpenWopiEditor,
       canEditRow,
       handleTogglePin,
       resolveRowRole,

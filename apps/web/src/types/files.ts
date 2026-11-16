@@ -451,6 +451,40 @@ export interface SyncWsTicketResponse {
   expiresAt: string;
 }
 
+export type FileLockMode = 'wopi_collab' | 'desktop_exclusive';
+
+export interface FileLockInfo {
+  fileId: string;
+  tenantId: string;
+  mode: FileLockMode;
+  lockId: string;
+  ownerId: string;
+  ownerName: string;
+  ownerEmail: string | null;
+  sessionId: string | null;
+  acquiredAt: number;
+  expiresAt: number;
+  updatedAt: number;
+}
+
+export interface WopiSessionResponse {
+  sessionId: string;
+  fileId: string;
+  fileName: string;
+  mimeType: string;
+  classification: 'unset' | 'confidential' | 'internal' | 'public';
+  role: ResourceRole;
+  canWrite: boolean;
+  readOnly: boolean;
+  lockMode: 'wopi_collab';
+  accessToken: string;
+  accessTokenExpiresAt: string;
+  wopiFileUrl: string;
+  wopiSrc: string;
+  wopiActionUrl: string | null;
+  collaboraOrigin: string | null;
+}
+
 export interface SyncInvalidationSignal {
   type: 'sync.invalidate' | 'sync.security_revoke';
   seq: number | null;

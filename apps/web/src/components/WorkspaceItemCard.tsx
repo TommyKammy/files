@@ -4,6 +4,7 @@ import {
   FileText,
   Folder,
   Loader2,
+  Lock,
   MoreHorizontal,
   RotateCcw,
   Sparkles,
@@ -20,7 +21,7 @@ import {
   type InlineRenameState,
   type WorkspaceTableRow,
 } from '@/lib/workspace-table-row';
-import type { FileItem, FolderSummary } from '@/types/files';
+import type { FileItem, FileLockInfo, FolderSummary } from '@/types/files';
 
 export function WorkspaceItemCard({
   row,
@@ -32,6 +33,7 @@ export function WorkspaceItemCard({
   isInlineRenaming,
   isPendingUpload,
   isCut,
+  lock,
   isContextMenuOpen,
   dropClass,
   inlineRename,
@@ -58,6 +60,7 @@ export function WorkspaceItemCard({
   isInlineRenaming: boolean;
   isPendingUpload: boolean;
   isCut: boolean;
+  lock?: FileLockInfo | null;
   isContextMenuOpen: boolean;
   dropClass: string;
   inlineRename: InlineRenameState | null;
@@ -267,6 +270,15 @@ export function WorkspaceItemCard({
               {folder ? folder.name : file!.name}
             </span>
           </button>
+        )}
+        {lock && (
+          <div
+            title={`${lock.ownerName} が${lock.mode === 'desktop_exclusive' ? 'デスクトップで編集中' : 'Webで編集中'}`}
+            className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[0.625rem] font-medium text-amber-700"
+          >
+            <Lock className="h-3 w-3" />
+            編集中
+          </div>
         )}
       </div>
 

@@ -6,6 +6,7 @@ import {
   FileText,
   Folder,
   Link2,
+  Lock,
   Shield,
   Sparkles,
   Tag,
@@ -21,6 +22,7 @@ import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import type {
   BreadcrumbItem,
   FileItem,
+  FileLockInfo,
   FolderSummary,
   ResourceRole,
 } from '@/types/files';
@@ -37,6 +39,7 @@ export function WorkspaceInspectorDrawer({
   canDownload,
   canManagePerms,
   isPrivilegedAdmin,
+  lock,
   syncStore,
   onClose,
   onPreview,
@@ -53,6 +56,7 @@ export function WorkspaceInspectorDrawer({
   canDownload: boolean;
   canManagePerms: boolean;
   isPrivilegedAdmin: boolean;
+  lock?: FileLockInfo | null;
   syncStore: WorkspaceSyncStore;
   onClose: () => void;
   onPreview: (file: FileItem) => void;
@@ -121,6 +125,23 @@ export function WorkspaceInspectorDrawer({
           <X className="h-4 w-4" />
         </button>
       </div>
+
+      {lock && (
+        <section className="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="inline-flex items-center gap-1.5 font-semibold text-amber-800">
+              <Lock className="h-3.5 w-3.5" />
+              編集中
+            </span>
+            <span className="rounded-full bg-white/70 px-2 py-0.5 text-[0.625rem] text-amber-700">
+              {lock.mode === 'desktop_exclusive' ? 'Files Drive' : 'Web WOPI'}
+            </span>
+          </div>
+          <p className="text-[0.6875rem] leading-relaxed text-amber-800">
+            {lock.ownerName} さんが編集中です。期限: {formatDateTime(new Date(lock.expiresAt).toISOString())}
+          </p>
+        </section>
+      )}
 
       <section className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs">
         <div className="flex items-center justify-between">

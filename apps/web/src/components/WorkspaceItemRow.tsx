@@ -5,6 +5,7 @@ import {
   FileText,
   Folder,
   Loader2,
+  Lock,
   MoreHorizontal,
   RotateCcw,
 } from 'lucide-react';
@@ -23,6 +24,7 @@ import {
 } from '@/lib/workspace-table-row';
 import type {
   FileItem,
+  FileLockInfo,
   FolderSummary,
   ResourceRole,
 } from '@/types/files';
@@ -37,6 +39,7 @@ export function WorkspaceItemRow({
   isInlineRenaming,
   isContextMenuOpen,
   isCut,
+  lock,
   dropClass,
   inlineRename,
   inlineInputRef,
@@ -69,6 +72,7 @@ export function WorkspaceItemRow({
   isInlineRenaming: boolean;
   isContextMenuOpen: boolean;
   isCut: boolean;
+  lock?: FileLockInfo | null;
   dropClass: string;
   inlineRename: InlineRenameState | null;
   inlineInputRef: React.RefObject<HTMLInputElement | null>;
@@ -262,6 +266,15 @@ export function WorkspaceItemRow({
               <FileText className="h-4 w-4 shrink-0 text-[#6b6f76]" />
             )}
             <span>{folder ? folder.name : file!.name}</span>
+            {lock && (
+              <span
+                title={`${lock.ownerName} が${lock.mode === 'desktop_exclusive' ? 'デスクトップで編集中' : 'Webで編集中'}`}
+                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[0.625rem] font-medium text-amber-700"
+              >
+                <Lock className="h-3 w-3" />
+                編集中
+              </span>
+            )}
             {!isFolder && isPendingUpload ? (
               <span className="rounded-full bg-blue-100 px-2 py-0.5 font-mono text-[0.625rem] font-medium text-blue-700">
                 アップロード中 {file!.upload_progress ?? 0}%

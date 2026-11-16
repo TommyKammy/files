@@ -9,6 +9,7 @@ import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import type {
   BreadcrumbItem,
   FileItem,
+  FileLockInfo,
   ResourceRole,
 } from '@/types/files';
 
@@ -22,6 +23,7 @@ export function WorkspaceInspectorOverlay({
   canDownloadCurrentFolder,
   canManageCurrentFolderPerms,
   isPrivilegedAdmin,
+  lock,
   syncStore,
   onClose,
   onPreview,
@@ -40,6 +42,7 @@ export function WorkspaceInspectorOverlay({
   canDownloadCurrentFolder: boolean;
   canManageCurrentFolderPerms: boolean;
   isPrivilegedAdmin: boolean;
+  lock?: FileLockInfo | null;
   syncStore: WorkspaceSyncStore;
   onClose: () => void;
   onPreview: (file: FileItem) => void;
@@ -77,6 +80,7 @@ export function WorkspaceInspectorOverlay({
       canDownload={targetCanDownload}
       canManagePerms={targetCanManagePerms}
       isPrivilegedAdmin={isPrivilegedAdmin}
+      lock={lock}
       syncStore={syncStore}
       onClose={onClose}
       onPreview={onPreview}

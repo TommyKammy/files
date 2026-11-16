@@ -33,6 +33,7 @@ import type {
 export type ContextMenuActionId =
   | 'open'
   | 'openInNewTab'
+  | 'wopiOpen'
   | 'copyLink'
   | 'download'
   | 'rename'
@@ -95,6 +96,16 @@ export function WorkspaceContextMenu({
         icon: <ExternalLink className="h-3.5 w-3.5" />,
         enabled: capabilities.canOpen,
       });
+      if (primaryRow.kind === 'file') {
+        openChildren.push({
+          id: 'wopiOpen',
+          label: capabilities.canWopiOpen
+            ? 'ブラウザで編集 / 同時編集'
+            : '安全プレビューで開く',
+          icon: <Edit3 className="h-3.5 w-3.5" />,
+          enabled: capabilities.canWopiOpen,
+        });
+      }
       list.push({
         id: 'open',
         label: '開く',
