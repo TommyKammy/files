@@ -1,8 +1,6 @@
 'use client';
 
 import {
-  Check,
-  Copy,
   Eye,
   EyeOff,
   Link2,
@@ -10,10 +8,12 @@ import {
   Lock,
   ShieldAlert,
   Trash2,
-  X,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
+import { CopyableUrl } from '@/components/ui/CopyableUrl';
+import { ModalError } from '@/components/ui/ModalError';
+import { ModalHeader } from '@/components/ui/ModalHeader';
 import { ModalShell } from '@/components/ModalShell';
 import {
   ApiClientError,
@@ -66,7 +66,6 @@ export function SharePopover({
   const [creating, setCreating] = useState(false);
 
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   async function reloadLinks() {
     setLoading(true);
@@ -94,7 +93,6 @@ export function SharePopover({
     setCreating(true);
     setError(null);
     setGeneratedUrl(null);
-    setCopied(false);
 
     try {
       const parsedMaxDownloads = maxDownloads.trim()
@@ -131,13 +129,6 @@ export function SharePopover({
     }
   }
 
-  async function handleCopy() {
-    if (!generatedUrl) return;
-    await navigator.clipboard.writeText(generatedUrl);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
-  }
-
   async function handleRevoke(linkId: string) {
     setError(null);
     try {
@@ -156,71 +147,26 @@ export function SharePopover({
       onClose={onClose}
       className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
     >
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Link2 className="h-4 w-4 shrink-0 text-blue-600" />
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="truncate text-sm font-semibold text-slate-900">
-                  共有リンク設定: {targetName}
-                </h2>
-                <ClassificationBadge classification={classification} compact />
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            aria-label="閉じる"
-            onClick={onClose}
-            className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <ModalHeader
+          icon={<Link2 className="h-4 w-4 shrink-0 text-blue-600" />}
+          title={`共有リンク設定: ${targetName}`}
+          badge={
+            <ClassificationBadge classification={classification} compact />
+          }
+          onClose={onClose}
+        />
 
         <div className="max-h-[78vh] overflow-y-auto p-5 space-y-5">
-          {error && (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700"
-            >
-              {error}
-            </div>
-          )}
+          <ModalError message={error} />
 
           {generatedUrl && (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 space-y-2">
-              <div className="text-xs font-semibold text-emerald-900">
-                共有リンクを発行しました（平文トークンは今回のみ表示されます）
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  id="share-generated-url"
-                  name="shareUrl"
-                  aria-label="共有リンクURL"
-                  readOnly
-                  value={generatedUrl}
-                  className="flex-1 rounded-lg border border-emerald-200 bg-white px-2.5 py-1.5 font-mono text-xs text-slate-800"
-                />
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="h-3.5 w-3.5" />
-                      <span>コピー済み</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" />
-                      <span>コピー</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
+            <CopyableUrl
+              title="共有リンクを発行しました（平文トークンは今回のみ表示されます）"
+              value={generatedUrl}
+              inputId="share-generated-url"
+              inputName="shareUrl"
+              ariaLabel="共有リンクURL"
+            />
           )}
 
           {canEdit && (

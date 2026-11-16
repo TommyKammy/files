@@ -1,15 +1,15 @@
 'use client';
 
 import {
-  Check,
-  Copy,
   Inbox,
   Loader2,
   Trash2,
-  X,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ModalShell } from '@/components/ModalShell';
+import { CopyableUrl } from '@/components/ui/CopyableUrl';
+import { ModalError } from '@/components/ui/ModalError';
+import { ModalHeader } from '@/components/ui/ModalHeader';
 import {
   ApiClientError,
   createFileRequest,
@@ -43,7 +43,6 @@ export function CreateFileRequestModal({
   const [creating, setCreating] = useState(false);
 
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   async function reload() {
     setLoading(true);
@@ -73,7 +72,6 @@ export function CreateFileRequestModal({
     setCreating(true);
     setError(null);
     setGeneratedUrl(null);
-    setCopied(false);
 
     try {
       const allowedExtensions = allowedExtText
@@ -109,13 +107,6 @@ export function CreateFileRequestModal({
     }
   }
 
-  async function handleCopy() {
-    if (!generatedUrl) return;
-    await navigator.clipboard.writeText(generatedUrl);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
-  }
-
   async function handleDeactivate(id: string) {
     setError(null);
     try {
@@ -136,71 +127,25 @@ export function CreateFileRequestModal({
       onClose={onClose}
       className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
     >
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Inbox className="h-4 w-4 shrink-0 text-indigo-600" />
-            <div className="min-w-0">
-              <h2 className="truncate text-sm font-semibold text-slate-900">
-                外部ファイル収集 (Blind Dropbox): {folderName}
-              </h2>
-              <p className="text-[0.6875rem] text-slate-500">
-                送信者はフォルダ内の既存ファイルを閲覧できません（提出専用ページを発行）
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            aria-label="閉じる"
-            onClick={onClose}
-            className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <ModalHeader
+          icon={<Inbox className="h-4 w-4 shrink-0 text-indigo-600" />}
+          title={`外部ファイル収集 (Blind Dropbox): ${folderName}`}
+          subtitle="送信者はフォルダ内の既存ファイルを閲覧できません（提出専用ページを発行）"
+          onClose={onClose}
+        />
 
         <div className="max-h-[78vh] overflow-y-auto p-5 space-y-5">
-          {error && (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700"
-            >
-              {error}
-            </div>
-          )}
+          <ModalError message={error} />
 
           {generatedUrl && (
-            <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3.5 space-y-2">
-              <div className="text-xs font-semibold text-indigo-950">
-                Blind Dropbox URL を発行しました
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  id="file-request-generated-url"
-                  name="requestUrl"
-                  aria-label="収集リンクURL"
-                  readOnly
-                  value={generatedUrl}
-                  className="flex-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 font-mono text-xs text-slate-800"
-                />
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="h-3.5 w-3.5" />
-                      <span>コピー済み</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" />
-                      <span>コピー</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
+            <CopyableUrl
+              title="Blind Dropbox URL を発行しました"
+              value={generatedUrl}
+              inputId="file-request-generated-url"
+              inputName="requestUrl"
+              ariaLabel="収集リンクURL"
+              tone="indigo"
+            />
           )}
 
           {canEdit && (

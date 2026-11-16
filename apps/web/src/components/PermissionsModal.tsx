@@ -3,6 +3,8 @@
 import { Loader2, Search, Shield, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ModalShell } from '@/components/ModalShell';
+import { ModalError } from '@/components/ui/ModalError';
+import { ModalHeader } from '@/components/ui/ModalHeader';
 import {
   ApiClientError,
   grantPermission,
@@ -142,37 +144,15 @@ export function PermissionsModal({
       onClose={onClose}
       className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
     >
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Shield className="h-4 w-4 shrink-0 text-blue-600" />
-            <div className="min-w-0">
-              <h2 className="truncate text-sm font-semibold text-slate-900">
-                アクセス権限: {targetName}
-              </h2>
-              <p className="text-xs text-slate-500">
-                あなたの実効ロール: {ROLE_META[effectiveRole]?.label ?? effectiveRole}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            aria-label="閉じる"
-            onClick={onClose}
-            className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <ModalHeader
+          icon={<Shield className="h-4 w-4 shrink-0 text-blue-600" />}
+          title={`アクセス権限: ${targetName}`}
+          subtitle={`あなたの実効ロール: ${ROLE_META[effectiveRole]?.label ?? effectiveRole}`}
+          onClose={onClose}
+        />
 
         <div className="max-h-[75vh] overflow-y-auto p-5 space-y-5">
-          {error && (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700"
-            >
-              {error}
-            </div>
-          )}
+          <ModalError message={error} />
 
           {canManage && (
             <form
