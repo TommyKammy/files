@@ -6,6 +6,7 @@ import type {
   FileItem,
   FolderChildrenResponse,
   FolderSummary,
+  ResourceRole,
   SearchResultItem,
   WorkspaceBatchItemRef,
   WorkspaceConflictPolicy,
@@ -139,6 +140,15 @@ export function restoreFile(
     method: 'POST',
     body: JSON.stringify(newName ? { newName } : {}),
   });
+}
+
+
+export function getFileViewerInfo(fileId: string): Promise<{
+  file: FileItem;
+  effectiveRole: ResourceRole;
+  canDownload: boolean;
+}> {
+  return apiFetch(`/api/files/${encodeURIComponent(fileId)}`);
 }
 
 export function updateFileClassification(

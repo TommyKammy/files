@@ -19,11 +19,9 @@ import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
 import { WorkspaceUtilityOverlays } from '@/components/WorkspaceUtilityOverlays';
 import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
-import { WopiEditorModal } from '@/components/WopiEditorModal';
 import { useWorkspaceContextMenuActions } from '@/lib/use-workspace-context-menu-actions';
 import { useWorkspacePaletteActions } from '@/lib/use-workspace-palette-actions';
 import { useFileLocks } from '@/lib/use-file-locks';
-import { isWopiEditableFile, type WopiEditorFile } from '@/lib/wopi';
 import {
   getDropTargetClassName,
   WorkspaceDragProvider,
@@ -163,7 +161,6 @@ export function WorkspaceFileBrowser() {
     items: DragWorkspaceItem[];
     modeHint: 'move' | 'copy';
   } | null>(null);
-  const [wopiTarget, setWopiTarget] = useState<WopiEditorFile | null>(null);
   const fileLocks = useFileLocks(syncStore);
   const {
     sortBy,
@@ -242,26 +239,7 @@ export function WorkspaceFileBrowser() {
     if (item.folderId && item.folderId !== folderId) {
       router.push(`/workspace?folderId=${encodeURIComponent(item.folderId)}`);
     }
-    const searchFile = {
-      id: item.id,
-      name: item.name,
-      extension: null,
-    };
-    if (isWopiEditableFile(searchFile)) {
-      setWopiTarget(searchFile);
-      return;
-    }
-    setPreviewTarget({
-      file: {
-        id: item.id,
-        folderId: item.folderId,
-        name: item.name,
-        mimeType: item.mimeType,
-        sizeBytes: item.sizeBytes,
-        classification: item.classification,
-      },
-      canDownload: true,
-    });
+    openFileOrEditor({ id: item.id });
   }
 
   const canEditCurrentFolder = currentFolder
@@ -482,16 +460,12 @@ export function WorkspaceFileBrowser() {
     removeTrashFile: trash.removeFile,
   });
 
-  const openFileOrEditor = useCallback(
-    (file: FileItem) => {
-      if (isWopiEditableFile(file)) {
-        setWopiTarget(file);
-        return;
-      }
-      openPreviewForFile(file);
-    },
-    [openPreviewForFile]
-  );
+  const openFileOrEditor = useCallback((file: { id: string }) => {
+    window.open(
+      `/workspace/file/${encodeURIComponent(file.id)}`,
+      '_blank'
+    );
+  }, []);
 
   const openRow = useCallback(
     (row: WorkspaceTableRow) => {
@@ -739,7 +713,7 @@ export function WorkspaceFileBrowser() {
       handlePasteClipboard,
       handleDuplicateTargets,
       handleOpenMoveCopyModal,
-      onOpenWopiEditor: setWopiTarget,
+      onOpenWopiEditor: openFileOrEditor,
       openCreateFolderModal,
       backgroundFileInputRef,
       backgroundFolderInputRef,
@@ -1287,16 +1261,6 @@ export function WorkspaceFileBrowser() {
             onClear={() => clipboardStore.clear()}
           />
         )}
-
-      {wopiTarget && (
-        <WopiEditorModal
-          file={wopiTarget}
-          onClose={() => {
-            setWopiTarget(null);
-            void loadActiveView({ force: true });
-          }}
-        />
-      )}
 
       <WorkspaceManagementModals
         activeModal={activeModal}

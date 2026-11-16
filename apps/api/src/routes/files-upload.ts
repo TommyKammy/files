@@ -168,6 +168,7 @@ filesUploadRoutes.get('/:id', async (c) => {
   return c.json({
     file,
     effectiveRole: access.effectiveRole,
+    canDownload: hasAtLeastRole(access.effectiveRole, 'viewer'),
     versions: versions.results,
   });
 });
