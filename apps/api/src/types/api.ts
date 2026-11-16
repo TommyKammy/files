@@ -31,6 +31,7 @@ export interface Env {
   WORKERS_AI_MODEL?: string;
   MIN_SUGGESTION_CONFIDENCE?: string;
   WOPI_TOKEN_SECRET?: string;
+  WOPI_ALLOWED_CLIENT_IPS?: string;
 }
 
 export interface AuthUser {

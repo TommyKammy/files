@@ -1,5 +1,6 @@
 import { buildAuditLogStmt } from './audit';
 import { buildSyncChangeStmt } from './sync-changes';
+import { extractLastSyncSeq } from './sync-notifier';
 import { chunkArray, executeBatchChunks } from '../utils/batch';
 import { selectUnreferencedR2Keys } from './r2-gc';
 import type { FileRow, FileVersionRow } from './file-upload-common';
@@ -152,6 +153,7 @@ export async function finalizeWopiDraft({
   file: FileRow;
   version: FileVersionRow;
   draft: WopiDraftRow;
+  syncSeq: number | null;
 } | null> {
   const draft = await env.DB.prepare(
     `SELECT * FROM wopi_drafts
@@ -290,7 +292,7 @@ export async function finalizeWopiDraft({
     ).bind(nowIso, versionId, nowIso, draft.id),
   ];
 
-  await env.DB.batch(statements);
+  const batchResults = await env.DB.batch(statements);
 
   const [updatedFile, version] = await Promise.all([
     env.DB.prepare('SELECT * FROM files WHERE tenant_id = ? AND id = ?')
@@ -311,6 +313,7 @@ export async function finalizeWopiDraft({
       promoted_version_id: versionId,
       updated_at: nowIso,
     },
+    syncSeq: extractLastSyncSeq(batchResults),
   };
 }
 
