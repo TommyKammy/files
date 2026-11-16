@@ -119,6 +119,9 @@ function parseSignalPayload(raw: unknown): SyncInvalidationSignal | null {
     scopeFolderIds,
     eventKind: obj.eventKind,
     revoked: Boolean(obj.revoked),
+    ...(obj.metadata && typeof obj.metadata === 'object'
+      ? { metadata: obj.metadata as Record<string, unknown> }
+      : {}),
     timestamp:
       typeof obj.timestamp === 'string' ? obj.timestamp : new Date().toISOString(),
   };

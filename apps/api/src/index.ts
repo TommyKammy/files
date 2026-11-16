@@ -4,6 +4,7 @@ import { runDailyMaintenance } from './consumers/maintenance-cron';
 import { scimAuthMiddleware } from './middleware/scim-auth';
 import { adminGovernanceRoutes, auditLogsRoutes } from './routes/admin-governance';
 import { authRoutes } from './routes/auth';
+import { FileLockHub } from './durable-objects/file-lock-hub';
 import { TenantSyncHub } from './durable-objects/tenant-sync-hub';
 import { devBenchmarkRoutes } from './routes/dev-benchmark';
 import { filesClassificationRoutes } from './routes/files-classification';
@@ -111,5 +112,5 @@ const worker: ExportedHandler<OidcEnv> = {
   },
 };
 
-export { app, TenantSyncHub };
+export { app, FileLockHub, TenantSyncHub };
 export default worker;

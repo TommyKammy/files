@@ -7,6 +7,7 @@ export interface SyncInvalidationSignal {
   scopeFolderIds: string[];
   eventKind: string;
   revoked?: boolean;
+  metadata?: Record<string, unknown>;
   timestamp: string;
 }
 
@@ -17,6 +18,7 @@ export interface SyncPublishRequest {
   scopeFolderIds?: Array<string | null | undefined>;
   targetUserId?: string | null;
   revoked?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 const WS_TICKET_CLEANUP_BATCH = 50;
@@ -161,6 +163,7 @@ export class TenantSyncHub extends DurableObject<OidcEnv> {
       scopeFolderIds: sanitizeFolderIds(input.scopeFolderIds),
       eventKind: String(input.eventKind),
       ...(isRevocation ? { revoked: true } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
       timestamp: new Date().toISOString(),
     };
 

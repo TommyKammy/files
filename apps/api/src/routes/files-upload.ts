@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
 import { buildAuditLogStmt } from '../services/audit';
+import { assertFileNotLocked, FileLockedError } from '../services/file-lock';
 import {
   getAuthenticatedUser,
   hasAtLeastRole,
@@ -27,6 +28,12 @@ function handleFileError(
   c: { json: (body: unknown, status: 400 | 403 | 404 | 409 | 413) => Response },
   err: unknown
 ): Response {
+  if (err instanceof FileLockedError) {
+    return c.json(
+      { error: 'File is locked', code: err.code, lock: err.lock },
+      409
+    );
+  }
   if (err instanceof FileUploadError) {
     return c.json({ error: err.message, code: err.code }, err.status);
   }
@@ -282,6 +289,11 @@ filesUploadRoutes.delete('/:id', async (c) => {
   }
   if (!hasAtLeastRole(access.effectiveRole, 'editor')) {
     return c.json({ error: 'Forbidden' }, 403);
+  }
+  try {
+    await assertFileNotLocked(c.env, fileId);
+  } catch (err) {
+    return handleFileError(c, err);
   }
   if (expectedVersion !== undefined && currentFile.meta_version !== expectedVersion) {
     return c.json(

@@ -1,4 +1,5 @@
 import type { TenantSyncHub } from '../durable-objects/tenant-sync-hub';
+import type { FileLockHub } from '../durable-objects/file-lock-hub';
 import type { ScimContext } from './scim';
 
 export type ClassificationLabel = 'unset' | 'confidential' | 'internal' | 'public';
@@ -11,6 +12,7 @@ export interface Env {
   BUCKET: R2Bucket;
   JOBS_QUEUE: Queue;
   SYNC_HUB?: DurableObjectNamespace<TenantSyncHub>;
+  FILE_LOCK_HUB?: DurableObjectNamespace<FileLockHub>;
   AI?: Ai;
   ENVIRONMENT?: 'local' | 'staging' | 'production' | 'unconfigured';
   APP_ORIGIN?: string;

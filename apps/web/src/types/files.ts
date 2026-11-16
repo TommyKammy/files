@@ -457,5 +457,6 @@ export interface SyncInvalidationSignal {
   scopeFolderIds: string[];
   eventKind: string;
   revoked?: boolean;
+  metadata?: Record<string, unknown>;
   timestamp: string;
 }
