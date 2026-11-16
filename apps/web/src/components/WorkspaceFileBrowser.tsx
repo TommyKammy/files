@@ -111,6 +111,7 @@ import {
 } from '@/lib/sync-store';
 import { useMarqueeSelection } from '@/lib/use-marquee-selection';
 import { useTableVirtualWindow } from '@/lib/use-virtual-window';
+import { useWorkspaceDialogs } from '@/lib/use-workspace-dialogs';
 import { useWorkspaceKeyboard } from '@/lib/use-workspace-keyboard';
 import { useWorkspaceSelection } from '@/lib/use-workspace-selection';
 import {
@@ -224,28 +225,12 @@ export function WorkspaceFileBrowser() {
     : !directory.existsInCache &&
       (!snapshot.bootstrapDone || snapshot.revalidating);
 
-  const [previewTarget, setPreviewTarget] = useState<{
-    file: PreviewTargetFile;
-    canDownload: boolean;
-  } | null>(null);
-  const [activeModal, setActiveModal] = useState<ActiveModal | null>(null);
-
-  // Modal form state for create/rename folder
-  const [folderNameInput, setFolderNameInput] = useState('');
-  const [folderClassInput, setFolderClassInput] =
-    useState<ClassificationLabel>('internal');
-  const [modalSubmitting, setModalSubmitting] = useState(false);
-
   // Keyboard navigation, selection, inline rename, picker, and help overlay state
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [selectionAnchorKey, setSelectionAnchorKey] = useState<string | null>(null);
   const [inlineRename, setInlineRename] = useState<InlineRenameState | null>(null);
-  const [classificationPicker, setClassificationPicker] =
-    useState<ClassificationPickerState | null>(null);
-  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
-  const modalScopeTokenRef = useRef<string | null>(null);
   const inlineScopeTokenRef = useRef<string | null>(null);
   const inlineCommittedRef = useRef<string | null>(null);
   const inlineInputRef = useRef<HTMLInputElement>(null);
@@ -261,32 +246,6 @@ export function WorkspaceFileBrowser() {
     setContextMenu(null);
     setBackgroundMenu(null);
   }, [folderId, isTrashView]);
-
-  useEffect(() => {
-    if (!activeModal) return;
-    const token = keyboardScopes.pushScope('modal');
-    modalScopeTokenRef.current = token;
-    function handleModalEscape(e: KeyboardEvent) {
-      if (isImeComposingEvent(e)) return;
-      if (
-        e.key === 'Escape' &&
-        (!modalScopeTokenRef.current ||
-          keyboardScopes.isTopToken(modalScopeTokenRef.current))
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        setActiveModal(null);
-      }
-    }
-    window.addEventListener('keydown', handleModalEscape);
-    return () => {
-      window.removeEventListener('keydown', handleModalEscape);
-      keyboardScopes.popScope(token);
-      if (modalScopeTokenRef.current === token) {
-        modalScopeTokenRef.current = null;
-      }
-    };
-  }, [activeModal]);
 
   useEffect(() => {
     if (!inlineRename) return;
@@ -379,14 +338,12 @@ export function WorkspaceFileBrowser() {
     handleSortHeaderClick,
     handleToggleViewMode,
   } = useWorkspaceViewPrefs(user);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
   const sortDrainErrorKeyRef = useRef<string | null>(null);
   const pasteEnqueueFilesRef = useRef<((files: FileList | File[]) => void) | null>(
     null
   );
   const lastOsPasteAtRef = useRef(0);
   const lastVirtualPasteAtRef = useRef(0);
-  const openedPreviewParamRef = useRef<string | null>(null);
 
   useEffect(() => {
     clipboardStore.setScope(
@@ -486,43 +443,6 @@ export function WorkspaceFileBrowser() {
     } finally {
       setLoadingMore(false);
     }
-  }
-
-  function handleCreateOrRenameSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!activeModal || modalSubmitting || !folderNameInput.trim()) return;
-    if (
-      activeModal.kind !== 'createFolder' &&
-      activeModal.kind !== 'renameFolder' &&
-      activeModal.kind !== 'renameFile'
-    ) {
-      return;
-    }
-
-    setModalSubmitting(true);
-    setError(null);
-    const trimmed = folderNameInput.trim();
-    const res =
-      activeModal.kind === 'createFolder'
-        ? syncStore.optimisticCreateFolder({
-            parentId: activeModal.parentId,
-            name: trimmed,
-            classification: folderClassInput,
-          })
-        : activeModal.kind === 'renameFolder'
-          ? syncStore.optimisticRenameFolder(activeModal.folder, trimmed)
-          : syncStore.optimisticRenameFile(
-              activeModal.file,
-              trimmed,
-              effectiveRole
-            );
-
-    setModalSubmitting(false);
-    if (!res.ok) {
-      setError(res.error ?? '更新に失敗しました');
-      return;
-    }
-    setActiveModal(null);
   }
 
   function handleTogglePin(folder: FolderSummary) {
@@ -664,6 +584,43 @@ export function WorkspaceFileBrowser() {
     overscan: viewMode === 'grid' ? 4 : 10,
     threshold: viewMode === 'grid' ? 12 : 40,
   });
+  const {
+    previewTarget,
+    setPreviewTarget,
+    previewableFiles,
+    previewFileIndex,
+    openPreviewForFile,
+    handleNavigatePreview,
+    activeModal,
+    setActiveModal,
+    folderNameInput,
+    setFolderNameInput,
+    folderClassInput,
+    setFolderClassInput,
+    modalSubmitting,
+    handleCreateOrRenameSubmit,
+    classificationPicker,
+    setClassificationPicker,
+    handleApplyPickedClassification,
+    shortcutsHelpOpen,
+    setShortcutsHelpOpen,
+    inspectorOpen,
+    setInspectorOpen,
+  } = useWorkspaceDialogs({
+    sortedFiles,
+    files,
+    isTrashView,
+    canDownloadCurrentFolder,
+    effectiveRole,
+    isPrivilegedAdmin,
+    syncStore,
+    setError,
+    setSelectedKeys,
+    setFocusedRowKey,
+    previewFileId,
+    orderedRowKeys,
+    virtualWindow,
+  });
 
   const visibleRows = useMemo(
     () =>
@@ -732,15 +689,6 @@ export function WorkspaceFileBrowser() {
     });
   }
 
-  const previewableFiles = useMemo(
-    () => sortedFiles.filter((f) => !f.optimistic && f.upload_state !== 'pending'),
-    [sortedFiles]
-  );
-
-  const previewFileIndex = previewTarget
-    ? previewableFiles.findIndex((f) => f.id === previewTarget.file.id)
-    : -1;
-
   const canEditRow = useCallback(
     (row: WorkspaceTableRow): boolean => {
       if (isTrashView) return false;
@@ -754,25 +702,6 @@ export function WorkspaceFileBrowser() {
     [isTrashView, canEditCurrentFolder]
   );
 
-  const openPreviewForFile = useCallback(
-    (file: FileItem) => {
-      if (file.optimistic || file.upload_state === 'pending' || isTrashView) return;
-      setFocusedRowKey(`file:${file.id}`);
-      setPreviewTarget({
-        file: {
-          id: file.id,
-          folderId: file.folder_id,
-          name: file.name,
-          mimeType: file.mime_type,
-          sizeBytes: file.size_bytes,
-          classification: file.classification,
-        },
-        canDownload: canDownloadCurrentFolder,
-      });
-    },
-    [canDownloadCurrentFolder, isTrashView]
-  );
-
   const openRow = useCallback(
     (row: WorkspaceTableRow) => {
       if (isTrashView) return;
@@ -784,16 +713,6 @@ export function WorkspaceFileBrowser() {
     },
     [isTrashView, router, openPreviewForFile]
   );
-
-  // Deep link: /workspace?folderId=...&preview=<fileId> opens the preview once.
-  useEffect(() => {
-    if (!previewFileId || isTrashView) return;
-    if (openedPreviewParamRef.current === previewFileId) return;
-    const file = files.find((candidate) => candidate.id === previewFileId);
-    if (!file) return;
-    openedPreviewParamRef.current = previewFileId;
-    openPreviewForFile(file);
-  }, [previewFileId, isTrashView, files, openPreviewForFile]);
 
   /**
    * Google Drive-compatible right-click normalization: right-clicking outside the
@@ -830,26 +749,6 @@ export function WorkspaceFileBrowser() {
     setSelectionAnchorKey(null);
     setFocusedRowKey(null);
   }, []);
-
-  const handleNavigatePreview = useCallback(
-    (direction: -1 | 1) => {
-      if (previewFileIndex < 0) return;
-      const next = previewableFiles[previewFileIndex + direction];
-      if (!next) return;
-      openPreviewForFile(next);
-      const nextRowIdx = orderedRowKeys.indexOf(`file:${next.id}`);
-      if (nextRowIdx >= 0) {
-        virtualWindow.scrollRowIntoView(nextRowIdx);
-      }
-    },
-    [
-      previewFileIndex,
-      previewableFiles,
-      openPreviewForFile,
-      orderedRowKeys,
-      virtualWindow,
-    ]
-  );
 
   const startInlineRename = useCallback(
     (row: WorkspaceTableRow, rowIdx: number) => {
@@ -959,39 +858,6 @@ export function WorkspaceFileBrowser() {
     canEditCurrentFolder,
     isPrivilegedAdmin,
   ]);
-
-  const handleApplyPickedClassification = useCallback(
-    (nextLabel: Exclude<ClassificationLabel, 'unset'>) => {
-      if (!classificationPicker) return;
-      setError(null);
-      if (classificationPicker.mode === 'single') {
-        const res = syncStore.optimisticUpdateFileClassification(
-          classificationPicker.file,
-          { classification: nextLabel },
-          { effectiveRole, isPrivilegedAdmin }
-        );
-        if (!res.ok) {
-          setError(res.error ?? '機密区分の更新に失敗しました');
-        }
-      } else {
-        let firstError: string | null = null;
-        for (const file of classificationPicker.files) {
-          const res = syncStore.optimisticUpdateFileClassification(
-            file,
-            { classification: nextLabel },
-            { effectiveRole, isPrivilegedAdmin }
-          );
-          if (!res.ok && !firstError) {
-            firstError = res.error ?? '一部の機密区分を更新できませんでした';
-          }
-        }
-        if (firstError) setError(firstError);
-        setSelectedKeys(new Set());
-      }
-      setClassificationPicker(null);
-    },
-    [classificationPicker, syncStore, effectiveRole, isPrivilegedAdmin]
-  );
 
   const handleApproveSingleAi = useCallback(
     (file: FileItem): { ok: boolean; error?: string } => {
