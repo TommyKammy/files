@@ -8,16 +8,18 @@ import {
   resolveTargetAccess,
 } from '../services/authorization';
 import {
+  authorizeFileContentAccess,
+  contentIntentFromQuery,
+  deliverFileContent,
+} from '../services/file-content-access';
+import {
   type FileRow,
   FileUploadError,
   finalizeUploadedVersion,
   initializePendingUpload,
   SINGLE_UPLOAD_MAX_BYTES,
 } from '../services/file-upload-common';
-import {
-  issueSignedStorageUrl,
-  resolveSafeDisposition,
-} from '../services/storage-url-provider';
+import { issueSignedStorageUrl } from '../services/storage-url-provider';
 import { buildSyncChangeStmt, parseExpectedVersionInput } from '../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../services/sync-notifier';
 import type { ClassificationLabel } from '../types/api';
@@ -177,99 +179,25 @@ filesUploadRoutes.get('/:id', async (c) => {
 filesUploadRoutes.get('/:id/content-url', async (c) => {
   const user = getAuthenticatedUser(c);
   const fileId = c.req.param('id');
-  const intent = c.req.query('intent') === 'download' ? 'download' : 'preview';
+  const intent = contentIntentFromQuery(c.req.query('intent'));
 
-  const access = await resolveTargetAccess(c.env.DB, user, 'file', fileId);
-  if (!access || access.deletedAt !== null || access.uploadState !== 'active') {
-    return c.json({ error: 'File not found' }, 404);
+  const authorized = await authorizeFileContentAccess(c.env.DB, user, fileId, intent);
+  if (!authorized.ok) {
+    return c.json(authorized.body, authorized.status);
   }
 
-  const requiredRole = intent === 'download' ? 'viewer' : 'previewer';
-  if (!hasAtLeastRole(access.effectiveRole, requiredRole)) {
-    const nowIso = new Date().toISOString();
-    await c.env.DB.prepare(
-      `INSERT INTO audit_logs (
-         id, tenant_id, actor_id, actor_email, actor_ip, action,
-         target_type, target_id, classification_snapshot, status, metadata_json, created_at
-       ) VALUES (?, ?, ?, ?, ?, 'file.content_access_denied', 'file', ?, ?, 'blocked', ?, ?)`
-    )
-      .bind(
-        crypto.randomUUID(),
-        user.tenantId,
-        user.id,
-        user.email,
-        user.ipAddress,
-        fileId,
-        access.classification,
-        JSON.stringify({ intent, effectiveRole: access.effectiveRole }),
-        nowIso
-      )
-      .run();
-    return c.json({ error: 'Forbidden' }, 403);
-  }
-
-  const row = await c.env.DB.prepare(
-    `SELECT fl.name, fl.mime_type, fl.classification, fv.r2_object_key,
-            COALESCE(tp.require_watermark_confidential, 1) AS require_wm
-       FROM files fl
-       JOIN file_versions fv ON fv.id = fl.current_version_id
-       LEFT JOIN tenant_policies tp ON tp.tenant_id = fl.tenant_id
-      WHERE fl.tenant_id = ? AND fl.id = ?`
-  )
-    .bind(user.tenantId, fileId)
-    .first<{
-      name: string;
-      mime_type: string;
-      classification: ClassificationLabel;
-      r2_object_key: string;
-      require_wm: number;
-    }>();
-
-  if (!row) {
-    return c.json({ error: 'File version not found' }, 404);
-  }
-
-  const disposition = resolveSafeDisposition(
-    intent === 'download' ? 'attachment' : 'inline',
-    row.name,
-    row.mime_type
-  );
-
-  const signedGet = await issueSignedStorageUrl(c.env, {
-    method: 'GET',
-    objectKey: row.r2_object_key,
-    tenantId: user.tenantId,
-    expiresInSeconds: 300,
-    disposition,
-    filename: row.name,
-    contentType: row.mime_type,
+  const delivered = await deliverFileContent({
+    env: c.env,
+    user,
+    fileId,
+    intent,
+    versionId: null,
   });
+  if (!delivered.ok) {
+    return c.json(delivered.body, delivered.status);
+  }
 
-  const requireWatermark = row.classification === 'confidential' && row.require_wm === 1;
-  const nowIso = new Date().toISOString();
-
-  await c.env.DB.batch([
-    buildAuditLogStmt(c.env.DB, {
-      tenantId: user.tenantId,
-      actorId: user.id,
-      actorEmail: user.email,
-      actorIp: user.ipAddress,
-      action: intent === 'download' ? 'file.download' : 'file.preview',
-      targetType: 'file',
-      targetId: fileId,
-      classificationSnapshot: row.classification,
-      metadata: { disposition, requireWatermark },
-      nowIso,
-    }),
-  ]);
-
-  return c.json({
-    url: signedGet.url,
-    expiresAt: signedGet.expiresAt,
-    disposition,
-    requireWatermark,
-    watermarkText: requireWatermark ? `${user.email} • ${nowIso}` : null,
-  });
+  return c.json(delivered.body);
 });
 
 /** DELETE /api/files/:id — soft delete single file & sync FTS5 */

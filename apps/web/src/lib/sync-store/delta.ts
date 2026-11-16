@@ -34,6 +34,46 @@ function removeFromIdList(list: string[], id: string): string[] {
   return list.includes(id) ? list.filter((x) => x !== id) : list;
 }
 
+/**
+ * Shared projection for `file.version_finalized` (WOPI save) and
+ * `file.version_restored` (historical version restore): both replace the
+ * current version pointer, size, MIME type and optimistic `meta_version`.
+ */
+function applyFileVersionDelta(
+  ctx: DeltaCacheContext,
+  change: SyncDeltaItem,
+  p: Record<string, unknown>,
+  targetFolderId: string | null
+): boolean {
+  const existing = ctx.filesById.get(change.entityId);
+  if (existing) {
+    ctx.filesById.set(change.entityId, {
+      ...existing,
+      folder_id: targetFolderId,
+      size_bytes:
+        typeof p.sizeBytes === 'number' ? p.sizeBytes : existing.size_bytes,
+      mime_type:
+        typeof p.mimeType === 'string' ? p.mimeType : existing.mime_type,
+      current_version_num:
+        typeof p.currentVersionNum === 'number'
+          ? p.currentVersionNum
+          : existing.current_version_num + 1,
+      meta_version:
+        typeof p.metaVersion === 'number'
+          ? p.metaVersion
+          : (existing.meta_version ?? 1) + 1,
+      updated_at:
+        typeof p.updatedAt === 'string' ? p.updatedAt : change.createdAt,
+    });
+    return false;
+  }
+
+  const dir = ctx.directoriesByKey.get(dirKeyForDeltaFolder(targetFolderId));
+  if (!dir) return false;
+  dir.stale = true;
+  return dirKeyForDeltaFolder(targetFolderId) === ctx.activeDirKey;
+}
+
 export function applyDeltaChangesToCache(
   changes: SyncDeltaItem[],
   ctx: DeltaCacheContext
@@ -319,43 +359,12 @@ export function applyDeltaChangesToCache(
         continue;
       }
 
-      if (change.action === 'file.version_finalized') {
-        const existing = ctx.filesById.get(change.entityId);
-        if (existing) {
-          ctx.filesById.set(change.entityId, {
-            ...existing,
-            folder_id: targetFolderId,
-            size_bytes:
-              typeof p.sizeBytes === 'number'
-                ? p.sizeBytes
-                : existing.size_bytes,
-            mime_type:
-              typeof p.mimeType === 'string'
-                ? p.mimeType
-                : existing.mime_type,
-            current_version_num:
-              typeof p.currentVersionNum === 'number'
-                ? p.currentVersionNum
-                : existing.current_version_num + 1,
-            meta_version:
-              typeof p.metaVersion === 'number'
-                ? p.metaVersion
-                : (existing.meta_version ?? 1) + 1,
-            updated_at:
-              typeof p.updatedAt === 'string' ? p.updatedAt : change.createdAt,
-          });
-        } else {
-          const dir = ctx.directoriesByKey.get(
-            dirKeyForDeltaFolder(targetFolderId)
-          );
-          if (dir) {
-            dir.stale = true;
-            if (
-              dirKeyForDeltaFolder(targetFolderId) === ctx.activeDirKey
-            ) {
-              shouldRevalidateActive = true;
-            }
-          }
+      if (
+        change.action === 'file.version_finalized' ||
+        change.action === 'file.version_restored'
+      ) {
+        if (applyFileVersionDelta(ctx, change, p, targetFolderId)) {
+          shouldRevalidateActive = true;
         }
         continue;
       }

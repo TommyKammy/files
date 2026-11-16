@@ -1,5 +1,6 @@
 import type { AuthUser } from '../types/api';
 import { GRANTEE_MATCH_SQL } from './authorization';
+import type { ConditionalWriteGuard } from './statement-guard';
 
 export type SyncEntityType =
   | 'folder'
@@ -54,25 +55,41 @@ interface RawSyncChangeRow {
 /** Build a synchronous D1 statement to append a monotonic change event inside `DB.batch()`. */
 export function buildSyncChangeStmt(
   db: D1Database,
-  input: SyncChangeInput
+  input: SyncChangeInput,
+  guard?: ConditionalWriteGuard
 ): D1PreparedStatement {
+  const bindings: Array<string | number | null> = [
+    input.tenantId,
+    input.entityType,
+    input.entityId,
+    input.folderId ?? null,
+    input.targetUserId ?? null,
+    input.action,
+    input.payload ? JSON.stringify(input.payload) : null,
+    input.nowIso ?? new Date().toISOString(),
+  ];
+
+  if (!guard) {
+    return db
+      .prepare(
+        `INSERT INTO sync_changes (
+           tenant_id, entity_type, entity_id, folder_id, target_user_id,
+           action, payload_json, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(...bindings);
+  }
+
   return db
     .prepare(
       `INSERT INTO sync_changes (
          tenant_id, entity_type, entity_id, folder_id, target_user_id,
          action, payload_json, created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+       )
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE ${guard.sql}`
     )
-    .bind(
-      input.tenantId,
-      input.entityType,
-      input.entityId,
-      input.folderId ?? null,
-      input.targetUserId ?? null,
-      input.action,
-      input.payload ? JSON.stringify(input.payload) : null,
-      input.nowIso ?? new Date().toISOString()
-    );
+    .bind(...bindings, ...(guard.bindings ?? []));
 }
 
 /** Read current tenant sync watermark and Cron purge horizon in a single D1 batch round-trip. */
