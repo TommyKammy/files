@@ -16,6 +16,7 @@ import {
   type WopiTokenPayload,
 } from '../services/wopi-token';
 import { emitTenantSyncSignal } from '../services/sync-notifier';
+import { getFileLockState } from '../services/file-lock';
 import { tryGetExecutionContext } from '../services/sync-notifier';
 import type { OidcHonoEnv } from '../types/oidc';
 
@@ -201,6 +202,9 @@ wopiHostRoutes.get('/files/:fileId', async (c) => {
     context.payload.tenantId,
     fileId
   );
+  const lock = await getFileLockState(c.env, fileId);
+  const desktopLocked = lock?.mode === 'desktop_exclusive';
+  const canWrite = context.canWrite && !desktopLocked;
   const dlp =
     context.file.classification === 'confidential' ||
     context.session.role === 'previewer';
@@ -212,8 +216,8 @@ wopiHostRoutes.get('/files/:fileId', async (c) => {
     OwnerId: context.file.created_by,
     UserId: context.user.id,
     UserFriendlyName: context.user.display_name,
-    UserCanWrite: context.canWrite,
-    ReadOnly: !context.canWrite,
+    UserCanWrite: canWrite,
+    ReadOnly: !canWrite,
     SupportsUpdate: true,
     SupportsLocks: true,
     UserCanNotWriteRelative: true,
@@ -424,6 +428,14 @@ wopiHostRoutes.post('/files/:fileId/contents', async (c) => {
 
   if (!context.canWrite) {
     return wopiError(403, 'WOPI_READ_ONLY', 'Session is read-only');
+  }
+  const activeLock = await getFileLockState(c.env, fileId);
+  if (activeLock?.mode === 'desktop_exclusive') {
+    return wopiError(
+      403,
+      'WOPI_DESKTOP_LOCK_ACTIVE',
+      'A Files Drive desktop lock is active'
+    );
   }
   if (!c.env.FILE_LOCK_HUB) {
     return wopiError(503, 'WOPI_LOCK_UNAVAILABLE', 'Lock service unavailable');

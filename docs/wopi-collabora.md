@@ -87,3 +87,30 @@ allowlists the WOPI host origins it may call.
 - Keep the Next.js CSP `frame-src` limited to the same Collabora origin.
 - Use `COLLABORA_URL` as an HTTPS origin in staging/production; the web proxy
   rejects non-HTTP(S) values.
+
+## Files Drive lock REST API
+
+Future Files Drive clients share the same `FileLockHub` instance as WOPI.
+
+```text
+POST   /api/files/:id/lock         { lockId?, ttlSeconds? }
+GET    /api/files/:id/lock-status
+DELETE /api/files/:id/lock         { lockId }  (or X-Drive-Lock)
+```
+
+- A `desktop_exclusive` lock makes WOPI `CheckFileInfo` return
+  `ReadOnly: true` / `UserCanWrite: false`.
+- A `wopi_collab` lock makes Drive lock acquisition return
+  `409 WOPI_LOCK_ACTIVE` with `readOnlyRecommended: true`,
+  `webEditUrl`, and `wopiSessionPath`.
+- `confidential` files return `syncPolicy: 'cloud_preview_only'` so desktop
+  clients can suppress local caching.
+- `GET /lock-status` reports the current lock, `canWrite`, `readOnly`, and
+  `syncPolicy`.
+
+### Remaining Phase 7 validation
+
+The API/security matrix is covered by `vitest-pool-workers`
+(`file-lock-api.test.ts`, `wopi-host.test.ts`, `wopi-drafts.test.ts`).
+A Playwright two-browser Collabora editing spec and desktop-client
+integration are the remaining end-to-end validation items.
