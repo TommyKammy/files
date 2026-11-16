@@ -11,6 +11,11 @@ import {
   isAdvancedResourceRole,
   isResourceRole,
 } from '../../services/capabilities';
+import {
+  computeEffectivePermissionsCapabilities,
+  isRoleWithinCapabilitySubset,
+  resolveEffectiveInvitePolicy,
+} from '../../services/invite-policy';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
 import {
@@ -60,8 +65,61 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
     if (!access || access.deletedAt !== null) {
       return c.json({ error: 'Target resource not found' }, 404);
     }
-    if (!can(access.capabilities, 'permission.manage')) {
-      return c.json({ error: 'Forbidden: co_owner or owner required to manage permissions' }, 403);
+
+    // Step 1: resolve the policy that governs this invitation.
+    const policyFolderId = targetType === 'folder' ? targetId : access.folderId;
+    const resolvedInvitePolicy = await resolveEffectiveInvitePolicy(
+      c.env.DB,
+      user.tenantId,
+      policyFolderId
+    );
+    const effectiveCapabilities = computeEffectivePermissionsCapabilities(
+      access.capabilities,
+      access.effectiveRole,
+      resolvedInvitePolicy.effectivePolicy,
+      user.role
+    );
+    const canManage = can(access.capabilities, 'permission.manage');
+    const canInvite = can(effectiveCapabilities, 'permission.invite');
+
+    // Step 2: distinguish a brand-new invitation from an existing grant update.
+    const existing = await c.env.DB.prepare(
+      `SELECT id, role
+         FROM permissions
+        WHERE tenant_id = ? AND target_type = ? AND target_id = ?
+          AND grantee_type = ? AND grantee_id = ?`
+    )
+      .bind(user.tenantId, targetType, targetId, granteeType, granteeId)
+      .first<{ id: string; role: ResourceRole }>();
+
+    if (existing) {
+      // Inviting is not enough to modify an existing collaborator.
+      if (!canManage) {
+        return c.json(
+          {
+            error: 'Only co_owner or owner can modify existing permissions',
+            code: 'MANAGE_PERMISSION_REQUIRED',
+            effectiveInvitePolicy: resolvedInvitePolicy.effectivePolicy,
+          },
+          403
+        );
+      }
+    } else if (!canInvite) {
+      const roleWouldAllowInvite =
+        access.effectiveRole === 'owner' ||
+        access.effectiveRole === 'co_owner' ||
+        access.effectiveRole === 'editor';
+      if (roleWouldAllowInvite) {
+        return c.json(
+          {
+            error: `Invitations are restricted by the effective invite policy (${resolvedInvitePolicy.effectivePolicy})`,
+            code: 'INVITE_POLICY_RESTRICTED',
+            effectiveInvitePolicy: resolvedInvitePolicy.effectivePolicy,
+          },
+          403
+        );
+      }
+      return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);
     }
 
     // Guardrail 0a: advanced roles are folder-only, independent of tenant policy.
@@ -89,10 +147,41 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
       );
     }
 
+    // Step 3a: an invite-only caller may never exceed their own capabilities.
+    // Checked before the owner guard so `editor -> owner` reports the subset
+    // violation, while `co_owner -> owner` still reports OWNER_ESCALATION_BLOCKED.
+    if (
+      !canManage &&
+      !isRoleWithinCapabilitySubset(requestedRole, access.capabilities)
+    ) {
+      return c.json(
+        {
+          error: 'Requested role exceeds your capabilities',
+          code: 'ROLE_EXCEEDS_CALLER_CAPABILITIES',
+        },
+        403
+      );
+    }
+
     // Guardrail 1: co_owner cannot grant owner role
     if (requestedRole === 'owner' && access.effectiveRole !== 'owner') {
       return c.json(
         { error: 'Forbidden: only an owner can grant the owner role', code: 'OWNER_ESCALATION_BLOCKED' },
+        403
+      );
+    }
+
+    // Step 3b: managers are also capped by their own capability set, which
+    // keeps an owner as the only principal able to grant `owner`.
+    if (
+      canManage &&
+      !isRoleWithinCapabilitySubset(requestedRole, access.capabilities)
+    ) {
+      return c.json(
+        {
+          error: 'Requested role exceeds your capabilities',
+          code: 'ROLE_EXCEEDS_CALLER_CAPABILITIES',
+        },
         403
       );
     }
@@ -124,41 +213,6 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
       }
     }
 
-    // Waterfall inheritance: an ancestor grant is authoritative. Re-granting or
-    // overriding the same principal on a descendant is rejected; new principals
-    // with no inherited grant remain grantable.
-    if ((await getPermissionInheritanceMode(c.env.DB, user.tenantId)) === 'waterfall') {
-      const inherited = await findInheritedAncestorGrant(
-        c.env.DB,
-        user.tenantId,
-        targetType,
-        targetId,
-        granteeType,
-        granteeId
-      );
-      if (inherited) {
-        return c.json(
-          {
-            error: `Permission is inherited from ancestor folder "${inherited.ancestorFolderName}" under waterfall inheritance; update it on the parent folder instead`,
-            code: 'WATERFALL_INHERITED_LOCKED',
-            ancestorFolderId: inherited.ancestorFolderId,
-            ancestorFolderName: inherited.ancestorFolderName,
-            inheritedRole: inherited.inheritedRole,
-          },
-          409
-        );
-      }
-    }
-
-    const existing = await c.env.DB.prepare(
-      `SELECT id, role
-         FROM permissions
-        WHERE tenant_id = ? AND target_type = ? AND target_id = ?
-          AND grantee_type = ? AND grantee_id = ?`
-    )
-      .bind(user.tenantId, targetType, targetId, granteeType, granteeId)
-      .first<{ id: string; role: ResourceRole }>();
-
     // Guardrail 2: co_owner cannot modify/demote an existing owner
     if (existing?.role === 'owner' && access.effectiveRole !== 'owner') {
       return c.json(
@@ -181,6 +235,32 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
           {
             error: 'Cannot demote the last owner of this resource',
             code: 'LAST_OWNER_LOCKOUT',
+          },
+          409
+        );
+      }
+    }
+
+    // Step 4: waterfall inheritance makes ancestor grants authoritative.
+    // The invite-policy gate above runs first, so a caller who cannot invite
+    // never learns about inherited grants.
+    if ((await getPermissionInheritanceMode(c.env.DB, user.tenantId)) === 'waterfall') {
+      const inherited = await findInheritedAncestorGrant(
+        c.env.DB,
+        user.tenantId,
+        targetType,
+        targetId,
+        granteeType,
+        granteeId
+      );
+      if (inherited) {
+        return c.json(
+          {
+            error: `Permission is inherited from ancestor folder "${inherited.ancestorFolderName}" under waterfall inheritance; update it on the parent folder instead`,
+            code: 'WATERFALL_INHERITED_LOCKED',
+            ancestorFolderId: inherited.ancestorFolderId,
+            ancestorFolderName: inherited.ancestorFolderName,
+            inheritedRole: inherited.inheritedRole,
           },
           409
         );
@@ -224,6 +304,8 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
           granteeId,
           previousRole: existing?.role ?? null,
           role: requestedRole,
+          invitePolicy: resolvedInvitePolicy.effectivePolicy,
+          viaCapability: existing ? 'permission.manage' : 'permission.invite',
         },
         nowIso,
       }),
@@ -242,6 +324,8 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
           granteeId,
           previousRole: existing?.role ?? null,
           role: requestedRole,
+          invitePolicy: resolvedInvitePolicy.effectivePolicy,
+          viaCapability: existing ? 'permission.manage' : 'permission.invite',
           updatedAt: nowIso,
         },
         nowIso,
@@ -267,6 +351,8 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
           role: requestedRole,
           grantedBy: user.id,
         },
+        effectiveInvitePolicy: resolvedInvitePolicy.effectivePolicy,
+        effectiveCapabilities,
       },
       existing ? 200 : 201
     );

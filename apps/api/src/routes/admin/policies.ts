@@ -14,6 +14,11 @@ import {
   isPermissionInheritanceMode,
   type PermissionInheritanceMode,
 } from '../../services/permission-inheritance';
+import {
+  getTenantInvitePolicy,
+  isInvitePolicy,
+  type InvitePolicy,
+} from '../../services/invite-policy';
 import type { AiClassificationMode } from '../../types/classification';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -27,7 +32,8 @@ function parseFolderStructureMode(value: unknown): FolderStructureMode | null {
 function projectPolicy(
   policy: Record<string, unknown>,
   folderStructureMode: FolderStructureMode,
-  permissionInheritanceMode: PermissionInheritanceMode
+  permissionInheritanceMode: PermissionInheritanceMode,
+  invitePolicy: InvitePolicy
 ): Record<string, unknown> {
   return {
     ...policy,
@@ -36,6 +42,7 @@ function projectPolicy(
     advancedRolesEnabled: policy.advanced_roles_enabled === 1,
     folderStructureMode,
     permissionInheritanceMode,
+    invitePolicy,
   };
 }
 
@@ -43,13 +50,14 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET / PATCH /api/admin/policies — tenant governance policy settings */
   routes.get('/policies', async (c) => {
     const user = getAuthenticatedUser(c);
-    const [policy, folderStructureMode, permissionInheritanceMode] =
+    const [policy, folderStructureMode, permissionInheritanceMode, invitePolicy] =
       await Promise.all([
         c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
           .bind(user.tenantId)
           .first<Record<string, unknown>>(),
         getFolderStructureMode(c.env.DB, user.tenantId),
         getPermissionInheritanceMode(c.env.DB, user.tenantId),
+        getTenantInvitePolicy(c.env.DB, user.tenantId),
       ]);
     const [closedModeReport, inheritanceConflictReport] = await Promise.all([
       folderStructureMode === 'closed'
@@ -59,10 +67,16 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
     ]);
     return c.json({
       policy: policy
-        ? projectPolicy(policy, folderStructureMode, permissionInheritanceMode)
+        ? projectPolicy(
+            policy,
+            folderStructureMode,
+            permissionInheritanceMode,
+            invitePolicy
+          )
         : null,
       folderStructureMode,
       permissionInheritanceMode,
+      invitePolicy,
       ...(closedModeReport ? { closedModeReport } : {}),
       inheritanceConflictReport,
     });
@@ -94,6 +108,7 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       advancedRolesEnabled?: boolean;
       folderStructureMode?: unknown;
       permissionInheritanceMode?: unknown;
+      invitePolicy?: unknown;
     } | null;
 
     if (!body || typeof body !== 'object') {
@@ -148,6 +163,29 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       }
       updates.push('permission_inheritance_mode = ?');
       binds.push(body.permissionInheritanceMode);
+    }
+
+    if (body.invitePolicy !== undefined) {
+      if (user.role !== 'sys_admin') {
+        return c.json(
+          {
+            error: 'Only sys_admin can change the tenant invite policy',
+            code: 'SYS_ADMIN_REQUIRED',
+          },
+          403
+        );
+      }
+      if (!isInvitePolicy(body.invitePolicy)) {
+        return c.json(
+          {
+            error: "invitePolicy must be 'owners', 'editors' or 'admins'",
+            code: 'INVALID_INVITE_POLICY',
+          },
+          400
+        );
+      }
+      updates.push('invite_policy = ?');
+      binds.push(body.invitePolicy);
     }
 
     if (body.enforceCompanyOnlyLinks !== undefined) {
@@ -242,6 +280,9 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
           ...(body.permissionInheritanceMode !== undefined
             ? { permissionInheritanceMode: body.permissionInheritanceMode }
             : {}),
+          ...(body.invitePolicy !== undefined
+            ? { invitePolicy: body.invitePolicy }
+            : {}),
           updatedAt: nowIso,
         },
         nowIso,
@@ -254,13 +295,14 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       eventKind: 'admin.policy_updated',
     });
 
-    const [updated, folderStructureMode, permissionInheritanceMode] =
+    const [updated, folderStructureMode, permissionInheritanceMode, invitePolicy] =
       await Promise.all([
         c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
           .bind(user.tenantId)
           .first<Record<string, unknown>>(),
         getFolderStructureMode(c.env.DB, user.tenantId),
         getPermissionInheritanceMode(c.env.DB, user.tenantId),
+        getTenantInvitePolicy(c.env.DB, user.tenantId),
       ]);
     const [closedModeReport, inheritanceConflictReport] = await Promise.all([
       folderStructureMode === 'closed'
@@ -270,10 +312,16 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
     ]);
     return c.json({
       policy: updated
-        ? projectPolicy(updated, folderStructureMode, permissionInheritanceMode)
+        ? projectPolicy(
+            updated,
+            folderStructureMode,
+            permissionInheritanceMode,
+            invitePolicy
+          )
         : null,
       folderStructureMode,
       permissionInheritanceMode,
+      invitePolicy,
       ...(closedModeReport ? { closedModeReport } : {}),
       inheritanceConflictReport,
     });

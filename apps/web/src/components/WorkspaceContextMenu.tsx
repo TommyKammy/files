@@ -205,7 +205,11 @@ export function WorkspaceContextMenu({
         },
         {
           id: 'permissions',
-          label: '権限管理',
+          label:
+            capabilities.canInvitePermissions &&
+            !capabilities.canManagePermissions
+              ? 'メンバー招待'
+              : '権限管理',
           icon: <Shield className="h-3.5 w-3.5" />,
           enabled: capabilities.canPermissions,
         },

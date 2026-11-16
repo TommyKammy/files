@@ -28,3 +28,25 @@ export function formatSharedItemPath(
   if (breadcrumbs.length === 0) return 'マイファイル (ルート)';
   return ['マイファイル', ...breadcrumbs.map((crumb) => crumb.name)].join(' / ');
 }
+
+/**
+ * Invite-policy helpers live in `lib/invite-policy.ts`; re-exported here so
+ * permission-policy consumers can import them alongside inheritance helpers.
+ */
+export {
+  DEFAULT_INVITE_POLICY,
+  INVITE_POLICY_DESCRIPTION,
+  INVITE_POLICY_LABEL,
+  INVITE_POLICY_STRICTNESS,
+  canInviteByPolicy,
+  effectiveInvitePolicy,
+  grantableRolesForCaller,
+  invitePolicyAudienceLabel,
+  invitePolicySourceLabel,
+  invitePolicyStrictness,
+  isInvitePolicy,
+  isRoleWithinCapabilitySubset,
+  readFolderInvitePolicy,
+  readTenantInvitePolicy,
+  stricterInvitePolicy,
+} from './invite-policy';

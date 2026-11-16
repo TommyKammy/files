@@ -34,6 +34,7 @@ export function FolderTreeContextMenu({
   canShare,
   canCopyLink,
   canManagePermissions,
+  permissionsLabel = '権限管理',
   canMove,
   canPin,
   canTrash,
@@ -46,6 +47,7 @@ export function FolderTreeContextMenu({
   canShare: boolean;
   canCopyLink: boolean;
   canManagePermissions: boolean;
+  permissionsLabel?: string;
   canMove: boolean;
   canPin: boolean;
   canTrash: boolean;
@@ -86,7 +88,7 @@ export function FolderTreeContextMenu({
       },
       {
         id: 'permissions',
-        label: '権限管理',
+        label: permissionsLabel,
         icon: <Shield className="h-3.5 w-3.5" />,
         enabled: canManagePermissions,
       },
@@ -155,6 +157,7 @@ export function FolderTreeContextMenu({
     canShare,
     canCopyLink,
     canManagePermissions,
+    permissionsLabel,
     canMove,
     canPin,
     canTrash,

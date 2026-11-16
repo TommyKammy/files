@@ -80,6 +80,7 @@ export function WorkspaceInspectorOverlay({
       canShare={canAccess(access, 'share_link.create')}
       canManageLinks={canAccess(access, 'share_link.manage')}
       canManagePerms={canAccess(access, 'permission.manage')}
+      canInvitePerms={canAccess(access, 'permission.invite')}
       canVersionHistory={canAccess(access, 'item.preview')}
       isPrivilegedAdmin={false}
       lock={lock}

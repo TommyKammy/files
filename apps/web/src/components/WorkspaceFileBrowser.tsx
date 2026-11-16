@@ -329,7 +329,11 @@ export function WorkspaceFileBrowser() {
   const canDeleteCurrentFolder =
     !currentFolder || canAccess(currentAccess, 'folder.delete');
   const canManageCurrentFolderPerms = currentFolder
-    ? canAccess(currentAccess, 'permission.manage')
+    ? user?.role === 'sys_admin' ||
+      canAccess(currentAccess, 'permission.manage')
+    : false;
+  const canInviteCurrentFolder = currentFolder
+    ? canAccess(currentAccess, 'permission.invite')
     : false;
   const canShareCurrentFolder = currentFolder
     ? canAccess(currentAccess, 'share_link.create')
@@ -1433,6 +1437,7 @@ export function WorkspaceFileBrowser() {
           canRenameCurrentFolder={canRenameCurrentFolder}
           canShareCurrentFolder={canShareCurrentFolder}
           canManageCurrentFolderPerms={canManageCurrentFolderPerms}
+          canInviteCurrentFolder={canInviteCurrentFolder}
           canInspectCurrentFolder={canInspectCurrentFolder}
           isPrivilegedAdmin={isPrivilegedAdmin}
           canCopySelection={selectionCapabilities.canCopy}

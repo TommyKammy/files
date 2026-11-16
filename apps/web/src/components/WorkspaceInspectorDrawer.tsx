@@ -41,6 +41,7 @@ export function WorkspaceInspectorDrawer({
   canShare,
   canManageLinks,
   canManagePerms,
+  canInvitePerms = false,
   canVersionHistory,
   isPrivilegedAdmin,
   lock,
@@ -64,6 +65,7 @@ export function WorkspaceInspectorDrawer({
   canShare: boolean;
   canManageLinks: boolean;
   canManagePerms: boolean;
+  canInvitePerms?: boolean;
   canVersionHistory: boolean;
   isPrivilegedAdmin: boolean;
   lock?: FileLockInfo | null;
@@ -323,14 +325,14 @@ export function WorkspaceInspectorDrawer({
             共有リンクの管理には share_link.manage 権限が必要です。
           </p>
         )}
-        {canManagePerms && (
+        {(canManagePerms || canInvitePerms) && (
           <button
             type="button"
             onClick={() => onOpenPermissions(target)}
             className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 font-medium text-slate-700 hover:bg-slate-50"
           >
             <Shield className="h-3.5 w-3.5 text-slate-600" />
-            <span>権限管理</span>
+            <span>{canManagePerms ? '権限管理' : 'メンバー招待'}</span>
           </button>
         )}
       </section>

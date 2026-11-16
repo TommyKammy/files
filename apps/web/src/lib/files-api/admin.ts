@@ -9,6 +9,7 @@ import type {
   AuditLogEntry,
   ClassificationLabel,
   FolderStructureMode,
+  InvitePolicy,
   PermissionInheritanceMode,
   StorageStatsResponse,
   TenantPolicyResponse,
@@ -92,6 +93,7 @@ export function updateAdminPolicies(payload: {
   advancedRolesEnabled?: boolean;
   folderStructureMode?: FolderStructureMode;
   permissionInheritanceMode?: PermissionInheritanceMode;
+  invitePolicy?: InvitePolicy;
 }): Promise<TenantPolicyResponse & { policy: TenantPolicyRow }> {
   return apiFetch('/api/admin/policies', {
     method: 'PATCH',

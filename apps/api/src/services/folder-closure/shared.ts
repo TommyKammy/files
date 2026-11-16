@@ -32,6 +32,8 @@ export interface FolderRow {
   version: number;
   classification: ClassificationLabel;
   is_pinned: number;
+  /** P9-5 folder override; null means inherit the tenant/ancestor floor. */
+  invite_policy?: 'owners' | 'editors' | 'admins' | null;
   created_by: string;
   deleted_at: string | null;
   deleted_by: string | null;

@@ -25,7 +25,7 @@ export interface ChildFileRow {
 }
 
 export const FOLDER_CHILD_COLS =
-  'id, tenant_id, parent_id, name, depth, version, classification, is_pinned, created_by, deleted_at, created_at, updated_at';
+  'id, tenant_id, parent_id, name, depth, version, classification, is_pinned, invite_policy, created_by, deleted_at, created_at, updated_at';
 export const FILE_CHILD_COLS =
   'id, folder_id, name, extension, mime_type, size_bytes, current_version_num, meta_version, classification, ai_suggested_label, ai_confidence, ai_reason, updated_at';
 

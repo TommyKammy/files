@@ -14,6 +14,11 @@ import {
   findWaterfallInheritanceConflicts,
   getPermissionInheritanceMode,
 } from '../../services/permission-inheritance';
+import {
+  computeEffectivePermissionsCapabilities,
+  grantableRolesForCaller,
+  resolveEffectiveInvitePolicy,
+} from '../../services/invite-policy';
 import type { ResourceRole } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -36,7 +41,22 @@ export function registerPermissionListRoute(routes: Hono<OidcHonoEnv>) {
     if (!access || access.deletedAt !== null) {
       return c.json({ error: 'Target resource not found' }, 404);
     }
-    if (!can(access.capabilities, 'permission.view')) {
+
+    const policyFolderId = targetType === 'folder' ? targetId : access.folderId;
+    const resolvedInvitePolicy = await resolveEffectiveInvitePolicy(
+      c.env.DB,
+      user.tenantId,
+      policyFolderId
+    );
+    const effectiveCapabilities = computeEffectivePermissionsCapabilities(
+      access.capabilities,
+      access.effectiveRole,
+      resolvedInvitePolicy.effectivePolicy,
+      user.role
+    );
+    const canManage = can(access.capabilities, 'permission.manage');
+    const canInvite = can(effectiveCapabilities, 'permission.invite');
+    if (!can(access.capabilities, 'permission.view') && !canInvite) {
       return c.json({ error: 'Forbidden' }, 403);
     }
 
@@ -129,6 +149,15 @@ export function registerPermissionListRoute(routes: Hono<OidcHonoEnv>) {
       inheritanceConflicts.map((conflict) => [conflict.permissionId, conflict])
     );
 
+    const grantableRoles = grantableRolesForCaller({
+      targetType,
+      callerCapabilities: access.capabilities,
+      callerRole: access.effectiveRole,
+      canManage,
+      canInvite,
+      advancedRolesEnabled,
+    });
+
     const myGroupIds = new Set(
       membershipRows.results.map((row) => row.group_id)
     );
@@ -182,9 +211,23 @@ export function registerPermissionListRoute(routes: Hono<OidcHonoEnv>) {
       permissionInheritanceMode,
       accessMode: access.accessMode,
       effectiveRole: access.effectiveRole,
-      capabilities: access.capabilities,
+      capabilities: effectiveCapabilities,
+      effectiveCapabilities,
       grantedRoles: access.grantedRoles,
       advancedRolesEnabled,
+      canManage,
+      canInvite,
+      invitePolicy: {
+        tenantPolicy: resolvedInvitePolicy.tenantPolicy,
+        folderOwnPolicy: resolvedInvitePolicy.ownPolicy,
+        effectivePolicy: resolvedInvitePolicy.effectivePolicy,
+        inheritedFloor: resolvedInvitePolicy.parentFloor,
+        sourceFolderId: resolvedInvitePolicy.sourceFolderId,
+        sourceFolderName: resolvedInvitePolicy.sourceFolderName,
+        canEditFolderPolicy:
+          targetType === 'folder' && canManage,
+      },
+      grantableRoles,
       effectiveBreakdown,
       permissions: rows.results.map((r) => {
         const key = `${r.grantee_type}:${r.grantee_id}`;

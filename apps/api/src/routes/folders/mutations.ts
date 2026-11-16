@@ -6,6 +6,12 @@ import {
 } from '../../services/authorization';
 import { can } from '../../services/capabilities';
 import {
+  invitePolicyStrictness,
+  isInvitePolicy,
+  resolveEffectiveInvitePolicy,
+  stricterInvitePolicy,
+} from '../../services/invite-policy';
+import {
   createFolderWithClosures,
   type FolderRow,
   moveFolderSubtree,
@@ -60,28 +66,64 @@ export function registerFolderMutationRoutes(routes: Hono<OidcHonoEnv>) {
     }
   });
 
-  /** PATCH /api/folders/:id — rename or pin/unpin folder with optimistic lock version bump */
+  /** PATCH /api/folders/:id — rename/pin or update the folder invite policy override */
   routes.patch('/:id', async (c) => {
     const user = getAuthenticatedUser(c);
     const folderId = c.req.param('id');
     const body = (await c.req.json().catch(() => null)) as {
       name?: unknown;
       isPinned?: boolean;
+      invitePolicy?: unknown;
       expectedVersion?: number;
     } | null;
 
     if (!body) {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
+    if (
+      body.invitePolicy !== undefined &&
+      body.invitePolicy !== null &&
+      !isInvitePolicy(body.invitePolicy)
+    ) {
+      return c.json(
+        {
+          error: "invitePolicy must be 'owners', 'editors', 'admins' or null",
+          code: 'INVALID_INVITE_POLICY',
+        },
+        400
+      );
+    }
 
     const access = await resolveTargetAccess(c.env.DB, user, 'folder', folderId);
     if (!access || access.deletedAt !== null) {
       return c.json({ error: 'Folder not found' }, 404);
     }
+
+    const hasInvitePolicyUpdate = body.invitePolicy !== undefined;
+    const hasFolderFieldUpdate =
+      body.name !== undefined ||
+      body.isPinned !== undefined ||
+      !hasInvitePolicyUpdate;
+
     // Rename and pinning both mutate the folder itself; `folder.rename` is the
     // editor-tier capability (`uploader`-family roles can only create).
-    if (!can(access.capabilities, 'folder.rename')) {
+    if (hasFolderFieldUpdate && !can(access.capabilities, 'folder.rename')) {
       return c.json({ error: 'Forbidden' }, 403);
+    }
+    // Folder invite policy is a permission-management concern: co_owner / owner
+    // (or an explicit folder.settings holder) only.
+    if (
+      hasInvitePolicyUpdate &&
+      !can(access.capabilities, 'permission.manage') &&
+      !can(access.capabilities, 'folder.settings')
+    ) {
+      return c.json(
+        {
+          error: 'Only co_owner or owner can update the folder invite policy',
+          code: 'MANAGE_PERMISSION_REQUIRED',
+        },
+        403
+      );
     }
 
     const existing = await c.env.DB.prepare(
@@ -121,26 +163,101 @@ export function registerFolderMutationRoutes(routes: Hono<OidcHonoEnv>) {
 
     const nextPinned =
       body.isPinned !== undefined ? (body.isPinned ? 1 : 0) : existing.is_pinned;
-    const nowIso = new Date().toISOString();
 
-    const batchResults = await c.env.DB.batch([
+    const resolvedPolicy = await resolveEffectiveInvitePolicy(
+      c.env.DB,
+      user.tenantId,
+      folderId
+    );
+    const previousInvitePolicy = resolvedPolicy.ownPolicy;
+    let nextInvitePolicy = previousInvitePolicy;
+    let effectiveInvitePolicy = resolvedPolicy.effectivePolicy;
+
+    if (hasInvitePolicyUpdate) {
+      const requestedPolicy = body.invitePolicy as
+        | 'owners'
+        | 'editors'
+        | 'admins'
+        | null;
+      if (
+        requestedPolicy !== null &&
+        invitePolicyStrictness(requestedPolicy) <
+          invitePolicyStrictness(resolvedPolicy.parentFloor)
+      ) {
+        return c.json(
+          {
+            error: `The folder invite policy cannot be weaker than the inherited "${resolvedPolicy.parentFloor}" policy`,
+            code: 'INVITE_POLICY_CANNOT_RELAX',
+            inheritedFloor: resolvedPolicy.parentFloor,
+            parentFloor: resolvedPolicy.parentFloor,
+          },
+          409
+        );
+      }
+      nextInvitePolicy = requestedPolicy;
+      effectiveInvitePolicy =
+        requestedPolicy === null
+          ? resolvedPolicy.parentFloor
+          : stricterInvitePolicy(resolvedPolicy.parentFloor, requestedPolicy);
+    }
+
+    const nowIso = new Date().toISOString();
+    const statements: D1PreparedStatement[] = [
       c.env.DB.prepare(
         `UPDATE folders
-            SET name = ?, is_pinned = ?, version = version + 1, updated_at = ?
+            SET name = ?, is_pinned = ?, invite_policy = ?,
+                version = version + 1, updated_at = ?
           WHERE tenant_id = ? AND id = ?`
-      ).bind(nextName, nextPinned, nowIso, user.tenantId, folderId),
-      buildAuditLogStmt(c.env.DB, {
-        tenantId: user.tenantId,
-        actorId: user.id,
-        actorEmail: user.email,
-        actorIp: user.ipAddress,
-        action: 'folder.update',
-        targetType: 'folder',
-        targetId: folderId,
-        classificationSnapshot: existing.classification,
-        metadata: { name: nextName, isPinned: nextPinned === 1 },
+      ).bind(
+        nextName,
+        nextPinned,
+        nextInvitePolicy,
         nowIso,
-      }),
+        user.tenantId,
+        folderId
+      ),
+    ];
+
+    if (hasInvitePolicyUpdate) {
+      statements.push(
+        buildAuditLogStmt(c.env.DB, {
+          tenantId: user.tenantId,
+          actorId: user.id,
+          actorEmail: user.email,
+          actorIp: user.ipAddress,
+          action: 'folder.invite_policy_updated',
+          targetType: 'folder',
+          targetId: folderId,
+          classificationSnapshot: existing.classification,
+          metadata: {
+            previousPolicy: previousInvitePolicy,
+            invitePolicy: nextInvitePolicy,
+            effectivePolicy: effectiveInvitePolicy,
+            inheritedFloor: resolvedPolicy.parentFloor,
+          },
+          nowIso,
+        })
+      );
+    }
+
+    if (hasFolderFieldUpdate) {
+      statements.push(
+        buildAuditLogStmt(c.env.DB, {
+          tenantId: user.tenantId,
+          actorId: user.id,
+          actorEmail: user.email,
+          actorIp: user.ipAddress,
+          action: 'folder.update',
+          targetType: 'folder',
+          targetId: folderId,
+          classificationSnapshot: existing.classification,
+          metadata: { name: nextName, isPinned: nextPinned === 1 },
+          nowIso,
+        })
+      );
+    }
+
+    statements.push(
       buildSyncChangeStmt(c.env.DB, {
         tenantId: user.tenantId,
         entityType: 'folder',
@@ -150,18 +267,33 @@ export function registerFolderMutationRoutes(routes: Hono<OidcHonoEnv>) {
         payload: {
           name: nextName,
           isPinned: nextPinned,
+          invitePolicy: nextInvitePolicy,
+          effectiveInvitePolicy,
           version: existing.version + 1,
           updatedAt: nowIso,
         },
         nowIso,
-      }),
-    ]);
+      })
+    );
+
+    const batchResults = await c.env.DB.batch(statements);
+
+    const scopeFolderIds = [existing.parent_id, folderId];
+    if (hasInvitePolicyUpdate) {
+      const descendants = await c.env.DB.prepare(
+        `SELECT descendant_id FROM folder_closures
+          WHERE tenant_id = ? AND ancestor_id = ? AND depth > 0`
+      )
+        .bind(user.tenantId, folderId)
+        .all<{ descendant_id: string }>();
+      scopeFolderIds.push(...descendants.results.map((row) => row.descendant_id));
+    }
 
     await emitTenantSyncSignal(c, {
       tenantId: user.tenantId,
       seq: extractLastSyncSeq(batchResults),
       eventKind: 'folder.update',
-      scopeFolderIds: [existing.parent_id, folderId],
+      scopeFolderIds,
     });
 
     return c.json({
@@ -169,8 +301,14 @@ export function registerFolderMutationRoutes(routes: Hono<OidcHonoEnv>) {
         ...existing,
         name: nextName,
         is_pinned: nextPinned,
+        invite_policy: nextInvitePolicy,
         version: existing.version + 1,
         updated_at: nowIso,
+      },
+      invitePolicy: {
+        folderOwnPolicy: nextInvitePolicy,
+        effectivePolicy: effectiveInvitePolicy,
+        inheritedFloor: resolvedPolicy.parentFloor,
       },
     });
   });

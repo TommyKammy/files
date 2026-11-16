@@ -51,6 +51,19 @@ export type AccessMode = 'full' | 'path';
 /** Additive unions every grant; waterfall locks inherited principals on children. */
 export type PermissionInheritanceMode = 'additive' | 'waterfall';
 
+/** P9-5 invitation policy; strictness increases editors < owners < admins. */
+export type InvitePolicy = 'owners' | 'editors' | 'admins';
+
+export interface InvitePolicyInfo {
+  tenantPolicy: InvitePolicy;
+  folderOwnPolicy: InvitePolicy | null;
+  effectivePolicy: InvitePolicy;
+  inheritedFloor: InvitePolicy;
+  sourceFolderId: string | null;
+  sourceFolderName: string | null;
+  canEditFolderPolicy?: boolean;
+}
+
 export interface WaterfallInheritanceConflict {
   permissionId: string;
   targetType: 'folder' | 'file';
@@ -121,6 +134,8 @@ export interface FolderSummary {
   is_pinned: number;
   version: number;
   updated_at: string;
+  invite_policy?: InvitePolicy | null;
+  invitePolicy?: InvitePolicy | null;
   deleted_at?: string | null;
   deleted_by?: string | null;
   deleted_by_name?: string | null;
@@ -444,6 +459,7 @@ export interface BootstrapResponse {
   policy: TenantPolicyRow | null;
   folderStructureMode?: FolderStructureMode;
   permissionInheritanceMode?: PermissionInheritanceMode;
+  invitePolicy?: InvitePolicy;
   rootFolders: FolderSummary[];
   pinnedFolders: FolderSummary[];
   currentSeq: number;
@@ -562,8 +578,13 @@ export interface PermissionsListResponse {
   accessMode?: AccessMode | null;
   effectiveRole: ResourceRole | null;
   capabilities: Capability[];
+  effectiveCapabilities?: Capability[];
   grantedRoles: ResourceRole[];
   advancedRolesEnabled: boolean;
+  canManage?: boolean;
+  canInvite?: boolean;
+  invitePolicy?: InvitePolicyInfo;
+  grantableRoles?: ResourceRole[];
   effectiveBreakdown: EffectiveBreakdownGrant[];
   permissions: PermissionEntry[];
 }
@@ -730,6 +751,8 @@ export interface TenantPolicyRow {
   folderStructureMode?: FolderStructureMode;
   permission_inheritance_mode?: PermissionInheritanceMode;
   permissionInheritanceMode?: PermissionInheritanceMode;
+  invite_policy?: InvitePolicy;
+  invitePolicy?: InvitePolicy;
   updated_by: string | null;
   updated_at: string;
 }
@@ -738,6 +761,7 @@ export interface TenantPolicyResponse {
   policy: TenantPolicyRow | null;
   folderStructureMode?: FolderStructureMode;
   permissionInheritanceMode?: PermissionInheritanceMode;
+  invitePolicy?: InvitePolicy;
   closedModeReport?: ClosedRootReport;
   inheritanceConflictReport?: WaterfallInheritanceConflict[];
 }

@@ -204,8 +204,10 @@ export function AppShellFolderTree({
         const access = folderAccess(contextMenu.folder);
         const canShare =
           isPrivilegedAdmin || canAccess(access, 'share_link.create');
-        const canManage =
+        const canManagePermissions =
           isPrivilegedAdmin || canAccess(access, 'permission.manage');
+        const canPermissions =
+          canManagePermissions || canAccess(access, 'permission.invite');
         const canCopyLink =
           isPrivilegedAdmin ||
           (canAccess(access, 'item.preview') &&
@@ -220,7 +222,10 @@ export function AppShellFolderTree({
             folder={contextMenu.folder}
             canShare={canShare}
             canCopyLink={canCopyLink}
-            canManagePermissions={canManage}
+            canManagePermissions={canPermissions}
+            permissionsLabel={
+              canManagePermissions ? '権限管理' : 'メンバー招待'
+            }
             canMove={isPrivilegedAdmin || canAccess(access, 'folder.move')}
             canPin={isPrivilegedAdmin || canAccess(access, 'folder.rename')}
             canTrash={isPrivilegedAdmin || canAccess(access, 'folder.delete')}

@@ -21,6 +21,7 @@ export function WorkspaceToolbar({
   canRenameCurrentFolder,
   canShareCurrentFolder,
   canManageCurrentFolderPerms,
+  canInviteCurrentFolder = false,
   canInspectCurrentFolder,
   currentFolder,
   viewMode,
@@ -41,6 +42,7 @@ export function WorkspaceToolbar({
   canRenameCurrentFolder: boolean;
   canShareCurrentFolder: boolean;
   canManageCurrentFolderPerms: boolean;
+  canInviteCurrentFolder?: boolean;
   canInspectCurrentFolder: boolean;
   currentFolder: FolderSummary | null;
   viewMode: 'list' | 'grid';
@@ -130,14 +132,23 @@ export function WorkspaceToolbar({
             </button>
           )}
 
-          {currentFolder && canManageCurrentFolderPerms && (
+          {currentFolder &&
+            (canManageCurrentFolderPerms || canInviteCurrentFolder) && (
             <button
               type="button"
               onClick={onOpenPermissions}
+              data-testid="workspace-permissions-button"
+              title={
+                canManageCurrentFolderPerms
+                  ? '権限管理・メンバー招待'
+                  : 'メンバーを招待'
+              }
               className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
             >
               <Shield className="h-3.5 w-3.5 text-slate-600" />
-              <span>権限管理</span>
+              <span>
+                {canManageCurrentFolderPerms ? '権限管理' : 'メンバー招待'}
+              </span>
             </button>
           )}
         </>

@@ -90,14 +90,16 @@ describe('D1 schema & migrations (0001 + 0002 + 0003)', () => {
     expect(sharedRefCount?.cnt).toBe(2);
 
     // Migration 0008: open / closed folder structure mode (default open).
-    const [policyCols, policyRow] = await Promise.all([
+    const [policyCols, policyRow, folderCols] = await Promise.all([
       env.DB.prepare('PRAGMA table_info(tenant_policies)').all<{ name: string }>(),
       env.DB.prepare(
-        "SELECT folder_structure_mode, permission_inheritance_mode FROM tenant_policies WHERE tenant_id = 't1'"
+        "SELECT folder_structure_mode, permission_inheritance_mode, invite_policy FROM tenant_policies WHERE tenant_id = 't1'"
       ).first<{
         folder_structure_mode: string;
         permission_inheritance_mode: string;
+        invite_policy: string;
       }>(),
+      env.DB.prepare('PRAGMA table_info(folders)').all<{ name: string }>(),
     ]);
     expect(policyCols.results.map((column) => column.name)).toContain(
       'folder_structure_mode'
@@ -106,8 +108,16 @@ describe('D1 schema & migrations (0001 + 0002 + 0003)', () => {
     expect(policyCols.results.map((column) => column.name)).toContain(
       'permission_inheritance_mode'
     );
+    // Migration 0010: invite policy (tenant default owners, folder nullable).
+    expect(policyCols.results.map((column) => column.name)).toContain(
+      'invite_policy'
+    );
+    expect(folderCols.results.map((column) => column.name)).toContain(
+      'invite_policy'
+    );
     expect(policyRow?.folder_structure_mode).toBe('open');
     expect(policyRow?.permission_inheritance_mode).toBe('additive');
+    expect(policyRow?.invite_policy).toBe('owners');
     await expect(
       env.DB.prepare(
         "UPDATE tenant_policies SET folder_structure_mode = 'invalid' WHERE tenant_id = 't1'"
@@ -116,6 +126,16 @@ describe('D1 schema & migrations (0001 + 0002 + 0003)', () => {
     await expect(
       env.DB.prepare(
         "UPDATE tenant_policies SET permission_inheritance_mode = 'invalid' WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_policies SET invite_policy = 'invalid' WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE folders SET invite_policy = 'invalid' WHERE id = 'fld1'"
       ).run()
     ).rejects.toThrow();
   });

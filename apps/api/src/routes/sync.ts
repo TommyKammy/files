@@ -26,6 +26,12 @@ import {
   getPermissionInheritanceMode,
   isPermissionInheritanceMode,
 } from '../services/permission-inheritance';
+import {
+  computeEffectivePermissionsCapabilities,
+  getTenantInvitePolicy,
+  isInvitePolicy,
+  resolveEffectiveInvitePoliciesForFolders,
+} from '../services/invite-policy';
 import { listAuthorizedSyncDeltas } from '../services/sync-changes';
 import type { OidcHonoEnv } from '../types/oidc';
 
@@ -34,7 +40,7 @@ const BOOTSTRAP_PINNED_LIMIT = 50;
 const WS_TICKET_TTL_SECONDS = 30;
 
 const FOLDER_ALIAS_COLS =
-  'f.id, f.tenant_id, f.parent_id, f.name, f.depth, f.version, f.classification, f.is_pinned, f.created_by, f.deleted_at, f.created_at, f.updated_at';
+  'f.id, f.tenant_id, f.parent_id, f.name, f.depth, f.version, f.classification, f.is_pinned, f.invite_policy, f.created_by, f.deleted_at, f.created_at, f.updated_at';
 
 export const syncRoutes = new Hono<OidcHonoEnv>();
 
@@ -118,14 +124,27 @@ syncRoutes.get('/bootstrap', async (c) => {
   )
     ? rawPolicy.permission_inheritance_mode
     : await getPermissionInheritanceMode(c.env.DB, user.tenantId);
+  const invitePolicy = isInvitePolicy(rawPolicy?.invite_policy)
+    ? rawPolicy.invite_policy
+    : await getTenantInvitePolicy(c.env.DB, user.tenantId);
   const policy = rawPolicy
     ? {
         ...rawPolicy,
         advancedRolesEnabled: rawPolicy.advanced_roles_enabled === 1,
         folderStructureMode,
         permissionInheritanceMode,
+        invitePolicy,
       }
     : null;
+
+  const rootRows = rootsRes.results as Array<FolderRow & { role_list: string | null }>;
+  const pinnedRows = pinnedRes.results as Array<FolderRow & { role_list: string | null }>;
+  const invitePolicies = await resolveEffectiveInvitePoliciesForFolders(
+    c.env.DB,
+    user.tenantId,
+    [...rootRows, ...pinnedRows].map((row) => row.id)
+  );
+
   // Hidden path-only roots expose no grants and only `folder.traverse`.
   const mapFolder = (row: FolderRow & { role_list: string | null }) => {
     const { role_list, ...folder } = row;
@@ -141,22 +160,26 @@ syncRoutes.get('/bootstrap', async (c) => {
     // Non-linear composition: a folder carrying both `viewer` and `uploader`
     // grants must bootstrap as `viewer_uploader`, not `viewer` (MAX rank loss).
     const access = synthesizeEffectiveAccess(directRoles);
+    const resolvedPolicy = invitePolicies.get(folder.id);
     return {
       ...folder,
       accessMode: 'full' as const,
       effectiveRole: access.effectiveRole,
-      capabilities: access.capabilities,
+      capabilities: resolvedPolicy
+        ? computeEffectivePermissionsCapabilities(
+            access.capabilities,
+            access.effectiveRole,
+            resolvedPolicy.effectivePolicy,
+            user.role
+          )
+        : access.capabilities,
     };
   };
 
-  const rootFolders = (
-    rootsRes.results as Array<FolderRow & { role_list: string | null }>
-  ).map(mapFolder);
+  const rootFolders = rootRows.map(mapFolder);
   // Pinned quick-access entries always require a real `folder.list` grant, so
   // path-only intermediate folders are never surfaced here.
-  const pinnedFolders = (
-    pinnedRes.results as Array<FolderRow & { role_list: string | null }>
-  ).map(mapFolder);
+  const pinnedFolders = pinnedRows.map(mapFolder);
 
   const horizonRow = horizonRes.results[0] as { purged_before_seq?: number } | undefined;
   const maxRow = maxSeqRes.results[0] as { max_seq?: number | null } | undefined;
@@ -168,6 +191,7 @@ syncRoutes.get('/bootstrap', async (c) => {
     policy,
     folderStructureMode,
     permissionInheritanceMode,
+    invitePolicy,
     rootFolders,
     pinnedFolders,
     currentSeq,

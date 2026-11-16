@@ -13,6 +13,11 @@ import {
   type Capability,
 } from '../../services/capabilities';
 import {
+  computeEffectivePermissionsCapabilities,
+  resolveEffectiveInvitePoliciesForFolders,
+  resolveEffectiveInvitePolicy,
+} from '../../services/invite-policy';
+import {
   type FolderRow,
   resolveFolderBreadcrumbs,
 } from '../../services/folder-closure-service';
@@ -84,6 +89,11 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
     const hasMore = rows.results.length > limit;
     const pageItems = rows.results.slice(0, limit);
     const last = pageItems[pageItems.length - 1];
+    const invitePolicies = await resolveEffectiveInvitePoliciesForFolders(
+      c.env.DB,
+      user.tenantId,
+      pageItems.map((folder) => folder.id)
+    );
 
     return c.json({
       // Non-linear composition is required here: a root folder can carry both
@@ -99,11 +109,19 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
           };
         }
         const access = synthesizeEffectiveAccess(directRoles);
+        const resolvedPolicy = invitePolicies.get(folder.id);
         return {
           ...folder,
           accessMode: 'full' as const,
           effectiveRole: access.effectiveRole,
-          capabilities: access.capabilities,
+          capabilities: resolvedPolicy
+            ? computeEffectivePermissionsCapabilities(
+                access.capabilities,
+                access.effectiveRole,
+                resolvedPolicy.effectivePolicy,
+                user.role
+              )
+            : access.capabilities,
         };
       }),
       nextCursor:
@@ -122,33 +140,43 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
    */
   async function attachChildFolderAccess(
     db: D1Database,
-    user: { id: string; tenantId: string },
+    user: { id: string; tenantId: string; role: 'sys_admin' | 'sec_admin' | 'member' },
     childRows: FolderRow[],
     parentAccess: { accessMode: 'full' | 'path' | null; effectiveRole: ResourceRole | null; capabilities: Capability[] }
   ) {
     if (childRows.length === 0) return [];
-    const resolved = await resolveUserAccessForFolders(
-      db,
-      user.tenantId,
-      user.id,
-      childRows.map((row) => row.id)
-    );
+    const [resolved, invitePolicies] = await Promise.all([
+      resolveUserAccessForFolders(
+        db,
+        user.tenantId,
+        user.id,
+        childRows.map((row) => row.id)
+      ),
+      resolveEffectiveInvitePoliciesForFolders(
+        db,
+        user.tenantId,
+        childRows.map((row) => row.id)
+      ),
+    ]);
     return childRows.map((row) => {
       const childAccess = resolved.get(row.id);
-      if (childAccess?.effectiveRole) {
+      const effectiveRole = childAccess?.effectiveRole ?? parentAccess.effectiveRole;
+      const baseCapabilities =
+        childAccess?.capabilities ?? parentAccess.capabilities;
+      const policy = invitePolicies.get(row.id);
+      if (effectiveRole) {
         return {
           ...row,
           accessMode: 'full' as const,
-          effectiveRole: childAccess.effectiveRole,
-          capabilities: childAccess.capabilities,
-        };
-      }
-      if (parentAccess.accessMode === 'full') {
-        return {
-          ...row,
-          accessMode: 'full' as const,
-          effectiveRole: parentAccess.effectiveRole,
-          capabilities: parentAccess.capabilities,
+          effectiveRole,
+          capabilities: policy
+            ? computeEffectivePermissionsCapabilities(
+                baseCapabilities,
+                effectiveRole,
+                policy.effectivePolicy,
+                user.role
+              )
+            : baseCapabilities,
         };
       }
       return {
@@ -181,6 +209,17 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
       return c.json({ error: 'Forbidden' }, 403);
     }
     const pathOnly = access.accessMode === 'path';
+    const resolvedParentPolicy = await resolveEffectiveInvitePolicy(
+      c.env.DB,
+      user.tenantId,
+      folderId
+    );
+    const responseCapabilities = computeEffectivePermissionsCapabilities(
+      access.capabilities,
+      access.effectiveRole,
+      resolvedParentPolicy.effectivePolicy,
+      user.role
+    );
 
     const includeBreadcrumbs = c.req.query('include') === 'breadcrumbs' && !cursor;
     // Roles without `item.preview` (uploader) may navigate folders but must not
@@ -263,7 +302,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
         folder,
         accessMode: access.accessMode,
         effectiveRole: access.effectiveRole,
-        capabilities: access.capabilities,
+        capabilities: responseCapabilities,
         folders,
         files: [],
         nextCursor,
@@ -304,7 +343,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
           folder,
           accessMode: access.accessMode,
           effectiveRole: access.effectiveRole,
-          capabilities: access.capabilities,
+          capabilities: responseCapabilities,
           folders,
           files,
           nextCursor,
@@ -325,7 +364,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
           folder,
           accessMode: access.accessMode,
           effectiveRole: access.effectiveRole,
-          capabilities: access.capabilities,
+          capabilities: responseCapabilities,
           folders,
           files: [],
           nextCursor: null,
@@ -348,7 +387,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
           folder,
           accessMode: access.accessMode,
           effectiveRole: access.effectiveRole,
-          capabilities: access.capabilities,
+          capabilities: responseCapabilities,
           folders,
           files,
           nextCursor,
@@ -408,7 +447,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
       folder,
       accessMode: access.accessMode,
       effectiveRole: access.effectiveRole,
-      capabilities: access.capabilities,
+      capabilities: responseCapabilities,
       folders,
       files,
       nextCursor,
@@ -428,11 +467,21 @@ export function registerFolderBreadcrumbRoutes(routes: Hono<OidcHonoEnv>) {
         user,
         c.req.param('id')
       );
+      const resolvedPolicy = await resolveEffectiveInvitePolicy(
+        c.env.DB,
+        user.tenantId,
+        c.req.param('id')
+      );
       return c.json({
         breadcrumbs,
         accessMode: access.accessMode,
         effectiveRole: access.effectiveRole,
-        capabilities: access.capabilities,
+        capabilities: computeEffectivePermissionsCapabilities(
+          access.capabilities,
+          access.effectiveRole,
+          resolvedPolicy.effectivePolicy,
+          user.role
+        ),
       });
     } catch (err) {
       return handleFolderError(c, err);

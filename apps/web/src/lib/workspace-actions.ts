@@ -269,6 +269,8 @@ export interface ContextMenuCapabilities {
   canCopyLink: boolean;
   canPin: boolean;
   canPermissions: boolean;
+  canManagePermissions: boolean;
+  canInvitePermissions: boolean;
   canTrash: boolean;
   canInspector: boolean;
   /** Single file, previewer+ (version list reads are previewer-gated). */
@@ -359,6 +361,14 @@ export function buildContextMenuCapabilities(options: {
     duplicateDestIsRoot &&
     isRootCreationRestricted(folderStructureMode, isSysAdmin)
   );
+  const canManagePermissions =
+    !isMulti &&
+    hasPrimary &&
+    (isSysAdmin || canAccess(primaryAccess, 'permission.manage'));
+  const canInvitePermissions =
+    !isMulti &&
+    hasPrimary &&
+    canAccess(primaryAccess, 'permission.invite');
 
   return {
     isMulti,
@@ -420,10 +430,9 @@ export function buildContextMenuCapabilities(options: {
       !isMulti &&
       primaryIsFolder &&
       (isSysAdmin || canAccess(primaryAccess, 'folder.rename')),
-    canPermissions:
-      !isMulti &&
-      hasPrimary &&
-      (isSysAdmin || canAccess(primaryAccess, 'permission.manage')),
+    canPermissions: canManagePermissions || canInvitePermissions,
+    canManagePermissions,
+    canInvitePermissions,
     canTrash:
       targets.length > 0 &&
       targets.every((target) =>

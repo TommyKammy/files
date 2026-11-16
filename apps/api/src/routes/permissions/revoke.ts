@@ -46,7 +46,13 @@ export function registerPermissionRevokeRoute(routes: Hono<OidcHonoEnv>) {
       return c.json({ error: 'Target resource not found' }, 404);
     }
     if (!can(access.capabilities, 'permission.manage')) {
-      return c.json({ error: 'Forbidden' }, 403);
+      return c.json(
+        {
+          error: 'Only co_owner or owner can revoke permissions',
+          code: 'MANAGE_PERMISSION_REQUIRED',
+        },
+        403
+      );
     }
 
     if (perm.role === 'owner') {

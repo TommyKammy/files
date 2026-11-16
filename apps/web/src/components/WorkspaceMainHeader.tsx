@@ -32,6 +32,7 @@ export function WorkspaceMainHeader({
   canRenameCurrentFolder,
   canShareCurrentFolder,
   canManageCurrentFolderPerms,
+  canInviteCurrentFolder = false,
   canInspectCurrentFolder,
   isPrivilegedAdmin,
   canCopySelection,
@@ -74,6 +75,7 @@ export function WorkspaceMainHeader({
   canRenameCurrentFolder: boolean;
   canShareCurrentFolder: boolean;
   canManageCurrentFolderPerms: boolean;
+  canInviteCurrentFolder?: boolean;
   canInspectCurrentFolder: boolean;
   isPrivilegedAdmin: boolean;
   canCopySelection: boolean;
@@ -156,6 +158,7 @@ export function WorkspaceMainHeader({
           canRenameCurrentFolder={canRenameCurrentFolder}
           canShareCurrentFolder={canShareCurrentFolder}
           canManageCurrentFolderPerms={canManageCurrentFolderPerms}
+          canInviteCurrentFolder={canInviteCurrentFolder}
           canInspectCurrentFolder={canInspectCurrentFolder}
           currentFolder={currentFolder}
           viewMode={viewMode}

@@ -1,7 +1,7 @@
 'use client';
 
 import { Loader2, Search, Shield, Trash2, UserPlus, Users } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ModalShell } from '@/components/ModalShell';
 import { ModalError } from '@/components/ui/ModalError';
 import { ModalHeader } from '@/components/ui/ModalHeader';
@@ -15,8 +15,16 @@ import {
   synthesizeEffectiveAccessFromRoles,
 } from '@/lib/capabilities';
 import { usePermissionsModal } from '@/lib/use-permissions-modal';
+import {
+  INVITE_POLICY_DESCRIPTION,
+  INVITE_POLICY_LABEL,
+  invitePolicyAudienceLabel,
+  invitePolicySourceLabel,
+  invitePolicyStrictness,
+} from '@/lib/invite-policy';
 import type {
   Capability,
+  InvitePolicy,
   PermissionEntry,
   ResourceRole,
 } from '@/types/files';
@@ -94,6 +102,12 @@ export function PermissionsModal({
     capabilities,
     advancedRolesEnabled,
     permissionInheritanceMode,
+    invitePolicy,
+    grantableRoles,
+    canInvite,
+    policySaving,
+    policyNotice,
+    setPolicyNotice,
     effectiveBreakdown,
     effectiveRole: currentEffectiveRole,
     loading,
@@ -112,6 +126,7 @@ export function PermissionsModal({
     canManage,
     handleGrant,
     handleRevoke,
+    handleUpdateFolderInvitePolicy,
   } = usePermissionsModal({ targetType, targetId, effectiveRole });
 
   const effectiveCapabilities = targetCapabilities ?? capabilities;
@@ -120,18 +135,21 @@ export function PermissionsModal({
     'permission.view'
   );
 
-  const roleGroups = useMemo(
-    () =>
-      roleGroupsForTarget(targetType, {
-        advancedRolesEnabled,
-      }).map((group) => ({
+  const roleGroups = useMemo(() => {
+    const grantable = new Set(grantableRoles);
+    return roleGroupsForTarget(targetType, {
+      advancedRolesEnabled,
+    })
+      .map((group) => ({
         ...group,
         roles: group.roles.filter(
-          (candidate) => candidate !== 'owner' || currentEffectiveRole === 'owner'
+          (candidate) =>
+            grantable.has(candidate) &&
+            (candidate !== 'owner' || currentEffectiveRole === 'owner')
         ),
-      })),
-    [targetType, advancedRolesEnabled, currentEffectiveRole]
-  );
+      }))
+      .filter((group) => group.roles.length > 0);
+  }, [targetType, advancedRolesEnabled, currentEffectiveRole, grantableRoles]);
 
   const assignableRoleIds = roleGroups.flatMap((group) => group.roles);
   const selectedRoleDescription =
@@ -143,6 +161,39 @@ export function PermissionsModal({
   const safeRole = assignableRoleIds.includes(role)
     ? role
     : assignableRoleIds[0] ?? 'viewer';
+
+  const inheritedInviteFloor: InvitePolicy =
+    invitePolicy?.inheritedFloor ??
+    invitePolicy?.tenantPolicy ??
+    'owners';
+  const effectiveInvitePolicy = invitePolicy?.effectivePolicy ?? 'owners';
+  const [folderPolicyChoice, setFolderPolicyChoice] = useState<
+    InvitePolicy | null
+  >(invitePolicy?.folderOwnPolicy ?? null);
+
+  useEffect(() => {
+    setFolderPolicyChoice(invitePolicy?.folderOwnPolicy ?? null);
+  }, [invitePolicy?.folderOwnPolicy, targetId]);
+
+  const folderPolicyOptions: Array<{
+    value: InvitePolicy | null;
+    label: string;
+    description: string;
+  }> = [
+    {
+      value: null,
+      label: `継承する（既定: ${INVITE_POLICY_LABEL[inheritedInviteFloor]}）`,
+      description:
+        '上位フォルダまたはテナント既定の招待ポリシーをそのまま適用します。',
+    },
+    ...(['editors', 'owners', 'admins'] as InvitePolicy[]).map((policy) => ({
+      value: policy,
+      label: INVITE_POLICY_LABEL[policy],
+      description: INVITE_POLICY_DESCRIPTION[policy],
+    })),
+  ];
+  const folderPolicyDirty =
+    (invitePolicy?.folderOwnPolicy ?? null) !== folderPolicyChoice;
 
   const requesterBreakdown = useMemo(() => {
     if (effectiveBreakdown.length === 0) return null;
@@ -229,6 +280,60 @@ export function PermissionsModal({
       <div className="max-h-[75vh] space-y-5 overflow-y-auto p-5">
         <ModalError message={error} />
 
+        {invitePolicy && (
+          <section
+            aria-labelledby="invite-policy-heading"
+            data-testid="invite-policy-banner"
+            className="space-y-2 rounded-xl border border-violet-200 bg-violet-50/70 px-3.5 py-3"
+          >
+            <h3
+              id="invite-policy-heading"
+              className="flex items-center gap-1.5 text-xs font-semibold text-violet-900"
+            >
+              <Shield className="h-3.5 w-3.5" />
+              招待ポリシー
+            </h3>
+            <p
+              data-testid="invite-policy-effective"
+              className="text-xs text-violet-900"
+            >
+              {targetType === 'folder' ? 'このフォルダ' : 'このファイル'}の招待ポリシー:{' '}
+              <strong>{INVITE_POLICY_LABEL[effectiveInvitePolicy]}</strong>
+            </p>
+            <dl className="grid gap-1 text-[0.6875rem] leading-relaxed text-violet-800 sm:grid-cols-2">
+              <div>
+                <dt className="font-semibold">設定元</dt>
+                <dd data-testid="invite-policy-source">
+                  {invitePolicySourceLabel({
+                    targetType,
+                    targetId,
+                    effectivePolicy: effectiveInvitePolicy,
+                    sourceFolderId: invitePolicy.sourceFolderId,
+                    sourceFolderName: invitePolicy.sourceFolderName,
+                  })}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold">招待できる人</dt>
+                <dd data-testid="invite-policy-audience">
+                  {invitePolicyAudienceLabel(effectiveInvitePolicy)}
+                </dd>
+              </div>
+            </dl>
+            {!canInvite && (
+              <p
+                role="note"
+                data-testid="invite-policy-notice"
+                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[0.6875rem] leading-relaxed text-amber-900"
+              >
+                {effectiveInvitePolicy === 'admins'
+                  ? '現在は「管理者のみ」の招待ポリシーです。システム管理者（sys_admin）がフォルダへのアクセス権を持つ場合だけ招待できます。'
+                  : `現在の招待ポリシー「${INVITE_POLICY_LABEL[effectiveInvitePolicy]}」では、あなたの権限では新しいメンバーを招待できません。所有者（Owner）または共同所有者（Co-Owner）にポリシー変更を依頼してください。`}
+              </p>
+            )}
+          </section>
+        )}
+
         <div
           data-testid="permission-inheritance-mode"
           className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.6875rem] font-medium ${
@@ -244,7 +349,7 @@ export function PermissionsModal({
             : 'Additive (加算)'}
         </div>
 
-        {canManage &&
+        {canInvite &&
           permissionInheritanceMode === 'waterfall' &&
           selectedPrincipalLock && (
             <div
@@ -266,7 +371,7 @@ export function PermissionsModal({
           </div>
         ) : (
           <>
-            {canManage && (
+            {canInvite && (
               <form
                 onSubmit={handleGrant}
                 className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4"
@@ -445,6 +550,106 @@ export function PermissionsModal({
                     のアクセス制御設定で有効化してください。既存の付与は保持されます。
                   </p>
                 ) : null}
+              </form>
+            )}
+
+            {targetType === 'folder' && invitePolicy?.canEditFolderPolicy && (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleUpdateFolderInvitePolicy(folderPolicyChoice);
+                }}
+                aria-labelledby="folder-invite-policy-heading"
+                data-testid="folder-invite-policy-section"
+                className="space-y-3 rounded-xl border border-violet-200 bg-white p-4"
+              >
+                <div>
+                  <h3
+                    id="folder-invite-policy-heading"
+                    className="text-xs font-semibold text-slate-800"
+                  >
+                    フォルダ招待ポリシー（上書き設定）
+                  </h3>
+                  <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-slate-600">
+                    このフォルダと配下のフォルダに適用する招待ポリシーです。上位の
+                    「{INVITE_POLICY_LABEL[inheritedInviteFloor]}」より緩めることはできません。
+                  </p>
+                </div>
+
+                <fieldset className="space-y-2">
+                  <legend className="sr-only">
+                    フォルダ招待ポリシーを選択
+                  </legend>
+                  {folderPolicyOptions.map((option) => {
+                    const optionKey = option.value ?? 'inherit';
+                    const tooWeak =
+                      option.value !== null &&
+                      invitePolicyStrictness(option.value) <
+                        invitePolicyStrictness(inheritedInviteFloor);
+                    return (
+                      <label
+                        key={optionKey}
+                        data-testid={`folder-invite-policy-option-${optionKey}`}
+                        className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2 transition ${
+                          folderPolicyChoice === option.value
+                            ? 'border-violet-400 bg-violet-50'
+                            : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                        } ${tooWeak ? 'cursor-not-allowed opacity-60' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="folderInvitePolicy"
+                          value={optionKey}
+                          checked={folderPolicyChoice === option.value}
+                          disabled={tooWeak || policySaving}
+                          aria-describedby={`folder-invite-policy-${optionKey}-description`}
+                          onChange={() => {
+                            setPolicyNotice(null);
+                            setFolderPolicyChoice(option.value);
+                          }}
+                          className="mt-0.5 h-4 w-4 accent-violet-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600"
+                        />
+                        <span className="min-w-0">
+                          <span className="block text-[0.75rem] font-medium text-slate-900">
+                            {option.label}
+                          </span>
+                          <span
+                            id={`folder-invite-policy-${optionKey}-description`}
+                            className="mt-0.5 block text-[0.6875rem] leading-relaxed text-slate-600"
+                          >
+                            {tooWeak
+                              ? `上位の「${INVITE_POLICY_LABEL[inheritedInviteFloor]}」より緩めることはできません`
+                              : option.description}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </fieldset>
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div aria-live="polite" className="min-h-0 text-[0.6875rem]">
+                    {policyNotice && (
+                      <p
+                        role="status"
+                        data-testid="folder-invite-policy-notice"
+                        className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-emerald-800"
+                      >
+                        {policyNotice}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!folderPolicyDirty || policySaving}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-[0.75rem] font-medium text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600"
+                  >
+                    {policySaving && (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    )}
+                    <span>{policySaving ? '保存中...' : '上書き設定を保存'}</span>
+                  </button>
+                </div>
               </form>
             )}
 

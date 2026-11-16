@@ -481,3 +481,51 @@ export function roleGroupsForTarget(
   }
   return ROLE_GROUPS.map((group) => ({ ...group, roles: [...group.roles] }));
 }
+
+/**
+ * True when every capability of `requestedRole` is held by the caller.
+ * Mirrors `apps/api/src/services/invite-policy.ts`.
+ */
+export function isRoleWithinCapabilitySubset(
+  requestedRole: ResourceRole,
+  callerCapabilities: readonly Capability[] | null | undefined
+): boolean {
+  if (!callerCapabilities) return false;
+  const target = ROLE_CAPABILITIES[requestedRole];
+  if (!target) return false;
+  for (const capability of target) {
+    if (!callerCapabilities.includes(capability)) return false;
+  }
+  return true;
+}
+
+export interface GrantableRolesInput {
+  targetType: 'folder' | 'file';
+  callerCapabilities: readonly Capability[];
+  callerRole: ResourceRole | null;
+  canManage: boolean;
+  canInvite: boolean;
+  advancedRolesEnabled: boolean;
+}
+
+/**
+ * Roles the current caller may grant. Invite-only callers are capped by their
+ * capability subset, so an editor can never grant `co_owner` / `owner`.
+ */
+export function grantableRolesForCaller(
+  input: GrantableRolesInput
+): ResourceRole[] {
+  if (!input.canInvite) return [];
+  const candidates: ResourceRole[] =
+    input.targetType === 'file'
+      ? [...FILE_ASSIGNABLE_ROLES]
+      : [...RESOURCE_ROLES];
+
+  return candidates.filter((role) => {
+    if (ADVANCED_RESOURCE_ROLES.has(role) && !input.advancedRolesEnabled) {
+      return false;
+    }
+    if (role === 'owner' && input.callerRole !== 'owner') return false;
+    return isRoleWithinCapabilitySubset(role, input.callerCapabilities);
+  });
+}

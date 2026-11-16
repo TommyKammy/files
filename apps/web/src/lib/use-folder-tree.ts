@@ -181,8 +181,11 @@ export function useFolderTree({
           break;
         }
         case 'permissions':
-          if (!canAccess(access, 'permission.manage')) {
-            deny('権限を管理する権限がありません');
+          if (
+            !canAccess(access, 'permission.manage') &&
+            !canAccess(access, 'permission.invite')
+          ) {
+            deny('権限を管理・招待する権限がありません');
             break;
           }
           setPermissionsTarget({ folder, role });

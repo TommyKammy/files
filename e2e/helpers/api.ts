@@ -7,6 +7,8 @@ export interface FolderLike {
   version: number;
   classification: string;
   effectiveRole?: string;
+  capabilities?: string[];
+  invite_policy?: string | null;
   deleted_at?: string | null;
 }
 
@@ -145,8 +147,21 @@ export interface PermissionListResponse {
   targetId: string;
   effectiveRole: string;
   capabilities: string[];
+  effectiveCapabilities?: string[];
   grantedRoles: PermissionRole[];
   advancedRolesEnabled: boolean;
+  canInvite?: boolean;
+  canManage?: boolean;
+  grantableRoles?: PermissionRole[];
+  invitePolicy?: {
+    tenantPolicy: InvitePolicy;
+    folderOwnPolicy: InvitePolicy | null;
+    effectivePolicy: InvitePolicy;
+    inheritedFloor: InvitePolicy;
+    sourceFolderId: string | null;
+    sourceFolderName: string | null;
+    canEditFolderPolicy?: boolean;
+  };
   effectiveBreakdown: Array<{
     granteeType: PermissionGranteeType;
     granteeId: string;
@@ -157,6 +172,8 @@ export interface PermissionListResponse {
   }>;
   permissions: PermissionRecord[];
 }
+
+export type InvitePolicy = 'owners' | 'editors' | 'admins';
 
 export interface GrantedPermission {
   id: string;
@@ -606,6 +623,33 @@ export async function revokePermission(
   const body = (await res.json()) as { ok: boolean; id: string };
   expect(body).toEqual({ ok: true, id: permissionId });
   return body;
+}
+
+/** PATCH /api/admin/policies — sys_admin tenant invite policy. */
+export async function updateTenantInvitePolicy(
+  actor: ApiActor,
+  invitePolicy: InvitePolicy
+): Promise<void> {
+  const res = await actor.api.patch('/api/admin/policies', {
+    data: { invitePolicy },
+  });
+  assertOk(res, `PATCH /api/admin/policies invitePolicy=${invitePolicy}`);
+}
+
+/** PATCH /api/folders/:id — owner/co-owner folder invite policy override. */
+export async function updateFolderInvitePolicy(
+  actor: ApiActor,
+  folderId: string,
+  invitePolicy: InvitePolicy | null
+): Promise<void> {
+  const res = await actor.api.patch(
+    `/api/folders/${encodeURIComponent(folderId)}`,
+    { data: { invitePolicy } }
+  );
+  assertOk(
+    res,
+    `PATCH /api/folders/${folderId} invitePolicy=${String(invitePolicy)}`
+  );
 }
 
 /** DELETE /api/folders/:id — soft delete a folder subtree for E2E fixtures. */

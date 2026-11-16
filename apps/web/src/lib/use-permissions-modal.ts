@@ -7,11 +7,17 @@ import {
   listPermissions,
   revokePermission,
   searchPrincipals,
+  updateFolderInvitePolicy as apiUpdateFolderInvitePolicy,
 } from '@/lib/files-api';
 import { canAccess, capabilitiesForRole } from '@/lib/capabilities';
+import {
+  INVITE_POLICY_LABEL,
+} from '@/lib/invite-policy';
 import type {
   Capability,
   EffectiveBreakdownGrant,
+  InvitePolicy,
+  InvitePolicyInfo,
   PermissionEntry,
   PermissionInheritanceMode,
   PrincipalCandidate,
@@ -53,6 +59,28 @@ export function formatPermissionError(
         role ? ` ${role} ` : ''
       }権限を継承しているため、この子フォルダで再付与・変更はできません。親フォルダで変更してください。`;
     }
+    case 'INVITE_POLICY_RESTRICTED': {
+      const policy =
+        typeof err.details?.effectiveInvitePolicy === 'string' &&
+        err.details.effectiveInvitePolicy in INVITE_POLICY_LABEL
+          ? INVITE_POLICY_LABEL[
+              err.details.effectiveInvitePolicy as InvitePolicy
+            ]
+          : '現在の招待ポリシー';
+      return `招待ポリシー「${policy}」により、あなたの権限ではメンバーを招待できません。所有者/共同所有者にポリシー変更を依頼してください。`;
+    }
+    case 'INVITE_POLICY_CANNOT_RELAX': {
+      const floor =
+        typeof err.details?.inheritedFloor === 'string' &&
+        err.details.inheritedFloor in INVITE_POLICY_LABEL
+          ? INVITE_POLICY_LABEL[err.details.inheritedFloor as InvitePolicy]
+          : '上位フォルダ';
+      return `上位の「${floor}」より招待ポリシーを緩めることはできません。同じか、より厳しいポリシーを選択してください。`;
+    }
+    case 'MANAGE_PERMISSION_REQUIRED':
+      return '既存の権限の変更・削除には所有者（Owner）または共同所有者（Co-Owner）の権限が必要です。招待のみの権限では実行できません。';
+    case 'ROLE_EXCEEDS_CALLER_CAPABILITIES':
+      return '指定したロールはあなたの権限範囲を超えています。所有者/共同所有者の付与や、自分より強い権限の付与はできません。';
     case 'CIRCULAR_HIERARCHY':
     case 'MAX_DEPTH_EXCEEDED':
       return 'フォルダ階層の制約により、この権限操作は実行できません。';
@@ -79,6 +107,11 @@ export function usePermissionsModal({
   const [advancedRolesEnabled, setAdvancedRolesEnabled] = useState(false);
   const [permissionInheritanceMode, setPermissionInheritanceMode] =
     useState<PermissionInheritanceMode>('additive');
+  const [invitePolicy, setInvitePolicy] = useState<InvitePolicyInfo | null>(null);
+  const [grantableRoles, setGrantableRoles] = useState<ResourceRole[]>([]);
+  const [canInvite, setCanInvite] = useState(false);
+  const [policySaving, setPolicySaving] = useState(false);
+  const [policyNotice, setPolicyNotice] = useState<string | null>(null);
   const [effectiveBreakdown, setEffectiveBreakdown] = useState<
     EffectiveBreakdownGrant[]
   >([]);
@@ -137,16 +170,41 @@ export function usePermissionsModal({
     setError(null);
     try {
       const res = await listPermissions(targetType, targetId);
+      const resolvedCapabilities =
+        res.effectiveCapabilities ?? res.capabilities ?? capabilitiesForRole(effectiveRole);
       setPermissions(res.permissions);
-      setCapabilities(res.capabilities ?? capabilitiesForRole(effectiveRole));
+      setCapabilities(resolvedCapabilities);
       setAdvancedRolesEnabled(Boolean(res.advancedRolesEnabled));
       setPermissionInheritanceMode(
         res.permissionInheritanceMode ?? 'additive'
       );
+      setInvitePolicy(res.invitePolicy ?? null);
+      const roles = res.grantableRoles ?? [];
+      setGrantableRoles(roles);
+      setCanInvite(
+        typeof res.canInvite === 'boolean'
+          ? res.canInvite
+          : canAccess(
+              {
+                capabilities: resolvedCapabilities,
+                effectiveRole: res.effectiveRole ?? effectiveRole,
+              },
+              'permission.invite'
+            )
+      );
       setEffectiveBreakdown(res.effectiveBreakdown ?? []);
       setServerEffectiveRole(res.effectiveRole ?? effectiveRole);
+      if (roles.length > 0) {
+        setRole((previous) => {
+          if (roles.includes(previous)) return previous;
+          if (targetType === 'file' && roles.includes('owner')) return 'owner';
+          return roles.includes('viewer') ? 'viewer' : roles[0]!;
+        });
+      }
     } catch (err) {
       setError(formatPermissionError(err, '権限一覧の取得に失敗しました'));
+      setCanInvite(false);
+      setGrantableRoles([]);
     } finally {
       setLoading(false);
     }
@@ -159,7 +217,7 @@ export function usePermissionsModal({
 
   useEffect(() => {
     const trimmed = query.trim();
-    if (!trimmed || !canManage) {
+    if (!trimmed || !canInvite) {
       setCandidates([]);
       return;
     }
@@ -181,14 +239,20 @@ export function usePermissionsModal({
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [query, canManage]);
+  }, [query, canInvite]);
 
   async function handleGrant(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedPrincipal || submitting) return;
+    if (!selectedPrincipal || submitting || !canInvite) return;
     if (selectedPrincipalLock) {
       setError(
         `親フォルダ「${selectedPrincipalLock.sourceName}」から権限継承中のため、この子フォルダで再付与・変更はできません。親フォルダで変更してください。`
+      );
+      return;
+    }
+    if (grantableRoles.length > 0 && !grantableRoles.includes(role)) {
+      setError(
+        '選択したロールは現在の招待ポリシーまたはあなたの権限範囲では付与できません。'
       );
       return;
     }
@@ -214,7 +278,7 @@ export function usePermissionsModal({
   }
 
   async function handleRevoke(entry: PermissionEntry) {
-    if (entry.inherited) return;
+    if (entry.inherited || !canManage) return;
     setError(null);
     try {
       await revokePermission(entry.id);
@@ -224,11 +288,43 @@ export function usePermissionsModal({
     }
   }
 
+  async function handleUpdateFolderInvitePolicy(
+    nextPolicy: InvitePolicy | null
+  ): Promise<boolean> {
+    if (targetType !== 'folder' || policySaving) return false;
+    setPolicySaving(true);
+    setError(null);
+    setPolicyNotice(null);
+    try {
+      await apiUpdateFolderInvitePolicy(targetId, nextPolicy);
+      await reloadPermissions();
+      setPolicyNotice(
+        nextPolicy === null
+          ? 'フォルダの上書き設定を解除し、上位の招待ポリシーを継承します。'
+          : `フォルダ招待ポリシーを「${INVITE_POLICY_LABEL[nextPolicy]}」に更新しました。`
+      );
+      return true;
+    } catch (err) {
+      setError(
+        formatPermissionError(err, 'フォルダ招待ポリシーの更新に失敗しました')
+      );
+      return false;
+    } finally {
+      setPolicySaving(false);
+    }
+  }
+
   return {
     permissions,
     capabilities,
     advancedRolesEnabled,
     permissionInheritanceMode,
+    invitePolicy,
+    grantableRoles,
+    canInvite,
+    policySaving,
+    policyNotice,
+    setPolicyNotice,
     effectiveBreakdown,
     effectiveRole: serverEffectiveRole ?? effectiveRole,
     loading,
@@ -247,5 +343,6 @@ export function usePermissionsModal({
     canManage,
     handleGrant,
     handleRevoke,
+    handleUpdateFolderInvitePolicy,
   };
 }

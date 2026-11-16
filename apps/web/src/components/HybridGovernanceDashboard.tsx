@@ -48,6 +48,9 @@ export function HybridGovernanceDashboard() {
     inheritanceError,
     inheritanceNotice,
     inheritanceConflictReport,
+    invitePolicySaving,
+    invitePolicyError,
+    invitePolicyNotice,
     auditLogs,
     auditCursor,
     auditActionFilter,
@@ -68,6 +71,7 @@ export function HybridGovernanceDashboard() {
     handleAdvancedRolesUpdate,
     handleFolderStructureUpdate,
     handlePermissionInheritanceUpdate,
+    handleInvitePolicyUpdate,
     handleShowRootFolderAudit,
     handleClearAuditPreset,
     handleLoadMoreLogs,
@@ -219,9 +223,14 @@ export function HybridGovernanceDashboard() {
           inheritanceNotice={inheritanceNotice}
           canManagePermissionInheritance={user.role === 'sys_admin'}
           inheritanceConflictReport={inheritanceConflictReport}
+          invitePolicySaving={invitePolicySaving}
+          invitePolicyError={invitePolicyError}
+          invitePolicyNotice={invitePolicyNotice}
+          canManageInvitePolicy={user.role === 'sys_admin'}
           onSave={handleAdvancedRolesUpdate}
           onSaveFolderStructureMode={handleFolderStructureUpdate}
           onSavePermissionInheritanceMode={handlePermissionInheritanceUpdate}
+          onSaveInvitePolicy={handleInvitePolicyUpdate}
           onDirtyChange={setAdvancedRolesDirty}
         />
 

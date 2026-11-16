@@ -9,6 +9,7 @@ import type {
   FileViewerInfo,
   FolderChildrenResponse,
   FolderSummary,
+  InvitePolicy,
   ResourceRole,
   RestoreFileOptionsPayload,
   RestoreFileOptionsResponse,
@@ -147,12 +148,25 @@ export function createFolder(payload: {
 
 export function updateFolder(
   folderId: string,
-  payload: { name?: string; isPinned?: boolean; expectedVersion?: number }
+  payload: {
+    name?: string;
+    isPinned?: boolean;
+    invitePolicy?: InvitePolicy | null;
+    expectedVersion?: number;
+  }
 ): Promise<{ folder: FolderSummary }> {
   return apiFetch(`/api/folders/${encodeURIComponent(folderId)}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
+}
+
+/** PATCH /api/folders/:id — owner / co-owner folder invite policy override. */
+export function updateFolderInvitePolicy(
+  folderId: string,
+  invitePolicy: InvitePolicy | null
+): Promise<{ folder: FolderSummary }> {
+  return updateFolder(folderId, { invitePolicy });
 }
 
 export function softDeleteFolder(

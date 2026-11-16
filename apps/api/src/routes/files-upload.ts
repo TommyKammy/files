@@ -8,6 +8,10 @@ import {
 } from '../services/authorization';
 import { can } from '../services/capabilities';
 import {
+  computeEffectivePermissionsCapabilities,
+  resolveEffectiveInvitePolicy,
+} from '../services/invite-policy';
+import {
   authorizeFileContentAccess,
   contentIntentFromQuery,
   deliverFileContent,
@@ -166,11 +170,31 @@ filesUploadRoutes.get('/:id', async (c) => {
       .bind(user.tenantId, fileId)
       .all(),
   ]);
+  const resolvedInvitePolicy = await resolveEffectiveInvitePolicy(
+    c.env.DB,
+    user.tenantId,
+    access.folderId
+  );
+  const effectiveCapabilities = computeEffectivePermissionsCapabilities(
+    access.capabilities,
+    access.effectiveRole,
+    resolvedInvitePolicy.effectivePolicy,
+    user.role
+  );
 
   return c.json({
     file,
     effectiveRole: access.effectiveRole,
-    capabilities: access.capabilities,
+    capabilities: effectiveCapabilities,
+    effectiveCapabilities,
+    invitePolicy: {
+      tenantPolicy: resolvedInvitePolicy.tenantPolicy,
+      folderOwnPolicy: resolvedInvitePolicy.ownPolicy,
+      effectivePolicy: resolvedInvitePolicy.effectivePolicy,
+      inheritedFloor: resolvedInvitePolicy.parentFloor,
+      sourceFolderId: resolvedInvitePolicy.sourceFolderId,
+      sourceFolderName: resolvedInvitePolicy.sourceFolderName,
+    },
     canDownload: can(access.capabilities, 'item.download'),
     versions: versions.results,
   });

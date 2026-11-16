@@ -15,6 +15,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.policy_updated': 'テナントポリシー更新',
   'folder.create': 'フォルダ作成',
   'folder.update': 'フォルダ更新',
+  'folder.invite_policy_updated': 'フォルダ招待ポリシー変更',
   'folder.move': 'フォルダ移動',
   'folder.soft_delete': 'フォルダをゴミ箱へ移動',
   'folder.restore': 'フォルダ復元',

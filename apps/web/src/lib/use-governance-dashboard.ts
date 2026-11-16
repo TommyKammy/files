@@ -25,6 +25,7 @@ import type {
   ClassificationLabel,
   ClosedRootReport,
   FolderStructureMode,
+  InvitePolicy,
   PermissionInheritanceMode,
   StorageStatsResponse,
   TenantPolicyRow,
@@ -78,6 +79,11 @@ export function useGovernanceDashboard() {
   const [inheritanceConflictReport, setInheritanceConflictReport] = useState<
     WaterfallInheritanceConflict[]
   >([]);
+  const [invitePolicySaving, setInvitePolicySaving] = useState(false);
+  const [invitePolicyError, setInvitePolicyError] = useState<string | null>(null);
+  const [invitePolicyNotice, setInvitePolicyNotice] = useState<string | null>(
+    null
+  );
 
   function setAdvancedRolesDirty(dirty: boolean) {
     advancedRolesDirtyRef.current = dirty;
@@ -485,6 +491,37 @@ export function useGovernanceDashboard() {
     }
   }
 
+  async function handleInvitePolicyUpdate(
+    nextPolicy: InvitePolicy
+  ): Promise<boolean> {
+    if (invitePolicySaving) return false;
+    setInvitePolicySaving(true);
+    setInvitePolicyError(null);
+    setInvitePolicyNotice(null);
+    try {
+      const res = await updateAdminPolicies({ invitePolicy: nextPolicy });
+      setPolicy(res.policy);
+      void syncStore.bootstrap({ force: true });
+      setInvitePolicyNotice(
+        nextPolicy === 'editors'
+          ? 'テナント招待ポリシーを「編集者以上」に変更しました。編集者はフォルダ権限画面から新しいメンバーを招待できます。'
+          : nextPolicy === 'owners'
+            ? 'テナント招待ポリシーを「所有者/共同所有者のみ」に変更しました。編集者は招待できません。'
+            : 'テナント招待ポリシーを「管理者のみ」に変更しました。sys_admin がフォルダへのアクセス権を持つ場合だけ招待できます。'
+      );
+      return true;
+    } catch (err) {
+      setInvitePolicyError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'テナント招待ポリシーの更新に失敗しました'
+      );
+      return false;
+    } finally {
+      setInvitePolicySaving(false);
+    }
+  }
+
   function handleShowRootFolderAudit() {
     setAuditActionFilter('');
     setAuditActionPreset([...ROOT_FOLDER_AUDIT_ACTIONS]);
@@ -559,6 +596,9 @@ export function useGovernanceDashboard() {
     inheritanceError,
     inheritanceNotice,
     inheritanceConflictReport,
+    invitePolicySaving,
+    invitePolicyError,
+    invitePolicyNotice,
     auditLogs,
     auditCursor,
     auditActionFilter,
@@ -579,6 +619,7 @@ export function useGovernanceDashboard() {
     handleAdvancedRolesUpdate,
     handleFolderStructureUpdate,
     handlePermissionInheritanceUpdate,
+    handleInvitePolicyUpdate,
     handleShowRootFolderAudit,
     handleClearAuditPreset,
     handleLoadMoreLogs,
