@@ -81,6 +81,9 @@ import {
   syncDelta,
   type DirectorySyncContext,
 } from '@/lib/sync-store/directory-sync';
+import * as fileOps from '@/lib/sync-store/optimistic-file';
+import * as folderOps from '@/lib/sync-store/optimistic-folder';
+import * as uploadOps from '@/lib/sync-store/optimistic-upload';
 import { executeOutboxMutation } from '@/lib/sync-store/outbox-execute';
 import {
   evictSubtreeFromCache,
@@ -559,6 +562,52 @@ export class WorkspaceSyncStore {
     await this.bootstrap({ force: true });
   }
 
+  private optimisticFolderContext(): folderOps.OptimisticFolderContext {
+    return {
+      foldersById: this.foldersById,
+      outbox: this.outbox,
+      now: this.now,
+      getDirectoryView: (folderId) => this.getDirectoryView(folderId),
+      getAncestorClassifications: (folderId) =>
+        this.getAncestorClassifications(folderId),
+      upsertFolderInCache: (folder) => this.upsertFolderInCache(folder),
+      removeFolderFromCache: (folder) =>
+        this.removeFolderFromCache(folder),
+      pushUndo: (entry, message) => this.pushUndo(entry, message),
+      restoreFolder: (folder, policy) =>
+        this.optimisticRestoreFolder(folder, policy),
+    };
+  }
+
+  private optimisticFileContext(): fileOps.OptimisticFileContext {
+    return {
+      filesById: this.filesById,
+      userRole: this.user?.role,
+      outbox: this.outbox,
+      now: this.now,
+      getDirectoryView: (folderId) => this.getDirectoryView(folderId),
+      getAncestorClassifications: (folderId) =>
+        this.getAncestorClassifications(folderId),
+      upsertFileInCache: (file) => this.upsertFileInCache(file),
+      removeFileFromCache: (fileId, folderId) =>
+        this.removeFileFromCache(fileId, folderId),
+      pushUndo: (entry, message) => this.pushUndo(entry, message),
+      restoreFile: (file) => this.optimisticRestoreFile(file),
+    };
+  }
+
+  private optimisticUploadContext(): uploadOps.OptimisticUploadContext {
+    return {
+      filesById: this.filesById,
+      directoriesByKey: this.directoriesByKey,
+      now: this.now,
+      emit: () => this.emit(),
+      upsertFileInCache: (file) => this.upsertFileInCache(file),
+      getAncestorClassifications: (folderId) =>
+        this.getAncestorClassifications(folderId),
+    };
+  }
+
   private cacheContext(): CacheContext {
     const self = this;
     return {
@@ -919,63 +968,10 @@ export class WorkspaceSyncStore {
     classification: ClassificationLabel;
     isPinned?: boolean;
   }): { ok: boolean; error?: string; tempId?: string } {
-    const name = input.name.trim();
-    if (!name) {
-      return { ok: false, error: 'フォルダ名を入力してください' };
-    }
-
-    const parentRole = this.getDirectoryView(input.parentId).effectiveRole;
-    const roleCheck = checkRoleGuard(parentRole, 'editor');
-    if (!roleCheck.ok) {
-      return { ok: false, error: roleCheck.message };
-    }
-
-    const parentView = this.getDirectoryView(input.parentId);
-    if (parentView.folders.some((f) => f.name === name && f.deleted_at == null)) {
-      return { ok: false, error: `同名フォルダ「${name}」がすでに存在します` };
-    }
-
-    const tempId = makeClientMutationId('tmp-folder');
-    const nowIso = new Date(this.now()).toISOString();
-    const effectiveClassification = isClassificationFloorViolated(
-      this.getAncestorClassifications(input.parentId),
-      input.classification
-    )
-      ? 'confidential'
-      : input.classification;
-
-    const tempFolder: FolderSummary = {
-      id: tempId,
-      parent_id: input.parentId,
-      name,
-      classification: effectiveClassification,
-      is_pinned: input.isPinned ? 1 : 0,
-      version: 1,
-      updated_at: nowIso,
-      effectiveRole: 'owner',
-      optimistic: true,
-    };
-
-    this.upsertFolderInCache(tempFolder);
-    this.outbox.enqueue({
-      id: makeClientMutationId('mut'),
-      entityType: 'folder',
-      entityId: tempId,
-      kind: 'folder.create',
-      payload: {
-        parentId: input.parentId,
-        name,
-        classification: effectiveClassification,
-        isPinned: Boolean(input.isPinned),
-      },
-      createdAt: this.now(),
-      retryCount: 0,
-      rollback: {
-        existedBefore: false,
-        parentId: input.parentId,
-      },
-    });
-    return { ok: true, tempId };
+    return folderOps.optimisticCreateFolder(
+      this.optimisticFolderContext(),
+      input
+    );
   }
 
   optimisticRenameFolder(
@@ -983,191 +979,45 @@ export class WorkspaceSyncStore {
     nextName: string,
     options?: { skipUndo?: boolean }
   ): { ok: boolean; error?: string } {
-    const trimmed = nextName.trim();
-    if (!trimmed) {
-      return { ok: false, error: 'フォルダ名を入力してください' };
-    }
-    if (trimmed === folder.name) {
-      return { ok: true };
-    }
-
-    const parentView = this.getDirectoryView(folder.parent_id);
-    const effectiveRole = folder.effectiveRole ?? parentView.effectiveRole;
-    const roleCheck = checkRoleGuard(effectiveRole, 'editor');
-    if (!roleCheck.ok) {
-      return { ok: false, error: roleCheck.message };
-    }
-    if (
-      parentView.folders.some(
-        (f) => f.id !== folder.id && f.name === trimmed && f.deleted_at == null
-      )
-    ) {
-      return { ok: false, error: `同名フォルダ「${trimmed}」がすでに存在します` };
-    }
-
-    const prevFolder: FolderSummary = { ...folder };
-    const updated: FolderSummary = {
-      ...folder,
-      name: trimmed,
-      updated_at: new Date(this.now()).toISOString(),
-    };
-
-    this.upsertFolderInCache(updated);
-    if (!options?.skipUndo) {
-      this.pushUndo(
-        {
-          label: `「${trimmed}」の名前変更を取り消す`,
-          applyUndo: () => {
-            const current = this.foldersById.get(updated.id) ?? updated;
-            this.optimisticRenameFolder(current, prevFolder.name, { skipUndo: true });
-          },
-        },
-        `フォルダ名を「${trimmed}」に変更しました`
-      );
-    }
-
-    this.outbox.enqueue({
-      id: makeClientMutationId('mut'),
-      entityType: 'folder',
-      entityId: folder.id,
-      kind: 'folder.patch',
-      payload: { name: trimmed },
-      expectedVersion: folder.version,
-      createdAt: this.now(),
-      retryCount: 0,
-      rollback: {
-        folder: prevFolder,
-        existedBefore: true,
-        parentId: folder.parent_id,
-      },
-    });
-
-    return { ok: true };
+    return folderOps.optimisticRenameFolder(
+      this.optimisticFolderContext(),
+      folder,
+      nextName,
+      options
+    );
   }
 
   optimisticToggleFolderPin(
     folder: FolderSummary,
     options?: { skipUndo?: boolean }
   ): { ok: boolean; error?: string } {
-    const parentView = this.getDirectoryView(folder.parent_id);
-    const effectiveRole = folder.effectiveRole ?? parentView.effectiveRole;
-    const roleCheck = checkRoleGuard(effectiveRole, 'editor');
-    if (!roleCheck.ok) {
-      return { ok: false, error: roleCheck.message };
-    }
-
-    const prevFolder: FolderSummary = { ...folder };
-    const nextPinned = folder.is_pinned === 1 ? 0 : 1;
-    const updated: FolderSummary = {
-      ...folder,
-      is_pinned: nextPinned,
-      updated_at: new Date(this.now()).toISOString(),
-    };
-
-    this.upsertFolderInCache(updated);
-    if (!options?.skipUndo) {
-      this.pushUndo(
-        {
-          label: 'ピン留め変更を取り消す',
-          applyUndo: () => {
-            const current = this.foldersById.get(updated.id) ?? updated;
-            this.optimisticToggleFolderPin(current, { skipUndo: true });
-          },
-        },
-        nextPinned === 1
-          ? `「${folder.name}」をピン留めしました`
-          : `「${folder.name}」のピン留めを解除しました`
-      );
-    }
-
-    this.outbox.enqueue({
-      id: makeClientMutationId('mut'),
-      entityType: 'folder',
-      entityId: folder.id,
-      kind: 'folder.patch',
-      payload: { isPinned: nextPinned === 1 },
-      expectedVersion: folder.version,
-      createdAt: this.now(),
-      retryCount: 0,
-      rollback: {
-        folder: prevFolder,
-        existedBefore: true,
-        parentId: folder.parent_id,
-      },
-    });
-
-    return { ok: true };
+    return folderOps.optimisticToggleFolderPin(
+      this.optimisticFolderContext(),
+      folder,
+      options
+    );
   }
 
   optimisticSoftDeleteFolder(
     folder: FolderSummary,
     options?: { skipUndo?: boolean }
   ): { ok: boolean; error?: string } {
-    const parentView = this.getDirectoryView(folder.parent_id);
-    const effectiveRole = folder.effectiveRole ?? parentView.effectiveRole;
-    const roleCheck = checkRoleGuard(effectiveRole, 'editor');
-    if (!roleCheck.ok) {
-      return { ok: false, error: roleCheck.message };
-    }
-
-    const prevFolder: FolderSummary = { ...folder };
-    this.removeFolderFromCache(folder);
-
-    if (!options?.skipUndo) {
-      this.pushUndo(
-        {
-          label: `「${folder.name}」の削除を取り消す`,
-          applyUndo: () => {
-            this.optimisticRestoreFolder(prevFolder);
-          },
-        },
-        `「${folder.name}」をゴミ箱へ移動しました`
-      );
-    }
-
-    this.outbox.enqueue({
-      id: makeClientMutationId('mut'),
-      entityType: 'folder',
-      entityId: folder.id,
-      kind: 'folder.soft_delete',
-      payload: {},
-      expectedVersion: folder.version,
-      createdAt: this.now(),
-      retryCount: 0,
-      rollback: {
-        folder: prevFolder,
-        existedBefore: true,
-        parentId: folder.parent_id,
-      },
-    });
-
-    return { ok: true };
+    return folderOps.optimisticSoftDeleteFolder(
+      this.optimisticFolderContext(),
+      folder,
+      options
+    );
   }
 
   optimisticRestoreFolder(
     folder: FolderSummary,
     conflictPolicy: 'fail' | 'rename' = 'rename'
   ): void {
-    const restored: FolderSummary = {
-      ...folder,
-      deleted_at: null,
-      updated_at: new Date(this.now()).toISOString(),
-    };
-    this.upsertFolderInCache(restored);
-    this.outbox.enqueue({
-      id: makeClientMutationId('mut'),
-      entityType: 'folder',
-      entityId: folder.id,
-      kind: 'folder.restore',
-      payload: { conflictPolicy, parentId: folder.parent_id },
-      createdAt: this.now(),
-      retryCount: 0,
-      rollback: {
-        folder,
-        existedBefore: false,
-        parentId: folder.parent_id,
-      },
-    });
+    folderOps.optimisticRestoreFolder(
+      this.optimisticFolderContext(),
+      folder,
+      conflictPolicy
+    );
   }
 
   optimisticRenameFile(
@@ -1176,73 +1026,13 @@ export class WorkspaceSyncStore {
     effectiveRole: ResourceRole,
     options?: { skipUndo?: boolean }
   ): { ok: boolean; error?: string } {
-    if (file.upload_state === 'pending' || file.optimistic) {
-      return { ok: false, error: 'アップロード完了後に名前を変更できます' };
-    }
-    const trimmed = nextName.trim();
-    if (!trimmed) {
-      return { ok: false, error: 'ファイル名を入力してください' };
-    }
-    if (trimmed === file.name) {
-      return { ok: true };
-    }
-
-    const roleCheck = checkRoleGuard(effectiveRole, 'editor');
-    if (!roleCheck.ok) {
-      return { ok: false, error: roleCheck.message };
-    }
-
-    const dirView = this.getDirectoryView(file.folder_id);
-    if (
-      dirView.files.some(
-        (f) => f.id !== file.id && f.name === trimmed && f.deleted_at == null
-      )
-    ) {
-      return { ok: false, error: `同名ファイル「${trimmed}」がすでに存在します` };
-    }
-
-    const prevFile: FileItem = { ...file };
-    const nextExt = getExtensionFromName(trimmed) || null;
-    const updated: FileItem = {
-      ...file,
-      name: trimmed,
-      extension: nextExt,
-      updated_at: new Date(this.now()).toISOString(),
-    };
-
-    this.upsertFileInCache(updated);
-    if (!options?.skipUndo) {
-      this.pushUndo(
-        {
-          label: `「${trimmed}」の名前変更を取り消す`,
-          applyUndo: () => {
-            const current = this.filesById.get(updated.id) ?? updated;
-            this.optimisticRenameFile(current, prevFile.name, effectiveRole, {
-              skipUndo: true,
-            });
-          },
-        },
-        `ファイル名を「${trimmed}」に変更しました`
-      );
-    }
-
-    this.outbox.enqueue({
-      id: makeClientMutationId('mut'),
-      entityType: 'file',
-      entityId: file.id,
-      kind: 'file.patch',
-      payload: { name: trimmed },
-      expectedVersion: file.meta_version,
-      createdAt: this.now(),
-      retryCount: 0,
-      rollback: {
-        file: prevFile,
-        existedBefore: true,
-        parentId: file.folder_id,
-      },
-    });
-
-    return { ok: true };
+    return fileOps.optimisticRenameFile(
+      this.optimisticFileContext(),
+      file,
+      nextName,
+      effectiveRole,
+      options
+    );
   }
 
   optimisticSoftDeleteFile(
@@ -1251,69 +1041,17 @@ export class WorkspaceSyncStore {
     effectiveRole: ResourceRole,
     options?: { skipUndo?: boolean }
   ): { ok: boolean; error?: string } {
-    if (file.upload_state === 'pending' || file.optimistic) {
-      return { ok: false, error: 'アップロード完了後に削除できます' };
-    }
-    const roleCheck = checkRoleGuard(effectiveRole, 'editor');
-    if (!roleCheck.ok) {
-      return { ok: false, error: roleCheck.message };
-    }
-
-    const prevFile: FileItem = { ...file };
-    this.removeFileFromCache(file.id, folderId);
-
-    if (!options?.skipUndo) {
-      this.pushUndo(
-        {
-          label: `「${file.name}」の削除を取り消す`,
-          applyUndo: () => {
-            this.optimisticRestoreFile(prevFile);
-          },
-        },
-        `「${file.name}」をゴミ箱へ移動しました`
-      );
-    }
-
-    this.outbox.enqueue({
-      id: makeClientMutationId('mut'),
-      entityType: 'file',
-      entityId: file.id,
-      kind: 'file.soft_delete',
-      payload: { folderId },
-      expectedVersion: file.meta_version,
-      createdAt: this.now(),
-      retryCount: 0,
-      rollback: {
-        file: prevFile,
-        existedBefore: true,
-        parentId: folderId,
-      },
-    });
-
-    return { ok: true };
+    return fileOps.optimisticSoftDeleteFile(
+      this.optimisticFileContext(),
+      file,
+      folderId,
+      effectiveRole,
+      options
+    );
   }
 
   optimisticRestoreFile(file: FileItem): void {
-    const restored: FileItem = {
-      ...file,
-      deleted_at: null,
-      updated_at: new Date(this.now()).toISOString(),
-    };
-    this.upsertFileInCache(restored);
-    this.outbox.enqueue({
-      id: makeClientMutationId('mut'),
-      entityType: 'file',
-      entityId: file.id,
-      kind: 'file.restore',
-      payload: { folderId: file.folder_id },
-      createdAt: this.now(),
-      retryCount: 0,
-      rollback: {
-        file,
-        existedBefore: false,
-        parentId: file.folder_id,
-      },
-    });
+    fileOps.optimisticRestoreFile(this.optimisticFileContext(), file);
   }
 
   optimisticUpdateFileClassification(
@@ -1327,93 +1065,12 @@ export class WorkspaceSyncStore {
       skipUndo?: boolean;
     }
   ): { ok: boolean; error?: string; file?: FileItem } {
-    if (file.upload_state === 'pending' || file.optimistic) {
-      return { ok: false, error: 'アップロード完了後に機密区分を変更できます' };
-    }
-
-    const dirView = this.getDirectoryView(file.folder_id);
-    const role = options?.effectiveRole ?? dirView.effectiveRole;
-    const isAdmin =
-      options?.isPrivilegedAdmin ??
-      (this.user?.role === 'sec_admin' || this.user?.role === 'sys_admin');
-
-    const roleCheck = checkRoleGuard(role, 'editor', {
-      isPrivilegedAdmin: isAdmin,
-      allowAdminOverride: true,
-    });
-    if (!roleCheck.ok) {
-      return { ok: false, error: roleCheck.message };
-    }
-
-    let targetLabel: Exclude<ClassificationLabel, 'unset'>;
-    if ('acceptSuggestion' in next) {
-      if (!file.ai_suggested_label || file.ai_suggested_label === 'unset') {
-        return { ok: false, error: '承認可能な AI 分類提案がありません' };
-      }
-      targetLabel = file.ai_suggested_label;
-    } else {
-      targetLabel = next.classification;
-    }
-
-    const ancestorLabels = this.getAncestorClassifications(file.folder_id);
-    const floorCheck = checkClassificationFloorGuard(ancestorLabels, targetLabel);
-    if (!floorCheck.ok) {
-      return { ok: false, error: floorCheck.message };
-    }
-
-    const prevFile: FileItem = { ...file };
-    const updated: FileItem = {
-      ...file,
-      classification: targetLabel,
-      ai_suggested_label: null,
-      ai_confidence: null,
-      ai_reason: null,
-      updated_at: new Date(this.now()).toISOString(),
-    };
-
-    this.upsertFileInCache(updated);
-    if (!options?.skipUndo && prevFile.classification !== 'unset') {
-      const revertLabel = prevFile.classification;
-      this.pushUndo(
-        {
-          label: `「${file.name}」の機密区分変更を取り消す`,
-          applyUndo: () => {
-            const current = this.filesById.get(updated.id) ?? updated;
-            this.optimisticUpdateFileClassification(
-              current,
-              { classification: revertLabel },
-              {
-                effectiveRole: role,
-                isPrivilegedAdmin: isAdmin,
-                skipUndo: true,
-              }
-            );
-          },
-        },
-        `「${file.name}」の機密区分を ${targetLabel} に変更しました`
-      );
-    }
-
-    this.outbox.enqueue({
-      id: makeClientMutationId('mut'),
-      entityType: 'file',
-      entityId: file.id,
-      kind: 'file.classification',
-      payload:
-        'acceptSuggestion' in next
-          ? { acceptSuggestion: true }
-          : { classification: targetLabel },
-      expectedVersion: file.meta_version,
-      createdAt: this.now(),
-      retryCount: 0,
-      rollback: {
-        file: prevFile,
-        existedBefore: true,
-        parentId: file.folder_id,
-      },
-    });
-
-    return { ok: true, file: updated };
+    return fileOps.optimisticUpdateFileClassification(
+      this.optimisticFileContext(),
+      file,
+      next,
+      options
+    );
   }
 
   isFolderAncestorOf(
@@ -1808,78 +1465,35 @@ export class WorkspaceSyncStore {
     tempId: string,
     meta: { name: string; mimeType: string; sizeBytes: number }
   ): void {
-    const ancestorLabels = this.getAncestorClassifications(folderId);
-    const defaultLabel: ClassificationLabel = ancestorLabels.includes('confidential')
-      ? 'confidential'
-      : 'unset';
-
-    const pendingRow: FileItem = {
-      id: tempId,
-      folder_id: folderId,
-      name: meta.name,
-      extension: getExtensionFromName(meta.name) || null,
-      mime_type: meta.mimeType,
-      size_bytes: meta.sizeBytes,
-      current_version_num: 1,
-      meta_version: 1,
-      classification: defaultLabel,
-      ai_suggested_label: null,
-      ai_confidence: null,
-      ai_reason: null,
-      updated_at: new Date(this.now()).toISOString(),
-      upload_state: 'pending',
-      upload_progress: 0,
-      optimistic: true,
-    };
-
-    this.filesById.set(tempId, pendingRow);
-    const dir = this.directoriesByKey.get(dirKeyForFolder(folderId));
-    if (dir && !dir.fileIds.includes(tempId)) {
-      dir.fileIds = [tempId, ...dir.fileIds];
-    }
-    this.emit();
+    uploadOps.startOptimisticUpload(
+      this.optimisticUploadContext(),
+      folderId,
+      tempId,
+      meta
+    );
   }
 
   updateOptimisticUploadProgress(tempId: string, percent: number): void {
-    const existing = this.filesById.get(tempId);
-    if (!existing || existing.upload_state !== 'pending') return;
-    const clamped = Math.min(100, Math.max(0, Math.round(percent)));
-    if (existing.upload_progress === clamped) return;
-
-    this.filesById.set(tempId, {
-      ...existing,
-      upload_progress: clamped,
-    });
-    this.emit();
+    uploadOps.updateOptimisticUploadProgress(
+      this.optimisticUploadContext(),
+      tempId,
+      percent
+    );
   }
 
   completeOptimisticUpload(tempId: string, serverFile: FileItem): void {
-    const existing = this.filesById.get(tempId);
-    const folderId = existing?.folder_id ?? serverFile.folder_id;
-
-    this.filesById.delete(tempId);
-    const dir = this.directoriesByKey.get(dirKeyForFolder(folderId));
-    if (dir) {
-      dir.fileIds = removeFromIdList(dir.fileIds, tempId);
-    }
-
-    this.upsertFileInCache({
-      ...serverFile,
-      upload_state: 'active',
-      upload_progress: 100,
-      optimistic: false,
-    });
+    uploadOps.completeOptimisticUpload(
+      this.optimisticUploadContext(),
+      tempId,
+      serverFile
+    );
   }
 
   failOrCancelOptimisticUpload(tempId: string): void {
-    const existing = this.filesById.get(tempId);
-    if (!existing) return;
-    this.filesById.delete(tempId);
-    const dir = this.directoriesByKey.get(dirKeyForFolder(existing.folder_id));
-    if (dir) {
-      dir.fileIds = removeFromIdList(dir.fileIds, tempId);
-    }
-    this.emit();
+    uploadOps.failOrCancelOptimisticUpload(
+      this.optimisticUploadContext(),
+      tempId
+    );
   }
 
   private async executeOutboxMutation(
