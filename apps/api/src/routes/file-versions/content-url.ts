@@ -55,6 +55,7 @@ export function registerFileVersionContentUrlRoute(routes: Hono<OidcHonoEnv>) {
       intent,
       versionId,
       forceWatermark: !can(authorized.access.capabilities, 'item.download'),
+      canDownload: can(authorized.access.capabilities, 'item.download'),
     });
     if (!delivered.ok) {
       return c.json(delivered.body, delivered.status);

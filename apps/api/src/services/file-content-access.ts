@@ -3,7 +3,11 @@ import type { OidcEnv } from '../types/oidc';
 import { buildAuditLogStmt } from './audit';
 import { resolveTargetAccess, type TargetMetadata } from './authorization';
 import { can } from './capabilities';
-import { issueSignedStorageUrl, resolveSafeDisposition } from './storage-url-provider';
+import {
+  issueSignedStorageUrl,
+  issueSingleUsePreviewUrl,
+  resolveSafeDisposition,
+} from './storage-url-provider';
 
 export type ContentIntent = 'preview' | 'download';
 
@@ -71,6 +75,8 @@ export interface FileContentDeliveryInput {
   versionId: string | null;
   /** Preview-only roles (no `item.download`) are always watermarked. */
   forceWatermark?: boolean;
+  /** When explicitly false, previews use the single-use Worker stream. */
+  canDownload?: boolean;
 }
 
 export interface FileContentDeliveryBody {
@@ -107,7 +113,15 @@ interface ContentTargetRow {
 export async function deliverFileContent(
   input: FileContentDeliveryInput
 ): Promise<FileContentDeliveryResult> {
-  const { env, user, fileId, intent, versionId, forceWatermark = false } = input;
+  const {
+    env,
+    user,
+    fileId,
+    intent,
+    versionId,
+    forceWatermark = false,
+    canDownload = true,
+  } = input;
 
   const row = await env.DB.prepare(
     `SELECT fl.name,
@@ -143,15 +157,24 @@ export async function deliverFileContent(
     contentType
   );
 
-  const signedGet = await issueSignedStorageUrl(env, {
-    method: 'GET',
-    objectKey: row.r2_object_key,
-    tenantId: user.tenantId,
-    expiresInSeconds: 300,
-    disposition,
-    filename: row.name,
-    contentType,
-  });
+  const previewStreamOnly = intent === 'preview' && (forceWatermark || !canDownload);
+  const signedGet = previewStreamOnly
+    ? await issueSingleUsePreviewUrl(env, env.DB, {
+        objectKey: row.r2_object_key,
+        tenantId: user.tenantId,
+        disposition,
+        filename: row.name,
+        contentType,
+      })
+    : await issueSignedStorageUrl(env, {
+        method: 'GET',
+        objectKey: row.r2_object_key,
+        tenantId: user.tenantId,
+        expiresInSeconds: 300,
+        disposition,
+        filename: row.name,
+        contentType,
+      });
 
   const requireWatermark =
     forceWatermark ||
@@ -181,8 +204,9 @@ export async function deliverFileContent(
             versionNum: row.version_num,
             disposition,
             requireWatermark,
+            previewStream: previewStreamOnly,
           }
-        : { disposition, requireWatermark },
+        : { disposition, requireWatermark, previewStream: previewStreamOnly },
       nowIso,
     }),
   ]);

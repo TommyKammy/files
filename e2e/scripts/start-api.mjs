@@ -125,7 +125,7 @@ runWrangler([
   'scripts/seed-local.sql',
   '--yes',
 ]);
-console.log('[e2e-api] D1 migrations 0001-0010 + seed-local.sql applied');
+console.log('[e2e-api] D1 migrations 0001-0011 + seed-local.sql applied');
 
 const child = spawn(
   wranglerBin,

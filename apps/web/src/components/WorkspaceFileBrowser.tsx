@@ -585,6 +585,7 @@ export function WorkspaceFileBrowser() {
         { capabilities: targetCaps, effectiveRole: targetEffectiveRole },
         'share_link.manage'
       ),
+      policy: snapshot.policy,
     });
   }
 
@@ -768,6 +769,7 @@ export function WorkspaceFileBrowser() {
     canShareRow,
     canManageLinksRow,
     canClassifyRow,
+    policy: snapshot.policy,
     setError,
     setSelectedKeys,
     setSelectionAnchorKey,
@@ -1470,6 +1472,7 @@ export function WorkspaceFileBrowser() {
               classification: currentFolder.classification,
               canEdit: canShareCurrentFolder,
               canManageLinks: canManageCurrentFolderLinks,
+              policy: snapshot.policy,
             });
           }}
           onOpenPermissions={() => {

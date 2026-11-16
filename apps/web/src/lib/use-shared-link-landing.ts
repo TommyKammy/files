@@ -7,13 +7,16 @@ import type {
 } from '@/components/SecurePreviewModal';
 import {
   ApiClientError,
+  createSharedLinkWopiSession,
   getPublicShareMeta,
   issuePublicShareUrl,
+  uploadViaSharedLink,
   verifyPublicSharePassword,
 } from '@/lib/files-api';
 import type {
   PublicShareFileMeta,
   PublicShareMeta,
+  WopiSessionResponse,
 } from '@/types/files';
 
 export function useSharedLinkLanding(token: string) {
@@ -35,6 +38,11 @@ export function useSharedLinkLanding(token: string) {
     grant: PreResolvedPreviewGrant;
   } | null>(null);
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  const [wopiSession, setWopiSession] = useState<WopiSessionResponse | null>(null);
+  const [wopiBusy, setWopiBusy] = useState(false);
 
   const loadMeta = useCallback(async () => {
     setLoading(true);
@@ -151,6 +159,71 @@ export function useSharedLinkLanding(token: string) {
     }
   }
 
+  async function handleUpload(
+    file: File,
+    options: { fileId?: string; conflictPolicy?: 'fail' | 'new_version' } = {}
+  ) {
+    if (!meta?.canEdit || uploading) return;
+    setUploading(true);
+    setUploadError(null);
+    setUploadNotice(null);
+    try {
+      const result = await uploadViaSharedLink(token, {
+        file: {
+          name: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          body: file,
+        },
+        fileId: options.fileId,
+        conflictPolicy: options.conflictPolicy ?? 'new_version',
+        unlockToken,
+      });
+      setUploadNotice(
+        `アップロードしました (v${result.version.versionNum})${
+          result.version.versionNum > 1 ? ' — 新バージョンとして保存' : ''
+        }`
+      );
+      await loadMeta();
+    } catch (err) {
+      if (err instanceof ApiClientError) {
+        setUploadError(
+          err.code === 'FILE_LOCKED'
+            ? 'このファイルは現在他のユーザーが編集中のため、アップロードできません（FILE_LOCKED）。'
+            : err.message
+        );
+      } else {
+        setUploadError(
+          err instanceof Error
+            ? err.message
+            : 'アップロードに失敗しました'
+        );
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleWopiEdit(file: PublicShareFileMeta) {
+    if (!meta?.canEdit || wopiBusy) return;
+    setWopiBusy(true);
+    setUploadError(null);
+    try {
+      const session = await createSharedLinkWopiSession(token, {
+        fileId: file.id,
+        unlockToken,
+      });
+      setWopiSession(session);
+    } catch (err) {
+      setUploadError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'WOPI セッションの作成に失敗しました'
+      );
+    } finally {
+      setWopiBusy(false);
+    }
+  }
+
   return {
     meta,
     loading,
@@ -165,8 +238,16 @@ export function useSharedLinkLanding(token: string) {
     previewState,
     setPreviewState,
     actionBusyId,
+    uploading,
+    uploadError,
+    uploadNotice,
+    wopiSession,
+    setWopiSession,
+    wopiBusy,
     handleVerifyPassword,
     handlePreview,
     handleDownload,
+    handleUpload,
+    handleWopiEdit,
   };
 }

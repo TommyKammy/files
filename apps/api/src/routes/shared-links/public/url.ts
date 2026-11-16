@@ -3,8 +3,10 @@ import { buildAuditLogStmt } from '../../../services/audit';
 import { getShareUnlockSecret, isActiveWebContent, maskViewerIp, verifyShareUnlockToken } from '../../../services/shared-link-security';
 import {
   issueSignedStorageUrl,
+  issueSingleUsePreviewUrl,
   resolveSafeDisposition,
 } from '../../../services/storage-url-provider';
+import { resolvePermissionLevel } from '../../../services/shared-link-permissions';
 import type { OidcHonoEnv } from '../../../types/oidc';
 import { PREVIEW_URL_TTL_SECONDS, ShareTargetFileRow, getClientIp } from '../shared';
 import {
@@ -49,6 +51,8 @@ export function registerPublicShareUrlRoutes(routes: Hono<OidcHonoEnv>) {
     }
 
     const intent: 'preview' | 'download' = body?.intent === 'download' ? 'download' : 'preview';
+    const permissionLevel = resolvePermissionLevel(link);
+    const previewOnly = link.can_download === 0 || permissionLevel === 'view';
 
     // Resolve target file (directly or inside shared folder via folder_closures)
     let fileRow: ShareTargetFileRow | null = null;
@@ -84,7 +88,7 @@ export function registerPublicShareUrlRoutes(routes: Hono<OidcHonoEnv>) {
       return c.json({ error: 'Shared file not found or unavailable', code: 'TARGET_UNAVAILABLE' }, 404);
     }
 
-    if (intent === 'download' && link.can_download === 0) {
+    if (intent === 'download' && previewOnly) {
       await c.env.DB.batch([
         buildAuditLogStmt(c.env.DB, {
           tenantId: link.tenant_id,
@@ -96,7 +100,11 @@ export function registerPublicShareUrlRoutes(routes: Hono<OidcHonoEnv>) {
           targetId: fileRow.id,
           classificationSnapshot: fileRow.classification,
           status: 'blocked',
-          metadata: { linkId: link.id, reason: 'can_download_disabled' },
+          metadata: {
+            linkId: link.id,
+            permissionLevel,
+            reason: 'can_download_disabled',
+          },
           nowIso,
         }),
       ]);
@@ -107,7 +115,7 @@ export function registerPublicShareUrlRoutes(routes: Hono<OidcHonoEnv>) {
     }
 
     const isActiveContent = isActiveWebContent(fileRow.name, fileRow.mime_type);
-    if (intent === 'preview' && isActiveContent && link.can_download === 0) {
+    if (intent === 'preview' && isActiveContent && previewOnly) {
       await c.env.DB.batch([
         buildAuditLogStmt(c.env.DB, {
           tenantId: link.tenant_id,
@@ -119,7 +127,7 @@ export function registerPublicShareUrlRoutes(routes: Hono<OidcHonoEnv>) {
           targetId: fileRow.id,
           classificationSnapshot: fileRow.classification,
           status: 'blocked',
-          metadata: { linkId: link.id, fileName: fileRow.name },
+          metadata: { linkId: link.id, permissionLevel, fileName: fileRow.name },
           nowIso,
         }),
       ]);
@@ -184,18 +192,29 @@ export function registerPublicShareUrlRoutes(routes: Hono<OidcHonoEnv>) {
         ? 'text/plain; charset=utf-8'
         : fileRow.mime_type ?? 'application/octet-stream';
 
-    const signed = await issueSignedStorageUrl(c.env, {
-      method: 'GET',
-      objectKey: fileRow.r2_object_key,
-      tenantId: link.tenant_id,
-      expiresInSeconds: PREVIEW_URL_TTL_SECONDS,
-      disposition: safeDisposition,
-      filename: fileRow.name,
-      contentType: safeContentType,
-    });
+    const signed =
+      intent === 'preview' && previewOnly
+        ? await issueSingleUsePreviewUrl(c.env, c.env.DB, {
+            objectKey: fileRow.r2_object_key,
+            tenantId: link.tenant_id,
+            disposition: safeDisposition,
+            filename: fileRow.name,
+            contentType: safeContentType,
+          })
+        : await issueSignedStorageUrl(c.env, {
+            method: 'GET',
+            objectKey: fileRow.r2_object_key,
+            tenantId: link.tenant_id,
+            expiresInSeconds: PREVIEW_URL_TTL_SECONDS,
+            disposition: safeDisposition,
+            filename: fileRow.name,
+            contentType: safeContentType,
+          });
 
     const requireWatermark =
-      link.require_watermark === 1 || fileRow.classification === 'confidential';
+      link.require_watermark === 1 ||
+      fileRow.classification === 'confidential' ||
+      previewOnly;
     const viewerIdentifier = user?.email ?? `anon:${maskViewerIp(clientIp)}`;
     const watermarkText = requireWatermark ? `${viewerIdentifier} • ${nowIso}` : null;
 
@@ -212,9 +231,11 @@ export function registerPublicShareUrlRoutes(routes: Hono<OidcHonoEnv>) {
         status: 'allowed',
         metadata: {
           linkId: link.id,
+          permissionLevel,
           disposition: safeDisposition,
           requireWatermark,
           downloadCount: updatedDownloadCount,
+          previewStream: intent === 'preview' && previewOnly,
         },
         nowIso,
       }),

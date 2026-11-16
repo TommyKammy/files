@@ -371,6 +371,11 @@ export function useGovernanceDashboard() {
         trashRetentionDays: policy.trash_retention_days,
         aiClassificationMode: policy.ai_classification_mode,
         aiAutoApplyThreshold: policy.ai_auto_apply_threshold,
+        allowSharedLinkEdit: policy.allow_shared_link_edit === 1,
+        allowPublicEditLinks:
+          policy.allow_shared_link_edit === 1 &&
+          policy.allow_public_edit_links === 1,
+        allowViewerShareLinks: policy.allow_viewer_share_links === 1,
       });
       setPolicy(res.policy);
       void syncStore.bootstrap({ force: true });

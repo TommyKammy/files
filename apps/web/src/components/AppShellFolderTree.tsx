@@ -250,6 +250,7 @@ export function AppShellFolderTree({
             classification={shareTarget.classification}
             canEdit={canCreate}
             canManageLinks={canManage}
+            policy={snapshot.policy}
             onClose={() => setShareTarget(null)}
           />
         );

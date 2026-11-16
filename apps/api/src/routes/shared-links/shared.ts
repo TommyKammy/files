@@ -3,6 +3,7 @@ import type {
   ClassificationLabel,
   ShareAccessScope,
 } from '../../types/api';
+import { resolvePermissionLevel } from '../../services/shared-link-permissions';
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const CONFIDENTIAL_MAX_EXPIRY_DAYS = 7;
@@ -24,6 +25,7 @@ export interface SharedLinkRow {
   target_id: string;
   access_scope: ShareAccessScope;
   can_download: number;
+  permission_level: import('../../services/shared-link-permissions').SharePermissionLevel;
   require_watermark: number;
   password_hash: string | null;
   failed_password_attempts: number;
@@ -41,6 +43,9 @@ export interface TenantPolicyRow {
   enforce_company_only_links: number;
   require_watermark_confidential: number;
   max_link_expiration_days: number;
+  allow_shared_link_edit: number;
+  allow_public_edit_links: number;
+  allow_viewer_share_links: number;
 }
 
 export interface ShareTargetFileRow {
@@ -81,6 +86,7 @@ export function formatLinkSummary(row: SharedLinkRow) {
     targetType: row.target_type,
     targetId: row.target_id,
     accessScope: row.access_scope,
+    permissionLevel: resolvePermissionLevel(row),
     canDownload: row.can_download === 1,
     requireWatermark: row.require_watermark === 1,
     hasPassword: Boolean(row.password_hash),

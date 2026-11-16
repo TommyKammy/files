@@ -6,12 +6,49 @@ import {
   createSharedLink,
   listSharedLinks,
   revokeSharedLink,
+  updateSharedLink,
 } from '@/lib/files-api';
+import {
+  defaultSharePermissionLevel,
+  permissionLevelCanDownload,
+  validateShareLinkForm,
+} from '@/lib/share-link-levels';
 import type {
   ClassificationLabel,
   ShareAccessScope,
+  SharePermissionLevel,
   SharedLinkSummary,
+  TenantPolicyRow,
 } from '@/types/files';
+
+type SharePolicyLike =
+  | Pick<
+      TenantPolicyRow,
+      | 'allowSharedLinkEdit'
+      | 'allowPublicEditLinks'
+      | 'allowViewerShareLinks'
+      | 'allow_shared_link_edit'
+      | 'allow_public_edit_links'
+      | 'allow_viewer_share_links'
+    >
+  | null
+  | undefined;
+
+function readPolicyFlag(
+  policy: SharePolicyLike,
+  camel:
+    | 'allowSharedLinkEdit'
+    | 'allowPublicEditLinks'
+    | 'allowViewerShareLinks',
+  snake:
+    | 'allow_shared_link_edit'
+    | 'allow_public_edit_links'
+    | 'allow_viewer_share_links'
+): boolean {
+  const camelValue = policy?.[camel];
+  if (typeof camelValue === 'boolean') return camelValue;
+  return policy?.[snake] === 1;
+}
 
 export function useSharePopover({
   targetType,
@@ -19,15 +56,32 @@ export function useSharePopover({
   classification,
   canEdit,
   canManageLinks = canEdit,
+  policy = null,
 }: {
   targetType: 'file' | 'folder';
   targetId: string;
   classification: ClassificationLabel;
   canEdit: boolean;
   canManageLinks?: boolean;
+  policy?: SharePolicyLike;
 }) {
   const publicRestricted =
     classification === 'confidential' || classification === 'unset';
+  const allowSharedLinkEdit = readPolicyFlag(
+    policy,
+    'allowSharedLinkEdit',
+    'allow_shared_link_edit'
+  );
+  const allowPublicEditLinks = readPolicyFlag(
+    policy,
+    'allowPublicEditLinks',
+    'allow_public_edit_links'
+  );
+  const allowViewerShareLinks = readPolicyFlag(
+    policy,
+    'allowViewerShareLinks',
+    'allow_viewer_share_links'
+  );
 
   const [links, setLinks] = useState<SharedLinkSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,9 +89,9 @@ export function useSharePopover({
   const [accessScope, setAccessScope] = useState<ShareAccessScope>(
     publicRestricted ? 'company_only' : 'public'
   );
-  // `viewer_uploader` may create links but cannot manage them: the server
-  // forces `can_download = 0` and a watermark. Mirror that in the form.
-  const [canDownload, setCanDownload] = useState(canManageLinks);
+  const [permissionLevel, setPermissionLevel] = useState<SharePermissionLevel>(
+    defaultSharePermissionLevel({ canManageLinks, classification })
+  );
   const [requireWatermark, setRequireWatermark] = useState(
     classification === 'confidential' || !canManageLinks
   );
@@ -49,6 +103,20 @@ export function useSharePopover({
   const [maxDownloads, setMaxDownloads] = useState('');
   const [creating, setCreating] = useState(false);
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
+  const [updatingLinkId, setUpdatingLinkId] = useState<string | null>(null);
+
+  const viewerViewOnly = !canManageLinks;
+  const confidentialFloor = classification === 'confidential';
+  const canSelectDownload = canManageLinks && !confidentialFloor;
+  const canSelectEdit =
+    canManageLinks && allowSharedLinkEdit && !confidentialFloor;
+  const canDownload = permissionLevelCanDownload(permissionLevel) && canManageLinks;
+
+  useEffect(() => {
+    setPermissionLevel(
+      defaultSharePermissionLevel({ canManageLinks, classification })
+    );
+  }, [canManageLinks, classification]);
 
   async function reloadLinks() {
     if (!canManageLinks) {
@@ -80,6 +148,21 @@ export function useSharePopover({
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!canEdit || creating) return;
+
+    const validationError = validateShareLinkForm({
+      permissionLevel,
+      accessScope,
+      canManageLinks,
+      allowSharedLinkEdit,
+      allowPublicEditLinks,
+      password,
+      expiresInDays,
+    });
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setCreating(true);
     setError(null);
     setGeneratedUrl(null);
@@ -93,8 +176,14 @@ export function useSharePopover({
         targetType,
         targetId,
         accessScope,
-        canDownload: canManageLinks ? canDownload : false,
-        requireWatermark: canManageLinks ? requireWatermark : true,
+        permissionLevel,
+        canDownload,
+        requireWatermark:
+          classification === 'confidential' ||
+          !canManageLinks ||
+          permissionLevel === 'edit'
+            ? true
+            : requireWatermark,
         password: password.trim() || undefined,
         expiresInDays,
         maxDownloads:
@@ -136,15 +225,43 @@ export function useSharePopover({
     }
   }
 
+  async function handleUpdateLevel(
+    linkId: string,
+    nextLevel: SharePermissionLevel
+  ) {
+    if (!canManageLinks) return;
+    setUpdatingLinkId(linkId);
+    setError(null);
+    try {
+      await updateSharedLink(linkId, { permissionLevel: nextLevel });
+      await reloadLinks();
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : '共有リンクの権限レベル更新に失敗しました'
+      );
+    } finally {
+      setUpdatingLinkId(null);
+    }
+  }
+
   return {
     publicRestricted,
+    allowSharedLinkEdit,
+    allowPublicEditLinks,
+    allowViewerShareLinks,
+    viewerViewOnly,
+    canSelectDownload,
+    canSelectEdit,
     links,
     loading,
     error,
     accessScope,
     setAccessScope,
+    permissionLevel,
+    setPermissionLevel,
     canDownload,
-    setCanDownload,
     requireWatermark,
     setRequireWatermark,
     password,
@@ -156,8 +273,10 @@ export function useSharePopover({
     maxDownloads,
     setMaxDownloads,
     creating,
+    updatingLinkId,
     generatedUrl,
     handleCreate,
     handleRevoke,
+    handleUpdateLevel,
   };
 }

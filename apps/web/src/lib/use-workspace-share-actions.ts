@@ -9,7 +9,7 @@ import {
   isRowSelectable,
   type WorkspaceTableRow,
 } from '@/lib/workspace-table-row';
-import type { FileItem } from '@/types/files';
+import type { FileItem, TenantPolicyRow } from '@/types/files';
 
 export function useWorkspaceShareActions({
   syncStore,
@@ -20,6 +20,7 @@ export function useWorkspaceShareActions({
   canManageLinksRow,
   canClassifyRow,
   isPrivilegedAdmin,
+  policy = null,
   setActiveModal,
   setClassificationPicker,
 }: {
@@ -31,6 +32,7 @@ export function useWorkspaceShareActions({
   canManageLinksRow: (row: WorkspaceTableRow) => boolean;
   canClassifyRow: (row: WorkspaceTableRow) => boolean;
   isPrivilegedAdmin: boolean;
+  policy?: TenantPolicyRow | null;
   setActiveModal: Dispatch<SetStateAction<ActiveModal | null>>;
   setClassificationPicker: Dispatch<
     SetStateAction<ClassificationPickerState | null>
@@ -56,6 +58,7 @@ export function useWorkspaceShareActions({
         classification: row.folder.classification,
         canEdit: true,
         canManageLinks: canManageLinksRow(row),
+        policy,
       });
     } else {
       setActiveModal({
@@ -66,6 +69,7 @@ export function useWorkspaceShareActions({
         classification: row.file.classification,
         canEdit: true,
         canManageLinks: canManageLinksRow(row),
+        policy,
       });
     }
   }, [
@@ -74,6 +78,7 @@ export function useWorkspaceShareActions({
     selectedRows,
     canShareRow,
     canManageLinksRow,
+    policy,
     syncStore,
     setActiveModal,
   ]);

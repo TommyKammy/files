@@ -24,6 +24,10 @@ import {
   SINGLE_UPLOAD_MAX_BYTES,
 } from '../services/file-upload-common';
 import { issueSignedStorageUrl } from '../services/storage-url-provider';
+import {
+  getShareLinkPolicyFlags,
+  projectViewerShareLinkCapability,
+} from '../services/shared-link-permissions';
 import { buildSyncChangeStmt, parseExpectedVersionInput } from '../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../services/sync-notifier';
 import type { ClassificationLabel } from '../types/api';
@@ -170,16 +174,23 @@ filesUploadRoutes.get('/:id', async (c) => {
       .bind(user.tenantId, fileId)
       .all(),
   ]);
-  const resolvedInvitePolicy = await resolveEffectiveInvitePolicy(
-    c.env.DB,
-    user.tenantId,
-    access.folderId
-  );
-  const effectiveCapabilities = computeEffectivePermissionsCapabilities(
-    access.capabilities,
+  const [resolvedInvitePolicy, shareLinkPolicy] = await Promise.all([
+    resolveEffectiveInvitePolicy(
+      c.env.DB,
+      user.tenantId,
+      access.folderId
+    ),
+    getShareLinkPolicyFlags(c.env.DB, user.tenantId),
+  ]);
+  const effectiveCapabilities = projectViewerShareLinkCapability(
+    computeEffectivePermissionsCapabilities(
+      access.capabilities,
+      access.effectiveRole,
+      resolvedInvitePolicy.effectivePolicy,
+      user.role
+    ),
     access.effectiveRole,
-    resolvedInvitePolicy.effectivePolicy,
-    user.role
+    shareLinkPolicy.allow_viewer_share_links
   );
 
   return c.json({
@@ -218,6 +229,7 @@ filesUploadRoutes.get('/:id/content-url', async (c) => {
     intent,
     versionId: null,
     forceWatermark: !can(authorized.access.capabilities, 'item.download'),
+    canDownload: can(authorized.access.capabilities, 'item.download'),
   });
   if (!delivered.ok) {
     return c.json(delivered.body, delivered.status);

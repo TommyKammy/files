@@ -98,6 +98,8 @@ export type ShareAccessScope =
   | 'company_only'
   | 'collaborators_only';
 
+export type SharePermissionLevel = 'view' | 'download' | 'edit';
+
 export type AiClassificationMode =
   | 'disabled'
   | 'metadata_only'
@@ -608,6 +610,7 @@ export interface SharedLinkSummary {
   targetType: 'file' | 'folder';
   targetId: string;
   accessScope: ShareAccessScope;
+  permissionLevel: SharePermissionLevel;
   canDownload: boolean;
   requireWatermark: boolean;
   hasPassword: boolean;
@@ -619,6 +622,55 @@ export interface SharedLinkSummary {
   downloadCount: number;
   createdBy: string;
   createdAt: string;
+}
+
+export interface CreateSharedLinkPayload {
+  targetType: 'file' | 'folder';
+  targetId: string;
+  accessScope: ShareAccessScope;
+  permissionLevel?: SharePermissionLevel;
+  canDownload?: boolean;
+  requireWatermark?: boolean;
+  password?: string;
+  expiresAt?: string;
+  expiresInDays?: number;
+  maxDownloads?: number;
+}
+
+export interface UpdateSharedLinkPayload {
+  permissionLevel?: SharePermissionLevel;
+  accessScope?: ShareAccessScope;
+  requireWatermark?: boolean;
+  password?: string;
+  expiresAt?: string;
+  expiresInDays?: number;
+  maxDownloads?: number | null;
+}
+
+export interface SharedLinkUpdateResponse {
+  link: SharedLinkSummary | null;
+  syncChanges: Record<string, { from: unknown; to: unknown }>;
+}
+
+export interface SharedLinkUploadInitResponse {
+  fileId: string;
+  versionId: string;
+  versionNum: number;
+  fileName: string;
+  classification: ClassificationLabel;
+  isNewVersion: boolean;
+  permissionLevel: 'edit';
+  uploadUrl: string;
+  method: 'PUT';
+  expiresAt: string;
+  requiredHeaders: Record<string, string>;
+}
+
+export interface SharedLinkUploadCompleteResponse {
+  ok: boolean;
+  permissionLevel: 'edit';
+  file: FileItem;
+  version: { id: string; versionNum: number };
 }
 
 export interface PublicShareFileMeta {
@@ -633,7 +685,14 @@ export interface PublicShareFileMeta {
 export interface PublicShareMeta {
   targetType: 'file' | 'folder';
   accessScope: ShareAccessScope;
+  permissionLevel: SharePermissionLevel;
   canDownload: boolean;
+  canEdit: boolean;
+  composedRole: ResourceRole | null;
+  composedCapabilities: Capability[];
+  requiresAuthForEdit: boolean;
+  anonymousEditBlocked?: boolean;
+  editDisabledByPolicy?: boolean;
   requireWatermark: boolean;
   requiresPassword: boolean;
   unlocked: boolean;
@@ -723,6 +782,7 @@ export interface AdminSharedLinkRow {
   target_type: 'file' | 'folder';
   target_id: string;
   access_scope: ShareAccessScope;
+  permission_level: SharePermissionLevel;
   can_download: number;
   require_watermark: number;
   failed_password_attempts: number;
@@ -747,6 +807,12 @@ export interface TenantPolicyRow {
   ai_auto_apply_threshold: number | null;
   advanced_roles_enabled?: number;
   advancedRolesEnabled?: boolean;
+  allow_shared_link_edit?: number;
+  allow_public_edit_links?: number;
+  allow_viewer_share_links?: number;
+  allowSharedLinkEdit?: boolean;
+  allowPublicEditLinks?: boolean;
+  allowViewerShareLinks?: boolean;
   folder_structure_mode?: FolderStructureMode;
   folderStructureMode?: FolderStructureMode;
   permission_inheritance_mode?: PermissionInheritanceMode;
@@ -755,6 +821,23 @@ export interface TenantPolicyRow {
   invitePolicy?: InvitePolicy;
   updated_by: string | null;
   updated_at: string;
+}
+
+export interface UpdateAdminPoliciesPayload {
+  enforceCompanyOnlyLinks?: boolean;
+  requireWatermarkConfidential?: boolean;
+  maxLinkExpirationDays?: number;
+  sessionMaxHours?: number;
+  trashRetentionDays?: number;
+  aiClassificationMode?: AiClassificationMode;
+  aiAutoApplyThreshold?: number | null;
+  advancedRolesEnabled?: boolean;
+  allowSharedLinkEdit?: boolean;
+  allowPublicEditLinks?: boolean;
+  allowViewerShareLinks?: boolean;
+  folderStructureMode?: FolderStructureMode;
+  permissionInheritanceMode?: PermissionInheritanceMode;
+  invitePolicy?: InvitePolicy;
 }
 
 export interface TenantPolicyResponse {

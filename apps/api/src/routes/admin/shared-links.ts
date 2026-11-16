@@ -14,7 +14,8 @@ export function registerAdminSharedLinkRoutes(routes: Hono<OidcHonoEnv>) {
 
     const rows = await c.env.DB.prepare(
       `SELECT sl.id, sl.target_type, sl.target_id, sl.access_scope, sl.can_download,
-              sl.require_watermark, sl.failed_password_attempts, sl.locked_until,
+              sl.permission_level, sl.require_watermark,
+              sl.failed_password_attempts, sl.locked_until,
               sl.expires_at, sl.max_downloads, sl.download_count, sl.created_by,
               u.email AS creator_email,
               CASE

@@ -138,5 +138,70 @@ describe('D1 schema & migrations (0001 + 0002 + 0003)', () => {
         "UPDATE folders SET invite_policy = 'invalid' WHERE id = 'fld1'"
       ).run()
     ).rejects.toThrow();
+
+    // Migration 0011: shared-link permission levels, edit policies and the
+    // single-use preview stream nonce table.
+    const [sharedLinkCols, policyCols0011, previewTable, previewIndex] =
+      await Promise.all([
+        env.DB.prepare('PRAGMA table_info(shared_links)').all<{ name: string }>(),
+        env.DB.prepare('PRAGMA table_info(tenant_policies)').all<{ name: string }>(),
+        env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'preview_stream_tokens'"
+        ).first<{ name: string }>(),
+        env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_preview_stream_tokens_expires'"
+        ).first<{ name: string }>(),
+      ]);
+    expect(sharedLinkCols.results.map((c) => c.name)).toContain(
+      'permission_level'
+    );
+    const policyNames = policyCols0011.results.map((c) => c.name);
+    expect(policyNames).toContain('allow_shared_link_edit');
+    expect(policyNames).toContain('allow_public_edit_links');
+    expect(policyNames).toContain('allow_viewer_share_links');
+    expect(previewTable?.name).toBe('preview_stream_tokens');
+    expect(previewIndex?.name).toBe('idx_preview_stream_tokens_expires');
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO shared_links (
+           id, tenant_id, token_hash, target_type, target_id, access_scope,
+           can_download, created_by
+         ) VALUES ('sl-legacy-view', 't1', 'hash-legacy-view', 'file', 'f1',
+                   'company_only', 0, 'u1')`
+      ),
+      env.DB.prepare(
+        `INSERT INTO shared_links (
+           id, tenant_id, token_hash, target_type, target_id, access_scope,
+           can_download, created_by
+         ) VALUES ('sl-legacy-download', 't1', 'hash-legacy-download', 'file', 'f1',
+                   'company_only', 1, 'u1')`
+      ),
+    ]);
+    const defaultLevel = await env.DB.prepare(
+      "SELECT permission_level FROM shared_links WHERE id = 'sl-legacy-view'"
+    ).first<{ permission_level: string }>();
+    expect(defaultLevel?.permission_level).toBe('download');
+    await env.DB.prepare(
+      `UPDATE shared_links
+          SET permission_level = CASE WHEN can_download = 0 THEN 'view' ELSE 'download' END`
+    ).run();
+    const backfilled = await env.DB.prepare(
+      "SELECT id, permission_level FROM shared_links WHERE id LIKE 'sl-legacy-%' ORDER BY id"
+    ).all<{ id: string; permission_level: string }>();
+    expect(backfilled.results).toEqual([
+      { id: 'sl-legacy-download', permission_level: 'download' },
+      { id: 'sl-legacy-view', permission_level: 'view' },
+    ]);
+    await expect(
+      env.DB.prepare(
+        "UPDATE shared_links SET permission_level = 'share' WHERE id = 'sl-legacy-view'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_policies SET allow_shared_link_edit = 2 WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
   });
 });

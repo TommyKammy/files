@@ -32,6 +32,7 @@ import {
   isInvitePolicy,
   resolveEffectiveInvitePoliciesForFolders,
 } from '../services/invite-policy';
+import { projectViewerShareLinkCapability } from '../services/shared-link-permissions';
 import { listAuthorizedSyncDeltas } from '../services/sync-changes';
 import type { OidcHonoEnv } from '../types/oidc';
 
@@ -131,6 +132,9 @@ syncRoutes.get('/bootstrap', async (c) => {
     ? {
         ...rawPolicy,
         advancedRolesEnabled: rawPolicy.advanced_roles_enabled === 1,
+        allowSharedLinkEdit: rawPolicy.allow_shared_link_edit === 1,
+        allowPublicEditLinks: rawPolicy.allow_public_edit_links === 1,
+        allowViewerShareLinks: rawPolicy.allow_viewer_share_links === 1,
         folderStructureMode,
         permissionInheritanceMode,
         invitePolicy,
@@ -161,18 +165,23 @@ syncRoutes.get('/bootstrap', async (c) => {
     // grants must bootstrap as `viewer_uploader`, not `viewer` (MAX rank loss).
     const access = synthesizeEffectiveAccess(directRoles);
     const resolvedPolicy = invitePolicies.get(folder.id);
+    const baseCapabilities = resolvedPolicy
+      ? computeEffectivePermissionsCapabilities(
+          access.capabilities,
+          access.effectiveRole,
+          resolvedPolicy.effectivePolicy,
+          user.role
+        )
+      : access.capabilities;
     return {
       ...folder,
       accessMode: 'full' as const,
       effectiveRole: access.effectiveRole,
-      capabilities: resolvedPolicy
-        ? computeEffectivePermissionsCapabilities(
-            access.capabilities,
-            access.effectiveRole,
-            resolvedPolicy.effectivePolicy,
-            user.role
-          )
-        : access.capabilities,
+      capabilities: projectViewerShareLinkCapability(
+        baseCapabilities,
+        access.effectiveRole,
+        rawPolicy?.allow_viewer_share_links === 1
+      ),
     };
   };
 

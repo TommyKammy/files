@@ -4,6 +4,8 @@ import type { OidcHonoEnv } from '../../types/oidc';
 import { registerPublicShareMetaRoutes } from './public/meta';
 import { registerPublicSharePasswordRoutes } from './public/password';
 import { registerPublicShareUrlRoutes } from './public/url';
+import { registerPublicShareUploadRoutes } from './public/upload';
+import { registerPublicShareWopiRoutes } from './public/wopi-session';
 
 export const publicShareRoutes = new Hono<OidcHonoEnv>();
 
@@ -18,3 +20,5 @@ publicShareRoutes.use('*', sessionAuthMiddleware({ required: false }));
 registerPublicShareMetaRoutes(publicShareRoutes);
 registerPublicSharePasswordRoutes(publicShareRoutes);
 registerPublicShareUrlRoutes(publicShareRoutes);
+registerPublicShareUploadRoutes(publicShareRoutes);
+registerPublicShareWopiRoutes(publicShareRoutes);

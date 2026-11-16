@@ -7,6 +7,11 @@ import type {
   TenantPolicyRow,
 } from '@/types/files';
 
+/** Native checkbox rendered as a switch (React typings omit the attribute). */
+const NATIVE_SWITCH_ATTRS = {
+  switch: '',
+} as unknown as React.InputHTMLAttributes<HTMLInputElement>;
+
 export function SharedLinksPolicySection({
   sharedLinks,
   policy,
@@ -159,6 +164,89 @@ export function SharedLinksPolicySection({
               }
             />
           </label>
+
+          <fieldset className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <legend className="px-1 text-xs font-semibold text-slate-700">
+              共有リンク権限レベル (view / download / edit)
+            </legend>
+
+            <div className="space-y-1">
+              <label className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-slate-700">
+                  編集共有リンク (edit) を許可
+                </span>
+                <input
+                  id="policy-allow-shared-link-edit"
+                  name="allowSharedLinkEdit"
+                  {...NATIVE_SWITCH_ATTRS}
+                  type="checkbox"
+                  checked={policy.allow_shared_link_edit === 1}
+                  onChange={(e) =>
+                    onPolicyChange({
+                      ...policy,
+                      allow_shared_link_edit: e.target.checked ? 1 : 0,
+                      allow_public_edit_links: e.target.checked
+                        ? policy.allow_public_edit_links
+                        : 0,
+                    })
+                  }
+                />
+              </label>
+              <p className="text-[0.6875rem] text-slate-500">
+                有効にすると Editor 以上がアップロード・上書き保存・WOPI
+                編集を許可する共有リンクを作成できます。削除・権限管理・共有管理は付与されません。
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-slate-700">
+                  Public (匿名) 編集リンクを許可（パスワード・期限必須）
+                </span>
+                <input
+                  id="policy-allow-public-edit-links"
+                  name="allowPublicEditLinks"
+                  {...NATIVE_SWITCH_ATTRS}
+                  type="checkbox"
+                  checked={policy.allow_public_edit_links === 1}
+                  disabled={policy.allow_shared_link_edit !== 1}
+                  onChange={(e) =>
+                    onPolicyChange({
+                      ...policy,
+                      allow_public_edit_links: e.target.checked ? 1 : 0,
+                    })
+                  }
+                />
+              </label>
+              <p className="text-[0.6875rem] text-amber-700">
+                匿名ユーザーが編集できる公開リンクを許可します。パスワードと有効期限の両方が必須です。編集共有リンク本体が無効な場合は適用されません。
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-slate-700">
+                  Viewer ロールによる表示専用共有リンク作成を許可
+                </span>
+                <input
+                  id="policy-allow-viewer-share-links"
+                  name="allowViewerShareLinks"
+                  {...NATIVE_SWITCH_ATTRS}
+                  type="checkbox"
+                  checked={policy.allow_viewer_share_links === 1}
+                  onChange={(e) =>
+                    onPolicyChange({
+                      ...policy,
+                      allow_viewer_share_links: e.target.checked ? 1 : 0,
+                    })
+                  }
+                />
+              </label>
+              <p className="text-[0.6875rem] text-slate-500">
+                Viewer は表示専用 (view) リンクのみ作成できます。ダウンロード・編集リンクは作成できません。
+              </p>
+            </div>
+          </fieldset>
 
           <label className="block text-xs">
             <span className="font-medium text-slate-700">AI 分類モード</span>

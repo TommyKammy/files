@@ -8,6 +8,7 @@ import {
 } from '@/lib/keyboard-shortcuts';
 import { ApiClientError, getFileContentUrl } from '@/lib/files-api';
 import { isActiveWebFile, isPdfFile, isPlainTextFile, isSafeImageFile } from '@/lib/formatters';
+import { fetchSingleUsePreviewBuffer } from '@/lib/single-use-preview-cache';
 import type {
   PreResolvedPreviewGrant,
   PreviewTargetFile,
@@ -57,6 +58,7 @@ export function useSecurePreview({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pdfDocRef = useRef<unknown>(null);
   const scopeTokenRef = useRef<string | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
   const [pdfPage, setPdfPage] = useState(1);
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [downloading, setDownloading] = useState(false);
@@ -178,28 +180,24 @@ export function useSecurePreview({
 
         if (cancelled) return;
         const resolvedRenderMode = resolved.safeRenderMode ?? 'standard';
-        setSignedUrl(resolved.url);
         setSafeRenderMode(resolvedRenderMode);
         setRequireWatermark(resolved.requireWatermark);
         setWatermarkText(resolved.watermarkText);
 
+        const credentials: RequestCredentials = resolved.url.startsWith('/')
+          ? 'include'
+          : 'omit';
         const isSource =
           resolvedRenderMode === 'source_text' ||
           isActiveWebFile(file.name, file.mimeType);
         const isPdf = !isSource && isPdfFile(file.name, file.mimeType);
         const isText =
           !isSource && !isPdf && isPlainTextFile(file.name, file.mimeType);
+        const isImage =
+          !isSource && !isPdf && !isText && isSafeImageFile(file.name, file.mimeType);
 
         if (isSource || isText) {
-          const res = await fetch(resolved.url, {
-            credentials: resolved.url.startsWith('/') ? 'include' : 'omit',
-          });
-          if (!res.ok) {
-            throw new Error(
-              `プレビューデータの取得に失敗しました (HTTP ${res.status})`
-            );
-          }
-          const buf = await res.arrayBuffer();
+          const buf = await fetchSingleUsePreviewBuffer(resolved.url, credentials);
           if (cancelled) return;
           const sliced =
             buf.byteLength > MAX_TEXT_PREVIEW_BYTES
@@ -209,17 +207,11 @@ export function useSecurePreview({
           setTextContent(
             new TextDecoder('utf-8', { fatal: false }).decode(sliced)
           );
+          setSignedUrl(resolved.url);
         } else if (isPdf) {
-          const res = await fetch(resolved.url, {
-            credentials: resolved.url.startsWith('/') ? 'include' : 'omit',
-          });
-          if (!res.ok) {
-            throw new Error(
-              `PDFの取得に失敗しました (HTTP ${res.status})`
-            );
-          }
-          const data = await res.arrayBuffer();
+          const data = await fetchSingleUsePreviewBuffer(resolved.url, credentials);
           if (cancelled) return;
+          setSignedUrl(resolved.url);
 
           const pdfjs = await import('pdfjs-dist');
           pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -227,11 +219,26 @@ export function useSecurePreview({
             import.meta.url
           ).toString();
 
-          const doc = await pdfjs.getDocument({ data }).promise;
+          const doc = await pdfjs.getDocument({ data: data.slice(0) }).promise;
           if (cancelled) return;
           pdfDocRef.current = doc;
           setPdfNumPages(doc.numPages);
           setPdfPage(1);
+        } else if (isImage) {
+          // A single-use URL cannot be handed to <img src>: StrictMode/browser
+          // retries would consume the nonce twice. Fetch once (cached) and
+          // render a local object URL instead.
+          const buf = await fetchSingleUsePreviewBuffer(resolved.url, credentials);
+          if (cancelled) return;
+          const objectUrl = URL.createObjectURL(
+            new Blob([buf], {
+              type: file.mimeType ?? 'application/octet-stream',
+            })
+          );
+          objectUrlRef.current = objectUrl;
+          setSignedUrl(objectUrl);
+        } else {
+          setSignedUrl(resolved.url);
         }
       } catch (err) {
         if (!cancelled) {
@@ -251,6 +258,10 @@ export function useSecurePreview({
     loadContent();
     return () => {
       cancelled = true;
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
     };
   }, [file.id, file.name, file.mimeType, preResolvedGrant]);
 

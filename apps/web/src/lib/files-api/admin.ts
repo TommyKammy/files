@@ -15,6 +15,7 @@ import type {
   TenantPolicyResponse,
   TenantPolicyRow,
   TrashBulkItemRef,
+  UpdateAdminPoliciesPayload,
   TrashBulkResponse,
   TrashEmptyResponse,
   TrashSort,
@@ -82,19 +83,9 @@ export function fetchInheritanceConflicts(): Promise<{
   return apiFetch('/api/admin/policies/inheritance-conflicts');
 }
 
-export function updateAdminPolicies(payload: {
-  enforceCompanyOnlyLinks?: boolean;
-  requireWatermarkConfidential?: boolean;
-  maxLinkExpirationDays?: number;
-  sessionMaxHours?: number;
-  trashRetentionDays?: number;
-  aiClassificationMode?: AiClassificationMode;
-  aiAutoApplyThreshold?: number | null;
-  advancedRolesEnabled?: boolean;
-  folderStructureMode?: FolderStructureMode;
-  permissionInheritanceMode?: PermissionInheritanceMode;
-  invitePolicy?: InvitePolicy;
-}): Promise<TenantPolicyResponse & { policy: TenantPolicyRow }> {
+export function updateAdminPolicies(
+  payload: UpdateAdminPoliciesPayload
+): Promise<TenantPolicyResponse & { policy: TenantPolicyRow }> {
   return apiFetch('/api/admin/policies', {
     method: 'PATCH',
     body: JSON.stringify(payload),

@@ -21,6 +21,10 @@ import {
   type FolderRow,
   resolveFolderBreadcrumbs,
 } from '../../services/folder-closure-service';
+import {
+  getShareLinkPolicyFlags,
+  projectViewerShareLinkCapability,
+} from '../../services/shared-link-permissions';
 import type { ResourceRole } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -89,11 +93,14 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
     const hasMore = rows.results.length > limit;
     const pageItems = rows.results.slice(0, limit);
     const last = pageItems[pageItems.length - 1];
-    const invitePolicies = await resolveEffectiveInvitePoliciesForFolders(
-      c.env.DB,
-      user.tenantId,
-      pageItems.map((folder) => folder.id)
-    );
+    const [invitePolicies, shareLinkPolicy] = await Promise.all([
+      resolveEffectiveInvitePoliciesForFolders(
+        c.env.DB,
+        user.tenantId,
+        pageItems.map((folder) => folder.id)
+      ),
+      getShareLinkPolicyFlags(c.env.DB, user.tenantId),
+    ]);
 
     return c.json({
       // Non-linear composition is required here: a root folder can carry both
@@ -110,18 +117,23 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
         }
         const access = synthesizeEffectiveAccess(directRoles);
         const resolvedPolicy = invitePolicies.get(folder.id);
+        const baseCapabilities = resolvedPolicy
+          ? computeEffectivePermissionsCapabilities(
+              access.capabilities,
+              access.effectiveRole,
+              resolvedPolicy.effectivePolicy,
+              user.role
+            )
+          : access.capabilities;
         return {
           ...folder,
           accessMode: 'full' as const,
           effectiveRole: access.effectiveRole,
-          capabilities: resolvedPolicy
-            ? computeEffectivePermissionsCapabilities(
-                access.capabilities,
-                access.effectiveRole,
-                resolvedPolicy.effectivePolicy,
-                user.role
-              )
-            : access.capabilities,
+          capabilities: projectViewerShareLinkCapability(
+            baseCapabilities,
+            access.effectiveRole,
+            shareLinkPolicy.allow_viewer_share_links
+          ),
         };
       }),
       nextCursor:
@@ -145,7 +157,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
     parentAccess: { accessMode: 'full' | 'path' | null; effectiveRole: ResourceRole | null; capabilities: Capability[] }
   ) {
     if (childRows.length === 0) return [];
-    const [resolved, invitePolicies] = await Promise.all([
+    const [resolved, invitePolicies, shareLinkPolicy] = await Promise.all([
       resolveUserAccessForFolders(
         db,
         user.tenantId,
@@ -157,6 +169,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
         user.tenantId,
         childRows.map((row) => row.id)
       ),
+      getShareLinkPolicyFlags(db, user.tenantId),
     ]);
     return childRows.map((row) => {
       const childAccess = resolved.get(row.id);
@@ -165,18 +178,23 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
         childAccess?.capabilities ?? parentAccess.capabilities;
       const policy = invitePolicies.get(row.id);
       if (effectiveRole) {
+        const projected = policy
+          ? computeEffectivePermissionsCapabilities(
+              baseCapabilities,
+              effectiveRole,
+              policy.effectivePolicy,
+              user.role
+            )
+          : baseCapabilities;
         return {
           ...row,
           accessMode: 'full' as const,
           effectiveRole,
-          capabilities: policy
-            ? computeEffectivePermissionsCapabilities(
-                baseCapabilities,
-                effectiveRole,
-                policy.effectivePolicy,
-                user.role
-              )
-            : baseCapabilities,
+          capabilities: projectViewerShareLinkCapability(
+            projected,
+            effectiveRole,
+            shareLinkPolicy.allow_viewer_share_links
+          ),
         };
       }
       return {
@@ -214,11 +232,16 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
       user.tenantId,
       folderId
     );
-    const responseCapabilities = computeEffectivePermissionsCapabilities(
-      access.capabilities,
+    const shareLinkPolicy = await getShareLinkPolicyFlags(c.env.DB, user.tenantId);
+    const responseCapabilities = projectViewerShareLinkCapability(
+      computeEffectivePermissionsCapabilities(
+        access.capabilities,
+        access.effectiveRole,
+        resolvedParentPolicy.effectivePolicy,
+        user.role
+      ),
       access.effectiveRole,
-      resolvedParentPolicy.effectivePolicy,
-      user.role
+      shareLinkPolicy.allow_viewer_share_links
     );
 
     const includeBreadcrumbs = c.req.query('include') === 'breadcrumbs' && !cursor;
@@ -467,20 +490,27 @@ export function registerFolderBreadcrumbRoutes(routes: Hono<OidcHonoEnv>) {
         user,
         c.req.param('id')
       );
-      const resolvedPolicy = await resolveEffectiveInvitePolicy(
-        c.env.DB,
-        user.tenantId,
-        c.req.param('id')
-      );
+      const [resolvedPolicy, shareLinkPolicy] = await Promise.all([
+        resolveEffectiveInvitePolicy(
+          c.env.DB,
+          user.tenantId,
+          c.req.param('id')
+        ),
+        getShareLinkPolicyFlags(c.env.DB, user.tenantId),
+      ]);
       return c.json({
         breadcrumbs,
         accessMode: access.accessMode,
         effectiveRole: access.effectiveRole,
-        capabilities: computeEffectivePermissionsCapabilities(
-          access.capabilities,
+        capabilities: projectViewerShareLinkCapability(
+          computeEffectivePermissionsCapabilities(
+            access.capabilities,
+            access.effectiveRole,
+            resolvedPolicy.effectivePolicy,
+            user.role
+          ),
           access.effectiveRole,
-          resolvedPolicy.effectivePolicy,
-          user.role
+          shareLinkPolicy.allow_viewer_share_links
         ),
       });
     } catch (err) {

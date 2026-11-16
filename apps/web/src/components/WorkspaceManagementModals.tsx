@@ -11,6 +11,7 @@ import type {
   FileItem,
   FolderSummary,
   ResourceRole,
+  TenantPolicyRow,
 } from '@/types/files';
 
 export type ActiveModal =
@@ -30,6 +31,7 @@ export type ActiveModal =
       classification: ClassificationLabel;
       canEdit: boolean;
       canManageLinks?: boolean;
+      policy?: TenantPolicyRow | null;
     }
   | {
       kind: 'fileRequest';
@@ -81,6 +83,7 @@ export function WorkspaceManagementModals({
           classification={activeModal.classification}
           canEdit={activeModal.canEdit}
           canManageLinks={activeModal.canManageLinks}
+          policy={activeModal.policy}
           onClose={onClose}
         />
       )}

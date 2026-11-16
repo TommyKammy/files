@@ -22,12 +22,15 @@ function parsePostMessage(data: unknown): Record<string, unknown> | null {
 
 export function WopiEditorFrame({
   file,
+  initialSession = null,
   onClose,
 }: {
   file: WopiEditorFile;
+  /** Pre-created session (shared-link WOPI) — skips `/api/files/:id/wopi-session`. */
+  initialSession?: WopiSessionResponse | null;
   onClose: () => void;
 }) {
-  const [session, setSession] = useState<WopiSessionResponse | null>(null);
+  const [session, setSession] = useState<WopiSessionResponse | null>(initialSession);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [documentLoaded, setDocumentLoaded] = useState(false);
@@ -38,6 +41,17 @@ export function WopiEditorFrame({
   ).current;
 
   useEffect(() => {
+    if (initialSession) {
+      setSession(initialSession);
+      setLoading(false);
+      setError(null);
+      setStatusText(
+        initialSession.canWrite
+          ? '同時編集セッションを開始しています...'
+          : '閲覧専用で開いています...'
+      );
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -69,7 +83,7 @@ export function WopiEditorFrame({
     return () => {
       cancelled = true;
     };
-  }, [file.id]);
+  }, [file.id, initialSession]);
 
   useEffect(() => {
     const token = keyboardScopes.pushScope('modal');

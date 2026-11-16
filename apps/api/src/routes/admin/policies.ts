@@ -40,6 +40,9 @@ function projectPolicy(
     // camelCase projection for API consumers; the raw snake_case column stays
     // for D1/backwards-compatible readers.
     advancedRolesEnabled: policy.advanced_roles_enabled === 1,
+    allowSharedLinkEdit: policy.allow_shared_link_edit === 1,
+    allowPublicEditLinks: policy.allow_public_edit_links === 1,
+    allowViewerShareLinks: policy.allow_viewer_share_links === 1,
     folderStructureMode,
     permissionInheritanceMode,
     invitePolicy,
@@ -106,6 +109,9 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       aiClassificationMode?: AiClassificationMode;
       aiAutoApplyThreshold?: number | null;
       advancedRolesEnabled?: boolean;
+      allowSharedLinkEdit?: boolean;
+      allowPublicEditLinks?: boolean;
+      allowViewerShareLinks?: boolean;
       folderStructureMode?: unknown;
       permissionInheritanceMode?: unknown;
       invitePolicy?: unknown;
@@ -230,6 +236,20 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       }
       updates.push('advanced_roles_enabled = ?');
       binds.push(body.advancedRolesEnabled ? 1 : 0);
+    }
+
+    for (const [field, column] of [
+      ['allowSharedLinkEdit', 'allow_shared_link_edit'],
+      ['allowPublicEditLinks', 'allow_public_edit_links'],
+      ['allowViewerShareLinks', 'allow_viewer_share_links'],
+    ] as const) {
+      const value = body[field];
+      if (value === undefined) continue;
+      if (typeof value !== 'boolean') {
+        return c.json({ error: `${field} must be a boolean` }, 400);
+      }
+      updates.push(`${column} = ?`);
+      binds.push(value ? 1 : 0);
     }
     if (body.aiAutoApplyThreshold !== undefined) {
       if (

@@ -6,6 +6,7 @@ import {
   computeProxyHmacSignature,
   getLocalProxySecret,
   resolveSafeDisposition,
+  verifyPreviewStreamToken,
 } from './storage-url-signing';
 
 export const storageProxyRoutes = new Hono<OidcHonoEnv>();
@@ -114,6 +115,73 @@ storageProxyRoutes.put('/proxy', async (c) => {
     },
     200
   );
+});
+
+/**
+ * GET /api/storage/preview-stream?token=...
+ *
+ * Preview-only delivery path. The HMAC token is bound to a single D1 nonce that
+ * is removed atomically before any bytes are streamed, so replaying the exact
+ * URL (browser reload, copied link, curl) always yields HTTP 410.
+ */
+storageProxyRoutes.get('/preview-stream', async (c) => {
+  const token = c.req.query('token') ?? '';
+  const claims = await verifyPreviewStreamToken(c.env, token);
+  if (!claims) {
+    return c.json(
+      { error: 'Invalid preview stream token', code: 'PREVIEW_TOKEN_INVALID' },
+      403
+    );
+  }
+  if (!claims.objectKey.startsWith(`tenants/${claims.tenantId}/`)) {
+    return c.json(
+      { error: 'Object key tenant mismatch', code: 'PREVIEW_TOKEN_INVALID' },
+      403
+    );
+  }
+
+  const consumed = await c.env.DB.prepare(
+    `DELETE FROM preview_stream_tokens
+      WHERE nonce = ? AND tenant_id = ? AND object_key = ? AND expires_at > ?
+      RETURNING nonce`
+  )
+    .bind(claims.nonce, claims.tenantId, claims.objectKey, new Date().toISOString())
+    .first<{ nonce: string }>();
+
+  if (!consumed) {
+    return c.json(
+      {
+        error: 'Preview stream token expired or already used',
+        code: 'PREVIEW_TOKEN_CONSUMED',
+      },
+      410
+    );
+  }
+
+  const object = await c.env.BUCKET.get(claims.objectKey);
+  if (!object) {
+    return c.json({ error: 'Object not found' }, 404);
+  }
+
+  const disposition = resolveSafeDisposition(
+    claims.disposition,
+    claims.filename,
+    claims.contentType
+  );
+  const headers = new Headers();
+  headers.set('Content-Type', claims.contentType || object.httpMetadata?.contentType || 'application/octet-stream');
+  headers.set(
+    'Content-Disposition',
+    `${disposition}; filename*=UTF-8''${encodeURIComponent(claims.filename)}`
+  );
+  headers.set('Content-Security-Policy', "sandbox; default-src 'none'");
+  headers.set('X-Content-Type-Options', 'nosniff');
+  headers.set('Cache-Control', 'no-store');
+  headers.set('Referrer-Policy', 'no-referrer');
+  headers.set('Accept-Ranges', 'none');
+  headers.set('Content-Length', String(object.size));
+
+  return new Response(object.body, { status: 200, headers });
 });
 
 storageProxyRoutes.get('/proxy', async (c) => {

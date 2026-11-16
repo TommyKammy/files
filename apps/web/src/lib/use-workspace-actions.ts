@@ -20,6 +20,7 @@ import type {
   FolderStructureMode,
   FolderSummary,
   ResourceRole,
+  TenantPolicyRow,
 } from '@/types/files';
 
 export function useWorkspaceActions({
@@ -38,6 +39,7 @@ export function useWorkspaceActions({
   canShareRow,
   canManageLinksRow,
   canClassifyRow,
+  policy = null,
   setError,
   setSelectedKeys,
   setSelectionAnchorKey,
@@ -62,6 +64,7 @@ export function useWorkspaceActions({
   canShareRow: (row: WorkspaceTableRow) => boolean;
   canManageLinksRow: (row: WorkspaceTableRow) => boolean;
   canClassifyRow: (row: WorkspaceTableRow) => boolean;
+  policy?: TenantPolicyRow | null;
   setError: (message: string | null) => void;
   setSelectedKeys: Dispatch<SetStateAction<Set<string>>>;
   setSelectionAnchorKey: (key: string | null) => void;
@@ -146,6 +149,7 @@ export function useWorkspaceActions({
     canManageLinksRow,
     canClassifyRow,
     isPrivilegedAdmin,
+    policy,
     setActiveModal,
     setClassificationPicker,
   });

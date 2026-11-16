@@ -3,7 +3,11 @@ import { getCookie } from 'hono/cookie';
 import { resolveTargetAccess } from '../../../services/authorization';
 import { can } from '../../../services/capabilities';
 import { sha256Hex } from '../../../services/crypto-utils';
-import { getShareUnlockCookieName } from '../../../services/shared-link-security';
+import {
+  getShareUnlockCookieName,
+  getShareUnlockSecret,
+  verifyShareUnlockToken,
+} from '../../../services/shared-link-security';
 import type { AuthUser } from '../../../types/api';
 import type { OidcHonoEnv } from '../../../types/oidc';
 import { SharedLinkRow } from '../shared';
@@ -90,6 +94,54 @@ export async function loadAndAuthorizeShareLink(
   }
 
   return { ok: true, link, tokenHash };
+}
+
+/**
+ * Shared-link edit endpoints require the same password unlock as preview /
+ * download. Returns a ready-to-send error payload on failure.
+ */
+export async function verifyShareLinkUnlock(
+  c: Context<OidcHonoEnv>,
+  link: SharedLinkRow,
+  tokenHash: string,
+  bodyUnlockToken?: unknown
+): Promise<
+  | { ok: true }
+  | {
+      ok: false;
+      status: 401 | 423;
+      body: { error: string; code: string; lockedUntil?: string | null };
+    }
+> {
+  if (!link.password_hash) return { ok: true };
+  if (link.locked_until && Date.parse(link.locked_until) > Date.now()) {
+    return {
+      ok: false,
+      status: 423,
+      body: {
+        error: 'Shared link is temporarily locked',
+        code: 'LINK_LOCKED',
+        lockedUntil: link.locked_until,
+      },
+    };
+  }
+  const unlocked = await verifyShareUnlockToken(
+    getShareUnlockSecret(c.env),
+    readUnlockToken(c, link.id, bodyUnlockToken),
+    link.id,
+    tokenHash
+  );
+  if (!unlocked) {
+    return {
+      ok: false,
+      status: 401,
+      body: {
+        error: 'Password verification required',
+        code: 'PASSWORD_REQUIRED',
+      },
+    };
+  }
+  return { ok: true };
 }
 
 export function readUnlockToken(

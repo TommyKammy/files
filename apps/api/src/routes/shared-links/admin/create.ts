@@ -7,6 +7,12 @@ import {
 import { can } from '../../../services/capabilities';
 import { generateRandomToken, sha256Hex } from '../../../services/crypto-utils';
 import { hashSharePassword } from '../../../services/shared-link-security';
+import {
+  canDownloadForPermissionLevel,
+  getShareLinkPolicyFlags,
+  isSharePermissionLevel,
+  type SharePermissionLevel,
+} from '../../../services/shared-link-permissions';
 import { buildSyncChangeStmt } from '../../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../../services/sync-notifier';
 import type { ClassificationLabel, ShareAccessScope } from '../../../types/api';
@@ -15,7 +21,6 @@ import {
   CONFIDENTIAL_MAX_EXPIRY_DAYS,
   DEFAULT_MAX_EXPIRY_DAYS,
   SharedLinkRow,
-  TenantPolicyRow,
   VALID_SCOPES,
   formatLinkSummary,
   hasConfidentialAncestor,
@@ -29,6 +34,7 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
       targetType?: unknown;
       targetId?: unknown;
       accessScope?: unknown;
+      permissionLevel?: unknown;
       canDownload?: unknown;
       requireWatermark?: unknown;
       password?: unknown;
@@ -44,6 +50,19 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
       !body.targetId.trim()
     ) {
       return c.json({ error: 'targetType (file|folder) and targetId are required' }, 400);
+    }
+
+    if (
+      body.permissionLevel !== undefined &&
+      !isSharePermissionLevel(body.permissionLevel)
+    ) {
+      return c.json(
+        {
+          error: "permissionLevel must be 'view', 'download' or 'edit'",
+          code: 'INVALID_PERMISSION_LEVEL',
+        },
+        400
+      );
     }
 
     const accessScope: ShareAccessScope =
@@ -67,28 +86,61 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
       return c.json({ error: 'Target resource not found' }, 404);
     }
 
-    if (!can(access.capabilities, 'share_link.create')) {
+    const [policy, ancestorConf] = await Promise.all([
+      getShareLinkPolicyFlags(c.env.DB, user.tenantId),
+      hasConfidentialAncestor(
+        c.env.DB,
+        user.tenantId,
+        body.targetType === 'folder' ? targetId : access.folderId
+      ),
+    ]);
+
+    const isViewerRole = access.effectiveRole === 'viewer';
+    const viewerShareAllowed =
+      isViewerRole && policy.allow_viewer_share_links === 1;
+    if (!can(access.capabilities, 'share_link.create') && !viewerShareAllowed) {
       return c.json({ error: 'Forbidden: share permission required' }, 403);
     }
 
-    // `viewer_uploader` can create links but cannot manage them, so its links
-    // must be display-only (no download) to stay inside its capability set.
+    // `viewer` / `viewer_uploader` can create links but cannot manage them, so
+    // every link they create must stay display-only.
     const canManageLinks = can(access.capabilities, 'share_link.manage');
+    const viewOnlyRestricted = isViewerRole || !canManageLinks;
+
+    let permissionLevel: SharePermissionLevel = isSharePermissionLevel(
+      body.permissionLevel
+    )
+      ? body.permissionLevel
+      : body.canDownload === false
+        ? 'view'
+        : 'download';
+
+    if (viewOnlyRestricted && permissionLevel !== 'view') {
+      // Legacy callers (and the current SharePopover for viewer_uploader) omit
+      // `permissionLevel`; keep their historic display-only clamp. An explicit
+      // request for download/edit is a policy violation.
+      if (body.permissionLevel !== undefined) {
+        return c.json(
+          {
+            error:
+              'Trusted view-only link creation is limited to display-only links',
+            code: 'SHARED_LINK_VIEWER_VIEW_ONLY',
+          },
+          403
+        );
+      }
+      permissionLevel = 'view';
+    }
+    if (viewOnlyRestricted) {
+      permissionLevel = 'view';
+    }
 
     const folderToCheck = body.targetType === 'folder' ? targetId : access.folderId;
-    const [policy, ancestorConf] = await Promise.all([
-      c.env.DB.prepare(
-        'SELECT enforce_company_only_links, require_watermark_confidential, max_link_expiration_days FROM tenant_policies WHERE tenant_id = ?'
-      )
-        .bind(user.tenantId)
-        .first<TenantPolicyRow>(),
-      hasConfidentialAncestor(c.env.DB, user.tenantId, folderToCheck),
-    ]);
-
     const effectiveClassification: ClassificationLabel =
       access.classification === 'confidential' || ancestorConf
         ? 'confidential'
         : access.classification;
+    const isConfidential = effectiveClassification === 'confidential';
 
     if (
       (effectiveClassification === 'confidential' || effectiveClassification === 'unset') &&
@@ -103,7 +155,7 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
       );
     }
 
-    if (policy?.enforce_company_only_links === 1 && accessScope === 'public') {
+    if (policy.enforce_company_only_links === 1 && accessScope === 'public') {
       return c.json(
         {
           error: 'Tenant policy enforces company-only shared links',
@@ -113,10 +165,62 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
       );
     }
 
-    const isConfidential = effectiveClassification === 'confidential';
+    if (isConfidential) {
+      if (permissionLevel === 'edit') {
+        return c.json(
+          {
+            error: 'Edit shared links are forbidden for confidential content',
+            code: 'CONFIDENTIAL_EDIT_LINK_FORBIDDEN',
+          },
+          403
+        );
+      }
+      // Preserve the legacy governance clamp: confidential links are always
+      // display-only with a mandatory watermark.
+      permissionLevel = 'view';
+    }
+
+    if (permissionLevel === 'edit') {
+      if (policy.allow_shared_link_edit !== 1) {
+        return c.json(
+          {
+            error: 'Edit shared links are disabled by tenant policy',
+            code: 'SHARED_LINK_EDIT_DISABLED',
+          },
+          403
+        );
+      }
+      if (accessScope === 'public') {
+        if (policy.allow_public_edit_links !== 1) {
+          return c.json(
+            {
+              error: 'Public edit links are disabled by tenant policy',
+              code: 'PUBLIC_EDIT_LINK_DISABLED',
+            },
+            403
+          );
+        }
+        const hasPassword =
+          typeof body.password === 'string' && body.password.trim().length > 0;
+        const hasExplicitExpiry =
+          (typeof body.expiresAt === 'string' && body.expiresAt.trim().length > 0) ||
+          (typeof body.expiresInDays === 'number' && Number.isFinite(body.expiresInDays));
+        if (!hasPassword || !hasExplicitExpiry) {
+          return c.json(
+            {
+              error:
+                'Public edit links require both a password and an explicit expiry',
+              code: 'PUBLIC_EDIT_REQUIRES_PASSWORD_AND_EXPIRY',
+            },
+            400
+          );
+        }
+      }
+    }
+
     const maxExpiryDays = isConfidential
       ? CONFIDENTIAL_MAX_EXPIRY_DAYS
-      : (policy?.max_link_expiration_days ?? DEFAULT_MAX_EXPIRY_DAYS);
+      : (policy.max_link_expiration_days ?? DEFAULT_MAX_EXPIRY_DAYS);
 
     const expiryParsed = parseExpirationIso(
       body.expiresAt,
@@ -149,13 +253,12 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
       passwordHash = await hashSharePassword(body.password);
     }
 
-    // Server-side governance enforcement for confidential items
-    const canDownload = isConfidential
-      ? false
-      : canManageLinks && body.canDownload !== false;
-    const requireWatermark = isConfidential || !canManageLinks
-      ? true
-      : Boolean(body.requireWatermark);
+    const canDownload =
+      canDownloadForPermissionLevel(permissionLevel) === 1 && !isConfidential;
+    const requireWatermark =
+      isConfidential || viewOnlyRestricted || permissionLevel === 'view'
+        ? true
+        : Boolean(body.requireWatermark);
 
     const linkId = crypto.randomUUID();
     const rawToken = generateRandomToken(32);
@@ -166,9 +269,9 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
       c.env.DB.prepare(
         `INSERT INTO shared_links (
            id, tenant_id, token_hash, target_type, target_id, access_scope,
-           can_download, require_watermark, password_hash, expires_at,
-           max_downloads, download_count, created_by, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+           can_download, permission_level, require_watermark, password_hash,
+           expires_at, max_downloads, download_count, created_by, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
       ).bind(
         linkId,
         user.tenantId,
@@ -177,6 +280,7 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
         targetId,
         accessScope,
         canDownload ? 1 : 0,
+        permissionLevel,
         requireWatermark ? 1 : 0,
         passwordHash,
         expiryParsed.expiresAt,
@@ -196,6 +300,7 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
         metadata: {
           linkId,
           accessScope,
+          permissionLevel,
           canDownload,
           requireWatermark,
           hasPassword: Boolean(passwordHash),
@@ -216,6 +321,7 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
           targetType: body.targetType,
           targetId,
           accessScope,
+          permissionLevel,
           canDownload,
           requireWatermark,
           expiresAt: expiryParsed.expiresAt,
@@ -246,6 +352,4 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
       201
     );
   });
-
-
 }

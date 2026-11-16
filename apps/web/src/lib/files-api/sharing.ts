@@ -1,11 +1,16 @@
 import type {
+  CreateSharedLinkPayload,
   PermissionsListResponse,
   PrincipalCandidate,
   PublicShareMeta,
   PublicShareUrlResponse,
   ResourceRole,
-  ShareAccessScope,
   SharedLinkSummary,
+  SharedLinkUpdateResponse,
+  SharedLinkUploadCompleteResponse,
+  SharedLinkUploadInitResponse,
+  UpdateSharedLinkPayload,
+  WopiSessionResponse,
 } from '@/types/files';
 import {
   apiFetch,
@@ -66,18 +71,21 @@ export function listSharedLinks(
   return apiFetch(`/api/shared-links?${params.toString()}`);
 }
 
-export function createSharedLink(payload: {
-  targetType: 'file' | 'folder';
-  targetId: string;
-  accessScope: ShareAccessScope;
-  canDownload: boolean;
-  requireWatermark: boolean;
-  password?: string;
-  expiresInDays?: number;
-  maxDownloads?: number;
-}): Promise<{ link: SharedLinkSummary; token: string; shareUrl: string }> {
+export function createSharedLink(
+  payload: CreateSharedLinkPayload
+): Promise<{ link: SharedLinkSummary; token: string; shareUrl: string }> {
   return apiFetch('/api/shared-links', {
     method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateSharedLink(
+  linkId: string,
+  payload: UpdateSharedLinkPayload
+): Promise<SharedLinkUpdateResponse> {
+  return apiFetch(`/api/shared-links/${encodeURIComponent(linkId)}`, {
+    method: 'PATCH',
     body: JSON.stringify(payload),
   });
 }
@@ -99,6 +107,85 @@ export function verifyPublicSharePassword(
   return apiFetch(`/api/s/${encodeURIComponent(token)}/verify-password`, {
     method: 'POST',
     body: JSON.stringify({ password }),
+  });
+}
+
+export function initializeSharedLinkUpload(
+  token: string,
+  payload: {
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    fileId?: string;
+    conflictPolicy?: 'fail' | 'new_version';
+    unlockToken?: string;
+  }
+): Promise<SharedLinkUploadInitResponse> {
+  return apiFetch(`/api/s/${encodeURIComponent(token)}/upload-init`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function completeSharedLinkUpload(
+  token: string,
+  payload: {
+    fileId: string;
+    versionId: string;
+    unlockToken?: string;
+  }
+): Promise<SharedLinkUploadCompleteResponse> {
+  return apiFetch(`/api/s/${encodeURIComponent(token)}/upload-complete`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** init -> signed PUT -> complete, mirroring the authenticated upload flow. */
+export async function uploadViaSharedLink(
+  token: string,
+  payload: {
+    file: { name: string; mimeType: string; body: Blob | ArrayBuffer | Uint8Array };
+    fileId?: string;
+    conflictPolicy?: 'fail' | 'new_version';
+    unlockToken?: string;
+  }
+): Promise<SharedLinkUploadCompleteResponse> {
+  const sizeBytes =
+    payload.file.body instanceof Blob
+      ? payload.file.body.size
+      : payload.file.body.byteLength;
+  const init = await initializeSharedLinkUpload(token, {
+    fileName: payload.file.name,
+    mimeType: payload.file.mimeType,
+    sizeBytes,
+    fileId: payload.fileId,
+    conflictPolicy: payload.conflictPolicy,
+    unlockToken: payload.unlockToken,
+  });
+  const res = await fetch(init.uploadUrl, {
+    method: 'PUT',
+    headers: init.requiredHeaders,
+    body: payload.file.body as BodyInit,
+    credentials: init.uploadUrl.startsWith('/') ? 'include' : 'omit',
+  });
+  if (!res.ok) {
+    throw new Error(`アップロードに失敗しました (HTTP ${res.status})`);
+  }
+  return completeSharedLinkUpload(token, {
+    fileId: init.fileId,
+    versionId: init.versionId,
+    unlockToken: payload.unlockToken,
+  });
+}
+
+export function createSharedLinkWopiSession(
+  token: string,
+  payload: { fileId?: string; unlockToken?: string }
+): Promise<WopiSessionResponse> {
+  return apiFetch(`/api/s/${encodeURIComponent(token)}/wopi-session`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 
