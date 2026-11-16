@@ -135,11 +135,17 @@ file through the workspace, or seed both `file_versions` and the R2 object.
 - Hina Mincho (`HinaMincho-Regular.ttf`, SIL OFL)
 
 Hina Mincho is prepended to LibreOffice's VCL `LATIN_TEXT`, `CJK_TEXT`, and
-`SERIF` default font lists for every locale, and fontconfig aliases map
-`Calibri`, `Liberation Serif`, `DejaVu Serif`, `MS Mincho`, and `Yu Mincho`
-to Hina Mincho. The result is:
+`SERIF` default font lists for every locale. Fontconfig also maps the
+unavailable Japanese fonts `MS Mincho` / `Yu Mincho` to Hina Mincho.
+
+Calibri is **not** replaced. Calibri documents continue to use the bundled
+metric-compatible Carlito font, and other explicitly specified fonts are left
+untouched. MS Gothic / Yu Gothic / Meiryo fall back to Noto Sans CJK JP.
+
+The result is:
 
 - New/default Japanese text uses Hina Mincho.
+- Calibri documents keep Calibri metrics via Carlito.
 - Existing documents that explicitly embed/specify another font keep it.
 - MS Gothic / Yu Gothic / Meiryo fall back to Noto Sans CJK JP for readability.
 
