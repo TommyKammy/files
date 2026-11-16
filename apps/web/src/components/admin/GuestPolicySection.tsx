@@ -21,10 +21,15 @@ import {
   updateAdminPolicies,
 } from '@/lib/files-api';
 import {
+  DEFAULT_EXTERNAL_DOMAIN_EXISTING_GUEST_MODE,
+  guestDomainValidationMessage,
   guestInvitationStatusLabel,
   normalizeDomainAllowlist,
+  readExternalDomainExistingGuestMode,
+  WILDCARD_DOMAIN_ERROR_MESSAGE,
 } from '@/lib/guest-policy';
 import type {
+  ExternalDomainExistingGuestMode,
   GuestInvitationSummary,
   TenantPolicyRow,
 } from '@/types/files';
@@ -97,6 +102,7 @@ export function GuestPolicySection({
     'guest_session_max_hours',
     24
   );
+  const persistedExistingGuestMode = readExternalDomainExistingGuestMode(policy);
 
   const [allowExternalCollaborators, setAllowExternalCollaborators] = useState(
     persistedAllow
@@ -108,6 +114,8 @@ export function GuestPolicySection({
   const [domainDraft, setDomainDraft] = useState('');
   const [expiryDays, setExpiryDays] = useState(String(persistedExpiry));
   const [sessionHours, setSessionHours] = useState(String(persistedSession));
+  const [existingGuestMode, setExistingGuestMode] =
+    useState<ExternalDomainExistingGuestMode>(persistedExistingGuestMode);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -164,6 +172,7 @@ export function GuestPolicySection({
         )
       )
     );
+    setExistingGuestMode(readExternalDomainExistingGuestMode(policy));
   }, [policy]);
 
   const loadInvitations = useCallback(async () => {
@@ -192,10 +201,15 @@ export function GuestPolicySection({
   }, [loadInvitations]);
 
   function addDomain() {
+    const wildcardMessage = domainDraft.includes('*')
+      ? WILDCARD_DOMAIN_ERROR_MESSAGE
+      : guestDomainValidationMessage([domainDraft]);
     const normalized = normalizeDomainAllowlist([domainDraft])[0] ?? null;
     setDomainDraft('');
     if (!normalized) {
-      setError('有効なドメインを入力してください（例: partner.example.com）');
+      setError(
+        wildcardMessage ?? '有効なドメインを入力してください（例: partner.example.com）'
+      );
       return;
     }
     setError(null);
@@ -233,9 +247,17 @@ export function GuestPolicySection({
         externalDomainAllowlist: domains,
         guestInvitationExpiryDays: expiry,
         guestSessionMaxHours: session,
+        externalDomainExistingGuestMode: existingGuestMode,
       });
       onPolicyUpdated(response.policy);
-      setNotice('外部ゲストポリシーを保存しました。');
+      const affected = response.externalDomainPolicy;
+      setNotice(
+        affected && affected.mode === 'suspend_existing'
+          ? `外部ゲストポリシーを保存しました。許可外ドメインの既存ゲスト ${affected.affectedGuestCount} 件のうち ${affected.suspendedGuestIds.length} 件を停止しました。`
+          : affected && affected.affectedGuestCount > 0
+            ? `外部ゲストポリシーを保存しました。許可外ドメインの既存ゲストは ${affected.affectedGuestCount} 件あります（新規招待・再認証のみ拒否）。`
+            : '外部ゲストポリシーを保存しました。'
+      );
       void loadInvitations();
     } catch (err) {
       setError(
@@ -398,6 +420,12 @@ export function GuestPolicySection({
           <p className="mb-2 text-[0.625rem] text-[#55565a]">
             空の場合はすべての外部ドメインを拒否します。明示的に追加したドメインだけ招待できます。
           </p>
+          <p
+            data-testid="guest-domain-wildcard-notice"
+            className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[0.625rem] text-amber-900"
+          >
+            ワイルドカード (<code>*</code>) は使用できません。完全一致ドメインのみ登録できます（例: <code>partner.example.com</code>）。
+          </p>
           <div className="flex flex-wrap gap-2">
             <label htmlFor="guest-domain-input" className="sr-only">
               追加する外部ドメイン
@@ -463,6 +491,76 @@ export function GuestPolicySection({
               ))}
             </ul>
           )}
+        </fieldset>
+
+        <fieldset
+          data-testid="guest-existing-mode-fieldset"
+          className="rounded-xl border border-[#e7e7ea] p-3"
+        >
+          <legend className="flex items-center gap-1.5 px-1 text-[0.75rem] font-medium text-[#111214]">
+            <ShieldCheck className="h-3.5 w-3.5 text-[#5e6ad2]" />
+            ドメイン許可リストから外れた既存ゲストの扱い
+          </legend>
+          <p className="mb-2 text-[0.625rem] text-[#55565a]">
+            許可リストからドメインを削除したとき、すでに有効なゲストをどう扱うかを選択します。
+          </p>
+          <div className="space-y-1.5">
+            <label className="flex items-start gap-2 rounded-lg border border-[#e7e7ea] px-2.5 py-2 text-[0.6875rem]">
+              <input
+                type="radio"
+                name="externalDomainExistingGuestMode"
+                value="reject_new_only"
+                data-testid="guest-existing-mode-reject"
+                checked={existingGuestMode === 'reject_new_only'}
+                disabled={!canManage || saving}
+                onChange={() => setExistingGuestMode('reject_new_only')}
+                className="mt-0.5 accent-[#5e6ad2]"
+              />
+              <span>
+                <span className="block font-medium text-[#111214]">
+                  reject_new_only（既存ゲストは維持）
+                </span>
+                <span className="block text-[0.625rem] text-[#55565a]">
+                  新規招待・OTP 再認証のみ拒否します。稼働中の既存ゲストは停止しません。
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 rounded-lg border border-[#e7e7ea] px-2.5 py-2 text-[0.6875rem]">
+              <input
+                type="radio"
+                name="externalDomainExistingGuestMode"
+                value="suspend_existing"
+                data-testid="guest-existing-mode-suspend"
+                checked={existingGuestMode === 'suspend_existing'}
+                disabled={!canManage || saving}
+                onChange={() => setExistingGuestMode('suspend_existing')}
+                className="mt-0.5 accent-[#5e6ad2]"
+              />
+              <span>
+                <span className="block font-medium text-[#111214]">
+                  suspend_existing（既存ゲストを即時停止）
+                </span>
+                <span className="block text-[0.625rem] text-[#55565a]">
+                  許可リスト外の有効ゲストを一括停止し、全セッションを即時失効させます。
+                </span>
+              </span>
+            </label>
+          </div>
+          {existingGuestMode === 'suspend_existing' && (
+            <p
+              data-testid="guest-existing-mode-warning"
+              className="mt-2 flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[0.625rem] text-red-800"
+            >
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+              <span>
+                保存すると、現在の許可リストに一致しない有効なゲストが即時停止され、セッション・再開可否が失効します。事前に対象ドメインを確認してください。
+              </span>
+            </p>
+          )}
+          <p className="mt-2 text-[0.625rem] text-[#55565a]">
+            既定値は {DEFAULT_EXTERNAL_DOMAIN_EXISTING_GUEST_MODE} です。保存時に
+            admin.policy_updated とゲスト停止の監査ログ・同期通知が記録されます。
+          </p>
         </fieldset>
 
         <div className="grid gap-3 md:grid-cols-2">

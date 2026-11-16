@@ -32,6 +32,7 @@ import type {
   WaterfallInheritanceConflict,
 } from '@/types/files';
 import {
+  GUEST_AUDIT_ACTION_PREFIXES,
   PERMISSION_AUDIT_ACTION_PREFIXES,
   ROOT_FOLDER_AUDIT_ACTIONS,
 } from '@/lib/admin-audit';
@@ -43,6 +44,7 @@ export function useGovernanceDashboard() {
   const authChecked = snapshot.authStatus !== 'unknown';
 
   const [loading, setLoading] = useState(true);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -103,6 +105,9 @@ export function useGovernanceDashboard() {
   const [auditActionPrefixPreset, setAuditActionPrefixPreset] = useState<
     string[]
   >([]);
+  const [auditPresetKind, setAuditPresetKind] = useState<
+    'permission' | 'guest' | null
+  >(null);
   const [auditTargetType, setAuditTargetType] = useState('');
   const [auditStatusFilter, setAuditStatusFilter] = useState<'' | 'allowed' | 'blocked'>('');
   const [auditLoadingMore, setAuditLoadingMore] = useState(false);
@@ -184,6 +189,11 @@ export function useGovernanceDashboard() {
       } finally {
         if (!options?.silent) {
           setLoading(false);
+          // Mark the first bulk load complete only after every dashboard value
+          // has been applied in the same commit. The shell renders one compact
+          // loading surface until then, so child sections cannot shift content
+          // above them as their independent fetches resolve.
+          setInitialLoadComplete(true);
         }
       }
     },
@@ -561,6 +571,7 @@ export function useGovernanceDashboard() {
     setAuditActionPreset([...ROOT_FOLDER_AUDIT_ACTIONS]);
     setAuditActionPrefixFilter('');
     setAuditActionPrefixPreset([]);
+    setAuditPresetKind(null);
     setAuditTargetType('');
     scrollToAuditLogs();
   }
@@ -571,6 +582,19 @@ export function useGovernanceDashboard() {
     setAuditStatusFilter('');
     setAuditActionPrefixFilter('');
     setAuditActionPrefixPreset([...PERMISSION_AUDIT_ACTION_PREFIXES]);
+    setAuditPresetKind('permission');
+    setAuditTargetType('');
+    scrollToAuditLogs();
+  }
+
+  /** Guest lifecycle preset: `guest.*` and `admin.guest.*`. */
+  function handleShowGuestAudit() {
+    setAuditActionFilter('');
+    setAuditActionPreset([]);
+    setAuditStatusFilter('');
+    setAuditActionPrefixFilter('');
+    setAuditActionPrefixPreset([...GUEST_AUDIT_ACTION_PREFIXES]);
+    setAuditPresetKind('guest');
     setAuditTargetType('');
     scrollToAuditLogs();
   }
@@ -581,17 +605,20 @@ export function useGovernanceDashboard() {
 
   function handleClearAuditPrefixPreset() {
     setAuditActionPrefixPreset([]);
+    setAuditPresetKind(null);
   }
 
   function handleAuditActionFilterChange(value: string) {
     setAuditActionPreset([]);
     setAuditActionPrefixPreset([]);
     setAuditActionPrefixFilter('');
+    setAuditPresetKind(null);
     setAuditActionFilter(value);
   }
 
   function handleAuditActionPrefixFilterChange(value: string) {
     setAuditActionPrefixPreset([]);
+    setAuditPresetKind(null);
     setAuditActionPrefixFilter(value);
   }
 
@@ -636,6 +663,7 @@ export function useGovernanceDashboard() {
     authChecked,
     isPrivilegedAdmin,
     loading,
+    initialLoadComplete,
     error,
     notice,
     stats,
@@ -668,6 +696,7 @@ export function useGovernanceDashboard() {
     auditActionPreset,
     auditActionPrefixFilter,
     auditActionPrefixPreset,
+    auditPresetKind,
     auditTargetType,
     auditStatusFilter,
     auditLoadingMore,
@@ -678,6 +707,7 @@ export function useGovernanceDashboard() {
     setAuditStatusFilter,
     handleClearAuditPrefixPreset,
     handleShowPermissionAudit,
+    handleShowGuestAudit,
     setPolicy,
     loadAll,
     toggleSelection,

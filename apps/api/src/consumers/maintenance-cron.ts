@@ -1,6 +1,11 @@
 import { purgeExpiredSyncChanges } from '../services/sync-changes';
 import { purgeExpiredWopiDrafts } from '../services/wopi-drafts';
 import type { Env } from '../types/api';
+import {
+  cleanupGuestArtifacts,
+  notifyExpiringGuests,
+  suspendExpiredGuests,
+} from './maintenance/guests';
 import { purgeExpiredOrRevokedSessions } from './maintenance/sessions';
 import { purgeExpiredTrashForTenant } from './maintenance/trash';
 import { cleanupStalePendingUploads } from './maintenance/uploads';
@@ -14,6 +19,12 @@ export interface MaintenanceSummary {
   syncChangesPurged: number;
   wopiDraftsPurged: number;
   wopiSessionsExpired: number;
+  guestsExpiredSuspended: number;
+  guestSessionsRevoked: number;
+  invitationsExpired: number;
+  invitationsCleaned: number;
+  otpChallengesPurged: number;
+  expiringSoonNotified: number;
 }
 
 interface TenantPolicyRetentionRow {
@@ -23,9 +34,11 @@ interface TenantPolicyRetentionRow {
 
 /**
  * Daily Cloudflare Workers Cron entrypoint:
- * 1. Delete expired/revoked sessions
- * 2. Delete >24h stale pending uploads & orphan R2 objects
- * 3. Purge soft-deleted items older than tenant `trash_retention_days` while keeping `tenant_storage_stats` consistent
+ * 1. Expire/auto-suspend guests, expire invitations & clean guest artifacts,
+ *    and notify guests whose account expires within 72h
+ * 2. Delete expired/revoked sessions
+ * 3. Delete >24h stale pending uploads & orphan R2 objects
+ * 4. Purge soft-deleted items older than tenant `trash_retention_days` while keeping `tenant_storage_stats` consistent
  */
 export async function runDailyMaintenance(
   env: Env,
@@ -33,6 +46,15 @@ export async function runDailyMaintenance(
 ): Promise<MaintenanceSummary> {
   const nowMs = now.getTime();
   const nowIso = now.toISOString();
+
+  const { guestsExpiredSuspended, guestSessionsRevoked } =
+    await suspendExpiredGuests(env.DB, nowIso);
+  const {
+    invitationsExpired,
+    invitationsCleaned,
+    otpChallengesPurged,
+  } = await cleanupGuestArtifacts(env.DB, nowIso);
+  const { expiringSoonNotified } = await notifyExpiringGuests(env, nowIso);
 
   const sessionsDeleted = await purgeExpiredOrRevokedSessions(env.DB, nowIso);
   const { pendingFilesDeleted, pendingVersionsDeleted } =
@@ -74,5 +96,11 @@ export async function runDailyMaintenance(
     syncChangesPurged,
     wopiDraftsPurged,
     wopiSessionsExpired,
+    guestsExpiredSuspended,
+    guestSessionsRevoked,
+    invitationsExpired,
+    invitationsCleaned,
+    otpChallengesPurged,
+    expiringSoonNotified,
   };
 }

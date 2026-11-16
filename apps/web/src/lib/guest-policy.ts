@@ -1,4 +1,5 @@
 import type {
+  ExternalDomainExistingGuestMode,
   GuestInvitationStatus,
   GuestInvitationSummary,
   ResourceRole,
@@ -36,6 +37,57 @@ export const DEFAULT_GUEST_POLICY_VIEW: GuestPolicyView = {
   guestInvitationExpiryDays: 14,
   guestSessionMaxHours: 24,
 };
+
+export const DEFAULT_EXTERNAL_DOMAIN_EXISTING_GUEST_MODE: ExternalDomainExistingGuestMode =
+  'reject_new_only';
+
+export const WILDCARD_DOMAIN_ERROR_MESSAGE =
+  'ワイルドカード (*) は不可です。完全一致ドメインのみ許可されます。';
+
+export function normalizeExternalDomainExistingGuestMode(
+  value: unknown
+): ExternalDomainExistingGuestMode {
+  return value === 'suspend_existing'
+    ? 'suspend_existing'
+    : DEFAULT_EXTERNAL_DOMAIN_EXISTING_GUEST_MODE;
+}
+
+export function readExternalDomainExistingGuestMode(
+  policy: TenantPolicyRow | null
+): ExternalDomainExistingGuestMode {
+  return normalizeExternalDomainExistingGuestMode(
+    policy?.externalDomainExistingGuestMode ??
+      policy?.external_domain_existing_guest_mode
+  );
+}
+
+export function externalDomainExistingGuestModeLabel(
+  mode: ExternalDomainExistingGuestMode
+): string {
+  return mode === 'suspend_existing'
+    ? '許可外になった既存ゲストを即時停止'
+    : '既存ゲストは維持し、新規招待・再認証のみ拒否';
+}
+
+export function findWildcardDomainInputs(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.includes('*'));
+}
+
+/** Return a user-facing domain error, or null when every entry is valid. */
+export function guestDomainValidationMessage(value: unknown): string | null {
+  if (findWildcardDomainInputs(value).length > 0) {
+    return WILDCARD_DOMAIN_ERROR_MESSAGE;
+  }
+  const validation = validateDomainAllowlistInput(value);
+  if (validation.ok) return null;
+  return `有効なドメインを入力してください（例: partner.example.com / 入力値: ${validation.invalid.join(
+    ', '
+  )}）`;
+}
 
 export function normalizeGuestDomain(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
@@ -75,8 +127,9 @@ export function validateDomainAllowlistInput(
   value: unknown
 ):
   | { ok: true; domains: string[] }
-  | { ok: false; invalid: string[] } {
+  | { ok: false; invalid: string[]; wildcard?: string[] } {
   if (!Array.isArray(value)) return { ok: false, invalid: ['<not-an-array>'] };
+  const wildcard = findWildcardDomainInputs(value);
   const invalid: string[] = [];
   const domains: string[] = [];
   for (const item of value) {
@@ -87,7 +140,13 @@ export function validateDomainAllowlistInput(
     }
     if (!domains.includes(domain)) domains.push(domain);
   }
-  if (invalid.length > 0) return { ok: false, invalid };
+  if (invalid.length > 0) {
+    return {
+      ok: false,
+      invalid,
+      ...(wildcard.length > 0 ? { wildcard } : {}),
+    };
+  }
   return { ok: true, domains: domains.sort() };
 }
 

@@ -2,7 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-describe('D1 schema & migrations (0001-0013)', () => {
+describe('D1 schema & migrations (0001-0014)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -365,5 +365,57 @@ describe('D1 schema & migrations (0001-0013)', () => {
         "UPDATE tenant_policies SET guest_session_max_hours = 169 WHERE tenant_id = 't1'"
       ).run()
     ).rejects.toThrow();
+
+    // Migration 0014: guest lifecycle governance. Offboarding is a logical
+    // deactivation so existing `REFERENCES users(id)` foreign keys stay valid.
+    const [userCols0014, policyCols0014, offboardIndex] = await Promise.all([
+      env.DB.prepare('PRAGMA table_info(users)').all<{ name: string }>(),
+      env.DB.prepare('PRAGMA table_info(tenant_policies)').all<{ name: string }>(),
+      env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_users_guest_offboarded'"
+      ).first<{ name: string }>(),
+    ]);
+    expect(userCols0014.results.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        'offboarded_at',
+        'offboarded_by',
+        'expiring_notified_at',
+      ])
+    );
+    expect(policyCols0014.results.map((column) => column.name)).toContain(
+      'external_domain_existing_guest_mode'
+    );
+    expect(offboardIndex?.name).toBe('idx_users_guest_offboarded');
+
+    const lifecycleDefaults = await env.DB.prepare(
+      `SELECT external_domain_existing_guest_mode
+         FROM tenant_policies WHERE tenant_id = 't1'`
+    ).first<{ external_domain_existing_guest_mode: string }>();
+    expect(lifecycleDefaults?.external_domain_existing_guest_mode).toBe(
+      'reject_new_only'
+    );
+    await env.DB.prepare(
+      "UPDATE tenant_policies SET external_domain_existing_guest_mode = 'suspend_existing' WHERE tenant_id = 't1'"
+    ).run();
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_policies SET external_domain_existing_guest_mode = 'delete_everything' WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
+    await env.DB.prepare(
+      "UPDATE tenant_policies SET external_domain_existing_guest_mode = 'reject_new_only' WHERE tenant_id = 't1'"
+    ).run();
+
+    // Offboarding markers are nullable and do not disturb existing guest rows.
+    const offboardedGuest = await env.DB.prepare(
+      "SELECT offboarded_at, expiring_notified_at FROM users WHERE id = 'guest-u1'"
+    ).first<{
+      offboarded_at: string | null;
+      expiring_notified_at: string | null;
+    }>();
+    expect(offboardedGuest).toEqual({
+      offboarded_at: null,
+      expiring_notified_at: null,
+    });
   });
 });

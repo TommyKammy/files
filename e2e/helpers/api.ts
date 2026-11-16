@@ -737,6 +737,7 @@ export interface GuestPolicyPayload {
   externalDomainAllowlist?: string[];
   guestInvitationExpiryDays?: number;
   guestSessionMaxHours?: number;
+  externalDomainExistingGuestMode?: 'reject_new_only' | 'suspend_existing';
 }
 
 export interface GuestPolicyResponse {
@@ -746,6 +747,12 @@ export interface GuestPolicyResponse {
     externalDomainAllowlist: string[];
     guestInvitationExpiryDays: number;
     guestSessionMaxHours: number;
+    externalDomainExistingGuestMode?: 'reject_new_only' | 'suspend_existing';
+  };
+  externalDomainPolicy?: {
+    mode: 'reject_new_only' | 'suspend_existing';
+    affectedGuestCount: number;
+    suspendedGuestIds: string[];
   };
 }
 
@@ -897,4 +904,174 @@ export async function expectGuestInvitationStatus(
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   expect(res.status(), `guest invitation for ${input.email} should return ${status}`).toBe(status);
   return { status: res.status(), body };
+}
+
+/* ------------------------------------------------------------------ */
+/* P10-3 / TOM-61 admin guest lifecycle helpers                        */
+/* ------------------------------------------------------------------ */
+
+export interface AdminGuestListItem {
+  id: string;
+  email: string;
+  displayName: string;
+  externalOrg: string | null;
+  status: 'active' | 'suspended' | 'expired' | 'pending_invite' | 'offboarded';
+  invitedBy: string | null;
+  invitedByName: string | null;
+  invitedByEmail: string | null;
+  expiresAt: string | null;
+  lastLoginAt: string | null;
+  offboardedAt: string | null;
+  domain: string | null;
+  allowedByPolicy: boolean;
+  pendingInvitationCount: number;
+}
+
+export interface AdminGuestListLike {
+  guests: AdminGuestListItem[];
+  total: number;
+  summary: {
+    total: number;
+    byStatus: Record<string, number>;
+    byDomain: Array<{
+      domain: string;
+      count: number;
+      active: number;
+      suspended: number;
+      expired: number;
+      allowedByPolicy: boolean;
+    }>;
+    byInviter: Array<{
+      inviterId: string;
+      inviterName: string;
+      inviterEmail: string | null;
+      count: number;
+      active: number;
+      suspended: number;
+      expired: number;
+    }>;
+  };
+}
+
+export interface AdminGuestDetailLike {
+  guest: AdminGuestListItem & {
+    accountStatus: 'active' | 'suspended';
+    domainAllowedByPolicy: boolean;
+    offboardedBy: string | null;
+  };
+  permissions: {
+    direct: Array<Record<string, unknown>>;
+    inherited: Array<Record<string, unknown>>;
+  };
+  sharedItems: Array<{
+    itemType: 'folder' | 'file';
+    id: string;
+    name: string;
+    classification: string;
+    dlpProtected: boolean;
+    effectiveRole: string | null;
+  }>;
+  recentAuditLogs: Array<{ id: string; action: string }>;
+  pendingInvitationId: string | null;
+}
+
+export function adminGuestIdempotencyKey(action: string, guestId: string): string {
+  return `e2e-guest-${action}-${guestId}-${crypto.randomUUID()}`;
+}
+
+export async function listAdminGuests(
+  actor: ApiActor,
+  query: Record<string, string | number> = {}
+): Promise<AdminGuestListLike> {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    qs.set(key, String(value));
+  }
+  const res = await actor.api.get(
+    `/api/admin/guests${qs.toString() ? `?${qs.toString()}` : ''}`
+  );
+  assertOk(res, 'GET /api/admin/guests');
+  return (await res.json()) as AdminGuestListLike;
+}
+
+export async function findAdminGuestByEmail(
+  actor: ApiActor,
+  email: string
+): Promise<AdminGuestListItem> {
+  const body = await listAdminGuests(actor, { query: email, limit: 200 });
+  const guest = body.guests.find((item) => item.email === email);
+  expect(guest, `admin guest list should contain ${email}`).toBeTruthy();
+  return guest!;
+}
+
+export async function getAdminGuestDetail(
+  actor: ApiActor,
+  guestId: string
+): Promise<AdminGuestDetailLike> {
+  const res = await actor.api.get(
+    `/api/admin/guests/${encodeURIComponent(guestId)}`
+  );
+  assertOk(res, `GET /api/admin/guests/${guestId}`);
+  return (await res.json()) as AdminGuestDetailLike;
+}
+
+export async function suspendAdminGuestApi(
+  actor: ApiActor,
+  guestId: string
+): Promise<void> {
+  const key = adminGuestIdempotencyKey('suspend', guestId);
+  const res = await actor.api.post(
+    `/api/admin/guests/${encodeURIComponent(guestId)}/suspend`,
+    { headers: { 'Idempotency-Key': key }, data: { idempotencyKey: key } }
+  );
+  assertOk(res, `POST /api/admin/guests/${guestId}/suspend`);
+}
+
+export async function resumeAdminGuestApi(
+  actor: ApiActor,
+  guestId: string,
+  extendDays = 30
+): Promise<void> {
+  const key = adminGuestIdempotencyKey('resume', guestId);
+  const res = await actor.api.post(
+    `/api/admin/guests/${encodeURIComponent(guestId)}/resume`,
+    {
+      headers: { 'Idempotency-Key': key },
+      data: { idempotencyKey: key, extendDays },
+    }
+  );
+  assertOk(res, `POST /api/admin/guests/${guestId}/resume`);
+}
+
+export async function resendAdminGuestInviteApi(
+  actor: ApiActor,
+  guestId: string
+): Promise<void> {
+  const key = adminGuestIdempotencyKey('resend', guestId);
+  const res = await actor.api.post(
+    `/api/admin/guests/${encodeURIComponent(guestId)}/resend-invite`,
+    { headers: { 'Idempotency-Key': key }, data: { idempotencyKey: key } }
+  );
+  assertOk(res, `POST /api/admin/guests/${guestId}/resend-invite`);
+}
+
+export async function offboardAdminGuestApi(
+  actor: ApiActor,
+  guestId: string
+): Promise<{
+  sessionsRevoked: number;
+  invitationsRevoked: number;
+  permissionsDeleted: number;
+}> {
+  const key = adminGuestIdempotencyKey('offboard', guestId);
+  const res = await actor.api.delete(
+    `/api/admin/guests/${encodeURIComponent(guestId)}`,
+    { headers: { 'Idempotency-Key': key }, data: { idempotencyKey: key } }
+  );
+  assertOk(res, `DELETE /api/admin/guests/${guestId}`);
+  return (await res.json()) as {
+    sessionsRevoked: number;
+    invitationsRevoked: number;
+    permissionsDeleted: number;
+  };
 }

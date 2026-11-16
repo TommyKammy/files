@@ -9,6 +9,7 @@ import {
 import Link from 'next/link';
 import { AccessControlSettingsSection } from '@/components/admin/AccessControlSettingsSection';
 import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
+import { AdminGuestsSection } from '@/components/admin/AdminGuestsSection';
 import { AdminPermissionAuditSection } from '@/components/admin/AdminPermissionAuditSection';
 import { AdminRootFoldersSection } from '@/components/admin/AdminRootFoldersSection';
 import { AdminTrashSection } from '@/components/admin/AdminTrashSection';
@@ -27,6 +28,7 @@ export function HybridGovernanceDashboard() {
     authChecked,
     isPrivilegedAdmin,
     loading,
+    initialLoadComplete,
     error,
     notice,
     stats,
@@ -59,6 +61,7 @@ export function HybridGovernanceDashboard() {
     auditActionPreset,
     auditActionPrefixFilter,
     auditActionPrefixPreset,
+    auditPresetKind,
     auditTargetType,
     auditStatusFilter,
     auditLoadingMore,
@@ -81,6 +84,7 @@ export function HybridGovernanceDashboard() {
     handleInvitePolicyUpdate,
     handleShowRootFolderAudit,
     handleShowPermissionAudit,
+    handleShowGuestAudit,
     handleClearAuditPreset,
     handleClearAuditPrefixPreset,
     handleLoadMoreLogs,
@@ -200,94 +204,113 @@ export function HybridGovernanceDashboard() {
           </div>
         )}
 
-        {stats && (
-          <StorageStatsSection stats={stats} usedPct={usedPct} />
+        {!initialLoadComplete ? (
+          <div
+            role="status"
+            data-testid="governance-initial-loading"
+            className="flex min-h-[7rem] items-center justify-center gap-2 rounded-2xl border border-[#e7e7ea] bg-white px-5 py-6 text-[0.75rem] text-[#55565a] shadow-xs"
+          >
+            <Loader2 className="h-4 w-4 animate-spin text-[#5e6ad2]" />
+            <span>ガバナンスデータを一括読み込み中...</span>
+          </div>
+        ) : (
+          <>
+            {stats && (
+              <StorageStatsSection stats={stats} usedPct={usedPct} />
+            )}
+
+            <AiSuggestionQueue
+              suggestions={suggestions}
+              selectedIds={selectedIds}
+              labelFilter={labelFilter}
+              bulkBusy={bulkBusy}
+              onFilterChange={setLabelFilter}
+              onSelectAll={handleSelectAllSuggestions}
+              onBulkApprove={handleBulkApprove}
+              onSingleApprove={handleSingleApprove}
+              onToggleSelection={toggleSelection}
+            />
+
+            <AccessControlSettingsSection
+              policy={policy}
+              saving={advancedRolesSaving}
+              error={advancedRolesError}
+              notice={advancedRolesNotice}
+              canManageFolderStructure={user.role === 'sys_admin'}
+              folderStructureSaving={folderStructureSaving}
+              folderStructureError={folderStructureError}
+              folderStructureNotice={folderStructureNotice}
+              closedModeReport={closedModeReport}
+              permissionInheritanceMode={permissionInheritanceMode}
+              inheritanceSaving={inheritanceSaving}
+              inheritanceError={inheritanceError}
+              inheritanceNotice={inheritanceNotice}
+              canManagePermissionInheritance={user.role === 'sys_admin'}
+              inheritanceConflictReport={inheritanceConflictReport}
+              invitePolicySaving={invitePolicySaving}
+              invitePolicyError={invitePolicyError}
+              invitePolicyNotice={invitePolicyNotice}
+              canManageInvitePolicy={user.role === 'sys_admin'}
+              onSave={handleAdvancedRolesUpdate}
+              onSaveFolderStructureMode={handleFolderStructureUpdate}
+              onSavePermissionInheritanceMode={handlePermissionInheritanceUpdate}
+              onSaveInvitePolicy={handleInvitePolicyUpdate}
+              onDirtyChange={setAdvancedRolesDirty}
+            />
+
+            <SharedLinksPolicySection
+              sharedLinks={sharedLinks}
+              policy={policy}
+              policySaving={policySaving}
+              onEmergencyRevoke={handleEmergencyRevoke}
+              onPolicySubmit={handlePolicySubmit}
+              onPolicyChange={setPolicy}
+            />
+
+            <AdminTrashSection user={user} />
+
+            <AdminPermissionAuditSection
+              user={user}
+              onShowPermissionAudit={handleShowPermissionAudit}
+            />
+
+            <AdminRootFoldersSection
+              user={user}
+              onShowAuditLogs={handleShowRootFolderAudit}
+            />
+
+            <GuestPolicySection
+              policy={policy}
+              canManage={user.role === 'sys_admin'}
+              onPolicyUpdated={setPolicy}
+            />
+
+            <AdminGuestsSection
+              user={user}
+              onShowAuditLogs={handleShowGuestAudit}
+            />
+
+            <AuditLogSection
+              auditLogs={auditLogs}
+              auditCursor={auditCursor}
+              auditActionFilter={auditActionFilter}
+              auditActionPrefixFilter={auditActionPrefixFilter}
+              auditActionPrefixes={auditActionPrefixPreset}
+              auditPresetKind={auditPresetKind}
+              auditTargetType={auditTargetType}
+              auditStatusFilter={auditStatusFilter}
+              auditLoadingMore={auditLoadingMore}
+              auditPresetActions={auditActionPreset}
+              onActionFilterChange={setAuditActionFilter}
+              onActionPrefixFilterChange={setAuditActionPrefixFilter}
+              onTargetTypeChange={setAuditTargetType}
+              onStatusFilterChange={setAuditStatusFilter}
+              onLoadMore={handleLoadMoreLogs}
+              onClearPreset={handleClearAuditPreset}
+              onClearPrefixPreset={handleClearAuditPrefixPreset}
+            />
+          </>
         )}
-
-        <AiSuggestionQueue
-          suggestions={suggestions}
-          selectedIds={selectedIds}
-          labelFilter={labelFilter}
-          bulkBusy={bulkBusy}
-          onFilterChange={setLabelFilter}
-          onSelectAll={handleSelectAllSuggestions}
-          onBulkApprove={handleBulkApprove}
-          onSingleApprove={handleSingleApprove}
-          onToggleSelection={toggleSelection}
-        />
-
-        <AccessControlSettingsSection
-          policy={policy}
-          saving={advancedRolesSaving}
-          error={advancedRolesError}
-          notice={advancedRolesNotice}
-          canManageFolderStructure={user.role === 'sys_admin'}
-          folderStructureSaving={folderStructureSaving}
-          folderStructureError={folderStructureError}
-          folderStructureNotice={folderStructureNotice}
-          closedModeReport={closedModeReport}
-          permissionInheritanceMode={permissionInheritanceMode}
-          inheritanceSaving={inheritanceSaving}
-          inheritanceError={inheritanceError}
-          inheritanceNotice={inheritanceNotice}
-          canManagePermissionInheritance={user.role === 'sys_admin'}
-          inheritanceConflictReport={inheritanceConflictReport}
-          invitePolicySaving={invitePolicySaving}
-          invitePolicyError={invitePolicyError}
-          invitePolicyNotice={invitePolicyNotice}
-          canManageInvitePolicy={user.role === 'sys_admin'}
-          onSave={handleAdvancedRolesUpdate}
-          onSaveFolderStructureMode={handleFolderStructureUpdate}
-          onSavePermissionInheritanceMode={handlePermissionInheritanceUpdate}
-          onSaveInvitePolicy={handleInvitePolicyUpdate}
-          onDirtyChange={setAdvancedRolesDirty}
-        />
-
-        <SharedLinksPolicySection
-          sharedLinks={sharedLinks}
-          policy={policy}
-          policySaving={policySaving}
-          onEmergencyRevoke={handleEmergencyRevoke}
-          onPolicySubmit={handlePolicySubmit}
-          onPolicyChange={setPolicy}
-        />
-
-        <GuestPolicySection
-          policy={policy}
-          canManage={user.role === 'sys_admin'}
-          onPolicyUpdated={setPolicy}
-        />
-
-        <AdminTrashSection user={user} />
-
-        <AdminPermissionAuditSection
-          user={user}
-          onShowPermissionAudit={handleShowPermissionAudit}
-        />
-
-        <AdminRootFoldersSection
-          user={user}
-          onShowAuditLogs={handleShowRootFolderAudit}
-        />
-
-        <AuditLogSection
-          auditLogs={auditLogs}
-          auditCursor={auditCursor}
-          auditActionFilter={auditActionFilter}
-          auditActionPrefixFilter={auditActionPrefixFilter}
-          auditActionPrefixes={auditActionPrefixPreset}
-          auditTargetType={auditTargetType}
-          auditStatusFilter={auditStatusFilter}
-          auditLoadingMore={auditLoadingMore}
-          auditPresetActions={auditActionPreset}
-          onActionFilterChange={setAuditActionFilter}
-          onActionPrefixFilterChange={setAuditActionPrefixFilter}
-          onTargetTypeChange={setAuditTargetType}
-          onStatusFilterChange={setAuditStatusFilter}
-          onLoadMore={handleLoadMoreLogs}
-          onClearPreset={handleClearAuditPreset}
-          onClearPrefixPreset={handleClearAuditPrefixPreset}
-        />
 
       </main>
     </div>

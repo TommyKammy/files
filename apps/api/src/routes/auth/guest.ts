@@ -501,6 +501,7 @@ export function registerGuestAuthRoutes(routes: Hono<OidcHonoEnv>) {
         targetId: invitation.target_id,
         role: invitation.role,
         externalOrg: guest.external_org,
+        guestUserId: guest.id,
       },
     });
     try {

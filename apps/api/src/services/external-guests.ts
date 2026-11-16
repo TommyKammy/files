@@ -9,12 +9,34 @@ import type { ResourceRole } from '../types/api';
  * external domain until an administrator explicitly adds one.
  */
 
+/**
+ * What happens to guests that are already active when an administrator removes
+ * their domain from the allowlist.
+ * - `reject_new_only`: existing guests keep working; new invitations/OTP
+ *   authentication for the removed domain are rejected.
+ * - `suspend_existing`: every active guest outside the new allowlist is
+ *   suspended immediately and all of their sessions are revoked.
+ */
+export type ExternalDomainExistingGuestMode =
+  | 'reject_new_only'
+  | 'suspend_existing';
+
+export const DEFAULT_EXTERNAL_DOMAIN_EXISTING_GUEST_MODE: ExternalDomainExistingGuestMode =
+  'reject_new_only';
+
+export function isExternalDomainExistingGuestMode(
+  value: unknown
+): value is ExternalDomainExistingGuestMode {
+  return value === 'reject_new_only' || value === 'suspend_existing';
+}
+
 export interface GuestPolicy {
   allowExternalCollaborators: boolean;
   externalDomainAllowlist: string[];
   guestInvitationExpiryDays: number;
   guestSessionMaxHours: number;
   allowGuestElevatedRoles: boolean;
+  externalDomainExistingGuestMode: ExternalDomainExistingGuestMode;
 }
 
 export const DEFAULT_GUEST_POLICY: GuestPolicy = {
@@ -23,6 +45,7 @@ export const DEFAULT_GUEST_POLICY: GuestPolicy = {
   guestInvitationExpiryDays: 14,
   guestSessionMaxHours: 24,
   allowGuestElevatedRoles: false,
+  externalDomainExistingGuestMode: DEFAULT_EXTERNAL_DOMAIN_EXISTING_GUEST_MODE,
 };
 
 export const GUEST_BASE_ROLES: readonly ResourceRole[] = [
@@ -83,17 +106,33 @@ export function normalizeDomainAllowlist(value: unknown): string[] {
 }
 
 /**
+ * Domains containing `*` are wildcards. The product requires exact-match
+ * domains only, so these are surfaced separately from ordinary invalid input
+ * (spaces, schemes, bare labels) to return a precise 400 error code.
+ */
+export function findWildcardDomainInputs(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.includes('*'));
+}
+
+/**
  * Validate an administrator-provided allowlist. Every entry must be a plain
- * domain (no scheme, path, wildcard or email address).
+ * domain (no scheme, path, wildcard or email address). Wildcards are rejected
+ * explicitly: `*.example.com` would otherwise silently widen the allowlist to
+ * every subdomain instead of matching exactly one domain.
  */
 export function validateDomainAllowlistInput(
   value: unknown
 ):
   | { ok: true; domains: string[] }
-  | { ok: false; invalid: string[] } {
+  | { ok: false; invalid: string[]; wildcard?: string[] } {
   if (!Array.isArray(value)) {
     return { ok: false, invalid: ['<not-an-array>'] };
   }
+  const wildcard = findWildcardDomainInputs(value);
   const invalid: string[] = [];
   const domains: string[] = [];
   for (const item of value) {
@@ -104,7 +143,13 @@ export function validateDomainAllowlistInput(
     }
     if (!domains.includes(domain)) domains.push(domain);
   }
-  if (invalid.length > 0) return { ok: false, invalid };
+  if (invalid.length > 0) {
+    return {
+      ok: false,
+      invalid,
+      ...(wildcard.length > 0 ? { wildcard } : {}),
+    };
+  }
   return { ok: true, domains: domains.sort() };
 }
 
@@ -114,6 +159,14 @@ export function isGuestEmailDomainAllowed(
 ): boolean {
   if (allowlist.length === 0) return false;
   const domain = emailDomain(email);
+  if (!domain) return false;
+  return allowlist.includes(domain);
+}
+
+export function isGuestDomainAllowed(
+  domain: string | null,
+  allowlist: readonly string[]
+): boolean {
   if (!domain) return false;
   return allowlist.includes(domain);
 }
@@ -138,6 +191,11 @@ export function readGuestPolicyFromRow(
         ? session
         : DEFAULT_GUEST_POLICY.guestSessionMaxHours,
     allowGuestElevatedRoles: row.allow_guest_elevated_roles === 1,
+    externalDomainExistingGuestMode: isExternalDomainExistingGuestMode(
+      row.external_domain_existing_guest_mode
+    )
+      ? (row.external_domain_existing_guest_mode as ExternalDomainExistingGuestMode)
+      : DEFAULT_EXTERNAL_DOMAIN_EXISTING_GUEST_MODE,
   };
 }
 

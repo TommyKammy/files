@@ -81,6 +81,9 @@ export interface WaterfallInheritanceConflict {
 
 /** Open keeps root creation available; closed restricts root placement to sys_admin. */
 export type FolderStructureMode = 'open' | 'closed';
+export type ExternalDomainExistingGuestMode =
+  | 'reject_new_only'
+  | 'suspend_existing';
 
 export interface ClosedRootReport {
   totalRootFolders: number;
@@ -851,6 +854,8 @@ export interface TenantPolicyRow {
   guestSessionMaxHours?: number;
   allow_guest_elevated_roles?: number;
   allowGuestElevatedRoles?: boolean;
+  external_domain_existing_guest_mode?: ExternalDomainExistingGuestMode;
+  externalDomainExistingGuestMode?: ExternalDomainExistingGuestMode;
   updated_by: string | null;
   updated_at: string;
 }
@@ -875,6 +880,7 @@ export interface UpdateAdminPoliciesPayload {
   guestInvitationExpiryDays?: number;
   guestSessionMaxHours?: number;
   allowGuestElevatedRoles?: boolean;
+  externalDomainExistingGuestMode?: ExternalDomainExistingGuestMode;
 }
 
 export interface TenantPolicyResponse {
@@ -884,6 +890,13 @@ export interface TenantPolicyResponse {
   invitePolicy?: InvitePolicy;
   closedModeReport?: ClosedRootReport;
   inheritanceConflictReport?: WaterfallInheritanceConflict[];
+  externalDomainPolicy?: AdminGuestDomainPolicyResult;
+}
+
+export interface AdminGuestDomainPolicyResult {
+  mode: ExternalDomainExistingGuestMode;
+  affectedGuestCount: number;
+  suspendedGuestIds: string[];
 }
 
 export type GuestInvitationStatus =
@@ -979,6 +992,190 @@ export interface GuestSummaryResponse {
     itemCount: number;
     invitationCount: number;
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* P10-3 / TOM-61 admin guest lifecycle governance                     */
+/* ------------------------------------------------------------------ */
+
+export type AdminGuestStatusFilter =
+  | 'all'
+  | 'active'
+  | 'suspended'
+  | 'expired'
+  | 'pending_invite'
+  | 'offboarded';
+export type AdminGuestSortBy =
+  | 'createdAt'
+  | 'lastLoginAt'
+  | 'expiresAt'
+  | 'email'
+  | 'externalOrg';
+export type AdminGuestSortDir = 'asc' | 'desc';
+export type AdminGuestLifecycleStatus = Exclude<AdminGuestStatusFilter, 'all'>;
+
+export interface AdminGuestRow {
+  id: string;
+  email: string;
+  displayName: string;
+  externalOrg: string | null;
+  invitedBy: string | null;
+  invitedByName: string | null;
+  invitedByEmail: string | null;
+  expiresAt: string | null;
+  lastLoginAt: string | null;
+  accountStatus: 'active' | 'suspended';
+  status: AdminGuestLifecycleStatus;
+  offboardedAt: string | null;
+  offboardedBy: string | null;
+  domain: string | null;
+  allowedByPolicy: boolean;
+  pendingInvitationCount: number;
+  createdAt: string;
+}
+
+export interface AdminGuestDomainSummary {
+  domain: string;
+  count: number;
+  active: number;
+  suspended: number;
+  expired: number;
+  allowedByPolicy: boolean;
+}
+
+export interface AdminGuestInviterSummary {
+  inviterId: string;
+  inviterName: string;
+  inviterEmail: string | null;
+  count: number;
+  active: number;
+  suspended: number;
+  expired: number;
+}
+
+export interface AdminGuestAggregations {
+  total: number;
+  byStatus: Record<AdminGuestStatusFilter, number>;
+  byDomain: AdminGuestDomainSummary[];
+  byInviter: AdminGuestInviterSummary[];
+  disallowedDomainGuestCount: number;
+}
+
+export interface AdminGuestListQuery {
+  query?: string;
+  status?: AdminGuestStatusFilter;
+  domain?: string;
+  invitedBy?: string;
+  expiresBefore?: string;
+  sortBy?: AdminGuestSortBy;
+  sortDir?: AdminGuestSortDir;
+  limit?: number;
+  offset?: number;
+  format?: 'json' | 'csv';
+}
+
+export interface AdminGuestListResponse {
+  guests: AdminGuestRow[];
+  total: number;
+  limit: number;
+  offset: number;
+  nextOffset: number | null;
+  sort: { by: AdminGuestSortBy; dir: AdminGuestSortDir };
+  summary: AdminGuestAggregations;
+  aggregations: AdminGuestAggregations;
+}
+
+export interface AdminGuestDetailGuest {
+  id: string;
+  email: string;
+  displayName: string;
+  userType: 'guest';
+  externalOrg: string | null;
+  accountStatus: 'active' | 'suspended';
+  status: AdminGuestLifecycleStatus;
+  expiresAt: string | null;
+  lastLoginAt: string | null;
+  invitedBy: string | null;
+  invitedByName: string | null;
+  invitedByEmail: string | null;
+  offboardedAt: string | null;
+  offboardedBy: string | null;
+  domain: string | null;
+  domainAllowedByPolicy: boolean;
+  createdAt: string;
+}
+
+export interface AdminGuestSharedItem extends GuestSharedItemSummary {
+  /** Confidential items are metadata-only; never render a download action. */
+  dlpProtected: boolean;
+}
+
+export interface AdminGuestAuditLog {
+  id: string;
+  action: string;
+  status: 'allowed' | 'blocked';
+  actorEmail: string | null;
+  actorIp: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface AdminGuestDetailResponse {
+  guest: AdminGuestDetailGuest;
+  invitations: GuestInvitationSummary[];
+  permissions: {
+    direct: GuestEffectivePermission[];
+    inherited: GuestEffectivePermission[];
+    directCount: number;
+    inheritedCount: number;
+  };
+  effectivePermissions: GuestEffectivePermission[];
+  sharedItems: AdminGuestSharedItem[];
+  recentAuditLogs: AdminGuestAuditLog[];
+  accessSummary: {
+    folderCount: number;
+    fileCount: number;
+    itemCount: number;
+    invitationCount: number;
+  };
+  pendingInvitationId: string | null;
+  guestPolicy: GuestPolicyProjection & {
+    externalDomainExistingGuestMode: ExternalDomainExistingGuestMode;
+  };
+  dlp: {
+    confidentialMetadataOnly: boolean;
+    notice: string;
+  };
+}
+
+export interface AdminGuestMutationResponse {
+  ok: boolean;
+  replayed?: boolean;
+  guest: {
+    id: string;
+    status: 'active' | 'suspended';
+    offboardedAt: string | null;
+    expiresAt?: string | null;
+  };
+  sessionsRevoked?: number;
+  invitationsRevoked?: number;
+  otpChallengesConsumed?: number;
+  permissionsDeleted?: number;
+  notice?: string;
+}
+
+export interface AdminGuestResendInviteResponse {
+  ok: boolean;
+  replayed?: boolean;
+  guestId: string;
+  invitationId: string;
+  email: string;
+  expiresAt: string;
+  resendCount: number;
+  mailPreview?: GuestMailPreview | null;
+  notice?: string;
 }
 
 export interface GuestInvitationListResponse {

@@ -20,9 +20,13 @@ import {
   type InvitePolicy,
 } from '../../services/invite-policy';
 import {
+  DEFAULT_EXTERNAL_DOMAIN_EXISTING_GUEST_MODE,
+  isExternalDomainExistingGuestMode,
   parseDomainAllowlistJson,
   validateDomainAllowlistInput,
+  type ExternalDomainExistingGuestMode,
 } from '../../services/external-guests';
+import { applyExternalDomainGuestPolicy } from '../../services/admin-guests';
 import type { AiClassificationMode } from '../../types/classification';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -54,6 +58,10 @@ function projectPolicy(
     guestInvitationExpiryDays: Number(policy.guest_invitation_expiry_days ?? 14),
     guestSessionMaxHours: Number(policy.guest_session_max_hours ?? 24),
     allowGuestElevatedRoles: policy.allow_guest_elevated_roles === 1,
+    externalDomainExistingGuestMode:
+      policy.external_domain_existing_guest_mode === 'suspend_existing'
+        ? 'suspend_existing'
+        : DEFAULT_EXTERNAL_DOMAIN_EXISTING_GUEST_MODE,
     folderStructureMode,
     permissionInheritanceMode,
     invitePolicy,
@@ -131,11 +139,32 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       guestInvitationExpiryDays?: unknown;
       guestSessionMaxHours?: unknown;
       allowGuestElevatedRoles?: unknown;
+      externalDomainExistingGuestMode?: unknown;
     } | null;
 
     if (!body || typeof body !== 'object') {
       return c.json({ error: 'JSON body required' }, 400);
     }
+
+    const existingGuestPolicyRow = await c.env.DB.prepare(
+      `SELECT external_domain_allowlist_json,
+              external_domain_existing_guest_mode
+         FROM tenant_policies WHERE tenant_id = ?`
+    )
+      .bind(user.tenantId)
+      .first<{
+        external_domain_allowlist_json: string | null;
+        external_domain_existing_guest_mode: string | null;
+      }>();
+    let effectiveDomainAllowlist = parseDomainAllowlistJson(
+      existingGuestPolicyRow?.external_domain_allowlist_json
+    );
+    let effectiveExistingGuestMode: ExternalDomainExistingGuestMode =
+      isExternalDomainExistingGuestMode(
+        existingGuestPolicyRow?.external_domain_existing_guest_mode
+      )
+        ? (existingGuestPolicyRow!.external_domain_existing_guest_mode as ExternalDomainExistingGuestMode)
+        : DEFAULT_EXTERNAL_DOMAIN_EXISTING_GUEST_MODE;
 
     const updates: string[] = [];
     const binds: unknown[] = [];
@@ -274,7 +303,8 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       body.externalDomainAllowlist !== undefined ||
       body.guestInvitationExpiryDays !== undefined ||
       body.guestSessionMaxHours !== undefined ||
-      body.allowGuestElevatedRoles !== undefined;
+      body.allowGuestElevatedRoles !== undefined ||
+      body.externalDomainExistingGuestMode !== undefined;
     if (guestPolicyFieldsProvided && user.role !== 'sys_admin') {
       return c.json(
         {
@@ -308,17 +338,41 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
     if (body.externalDomainAllowlist !== undefined) {
       const validation = validateDomainAllowlistInput(body.externalDomainAllowlist);
       if (!validation.ok) {
+        const wildcardDomains = validation.wildcard ?? [];
         return c.json(
           {
-            error: `Invalid external guest domain(s): ${validation.invalid.join(', ')}`,
-            code: 'INVALID_DOMAIN_ALLOWLIST',
+            error:
+              wildcardDomains.length > 0
+                ? 'ワイルドカード (*) は不可です。完全一致ドメインのみ許可されます。'
+                : `Invalid external guest domain(s): ${validation.invalid.join(', ')}`,
+            code:
+              wildcardDomains.length > 0
+                ? 'WILDCARD_DOMAIN_NOT_ALLOWED'
+                : 'INVALID_DOMAIN_ALLOWLIST',
             invalidDomains: validation.invalid,
+            ...(wildcardDomains.length > 0 ? { wildcardDomains } : {}),
           },
           400
         );
       }
       updates.push('external_domain_allowlist_json = ?');
       binds.push(JSON.stringify(validation.domains));
+      effectiveDomainAllowlist = validation.domains;
+    }
+    if (body.externalDomainExistingGuestMode !== undefined) {
+      if (!isExternalDomainExistingGuestMode(body.externalDomainExistingGuestMode)) {
+        return c.json(
+          {
+            error:
+              "externalDomainExistingGuestMode must be 'reject_new_only' or 'suspend_existing'",
+            code: 'INVALID_EXTERNAL_DOMAIN_EXISTING_GUEST_MODE',
+          },
+          400
+        );
+      }
+      updates.push('external_domain_existing_guest_mode = ?');
+      binds.push(body.externalDomainExistingGuestMode);
+      effectiveExistingGuestMode = body.externalDomainExistingGuestMode;
     }
     if (body.guestInvitationExpiryDays !== undefined) {
       if (
@@ -408,16 +462,43 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
           ...(body.invitePolicy !== undefined
             ? { invitePolicy: body.invitePolicy }
             : {}),
+          ...(body.externalDomainExistingGuestMode !== undefined
+            ? {
+                externalDomainExistingGuestMode:
+                  body.externalDomainExistingGuestMode,
+              }
+            : {}),
           updatedAt: nowIso,
         },
         nowIso,
       }),
     ]);
 
+    const externalDomainPolicy =
+      body.externalDomainAllowlist !== undefined ||
+      body.externalDomainExistingGuestMode !== undefined
+        ? await applyExternalDomainGuestPolicy({
+            db: c.env.DB,
+            tenantId: user.tenantId,
+            allowlist: effectiveDomainAllowlist,
+            mode: effectiveExistingGuestMode,
+            actor: user,
+            nowIso,
+          })
+        : null;
+
+    const policySyncSeq = extractLastSyncSeq(batchResults);
+    const syncSeq = Math.max(
+      policySyncSeq ?? 0,
+      externalDomainPolicy?.syncSeq ?? 0
+    );
     await emitTenantSyncSignal(c, {
       tenantId: user.tenantId,
-      seq: extractLastSyncSeq(batchResults),
+      seq: syncSeq > 0 ? syncSeq : policySyncSeq,
       eventKind: 'admin.policy_updated',
+      ...(externalDomainPolicy
+        ? { metadata: { affectedGuestCount: externalDomainPolicy.affectedGuestCount } }
+        : {}),
     });
 
     const [updated, folderStructureMode, permissionInheritanceMode, invitePolicy] =
@@ -449,6 +530,15 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       invitePolicy,
       ...(closedModeReport ? { closedModeReport } : {}),
       inheritanceConflictReport,
+      ...(externalDomainPolicy
+        ? {
+            externalDomainPolicy: {
+              mode: externalDomainPolicy.mode,
+              affectedGuestCount: externalDomainPolicy.affectedGuestCount,
+              suspendedGuestIds: externalDomainPolicy.suspendedGuestIds,
+            },
+          }
+        : {}),
     });
   });
 }

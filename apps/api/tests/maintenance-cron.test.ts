@@ -278,4 +278,208 @@ describe('Daily Maintenance Cron (sessions, pending uploads, trash retention)', 
     ).first<{ file_count: number; total_bytes: number }>();
     expect(endStats).toEqual({ file_count: 0, total_bytes: 0 });
   });
+
+  it('auto-suspends expired guests, cleans guest artifacts and notifies expiring guests once', async () => {
+    const tenantId = 'tenant-cron-guests';
+    const now = new Date('2026-11-15T03:00:00.000Z');
+    const oldIso = '2026-10-01T00:00:00.000Z';
+    const expiredIso = '2026-11-14T00:00:00.000Z';
+    const soonIso = '2026-11-16T00:00:00.000Z';
+    const farIso = '2026-12-30T00:00:00.000Z';
+
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT OR IGNORE INTO tenants (id, name, slug) VALUES (?, 'Cron Guests', 'cron-guests')"
+      ).bind(tenantId),
+      env.DB.prepare(
+        "INSERT OR REPLACE INTO tenant_policies (tenant_id, trash_retention_days) VALUES (?, 7)"
+      ).bind(tenantId),
+      env.DB.prepare(
+        `INSERT INTO users (
+           id, tenant_id, email, display_name, role, status, user_type,
+           external_org, expires_at, offboarded_at, created_at, updated_at
+         ) VALUES
+           ('cron-guest-expired', ?, 'cron-expired@partner.example', 'Cron Expired', 'member', 'active', 'guest', 'Cron Org', ?, NULL, ?, ?),
+           ('cron-guest-soon', ?, 'cron-soon@partner.example', 'Cron Soon', 'member', 'active', 'guest', 'Cron Org', ?, NULL, ?, ?),
+           ('cron-guest-far', ?, 'cron-far@partner.example', 'Cron Far', 'member', 'active', 'guest', 'Cron Org', ?, NULL, ?, ?),
+           ('cron-guest-offboarded', ?, 'cron-offboard@partner.example', 'Cron Offboard', 'member', 'active', 'guest', 'Cron Org', ?, ?, ?, ?)`
+      ).bind(
+        tenantId,
+        expiredIso,
+        oldIso,
+        oldIso,
+        tenantId,
+        soonIso,
+        oldIso,
+        oldIso,
+        tenantId,
+        farIso,
+        oldIso,
+        oldIso,
+        tenantId,
+        expiredIso,
+        oldIso,
+        oldIso,
+        oldIso
+      ),
+      env.DB.prepare(
+        `INSERT INTO sessions (id, tenant_id, user_id, token_hash, expires_at, revoked_at)
+         VALUES ('cron-guest-sess-expired', ?, 'cron-guest-expired', 'cron-guest-hash', '2026-12-01T00:00:00.000Z', NULL)`
+      ).bind(tenantId),
+      env.DB.prepare(
+        `INSERT INTO guest_invitations (
+           id, tenant_id, user_id, email, display_name, external_org, invited_by,
+           token_hash, target_type, target_id, role, status, expires_at,
+           resend_count, last_sent_at, created_at, updated_at
+         ) VALUES
+           ('cron-inv-expire', ?, 'cron-guest-expired', 'cron-expired@partner.example', 'Cron Expired', 'Cron Org', 'cron-u1', 'cron-token-expire', 'folder', 'f-folder', 'viewer', 'pending', ?, 0, ?, ?, ?),
+           ('cron-inv-old-expired', ?, 'cron-guest-far', 'cron-far@partner.example', 'Cron Far', 'Cron Org', 'cron-u1', 'cron-token-old-exp', 'folder', 'f-folder', 'viewer', 'expired', ?, 0, ?, ?, ?),
+           ('cron-inv-old-revoked', ?, 'cron-guest-far', 'cron-far@partner.example', 'Cron Far', 'Cron Org', 'cron-u1', 'cron-token-old-rev', 'folder', 'f-folder', 'viewer', 'revoked', ?, 0, ?, ?, ?),
+           ('cron-inv-old-accepted', ?, 'cron-guest-far', 'cron-far@partner.example', 'Cron Far', 'Cron Org', 'cron-u1', 'cron-token-old-acc', 'folder', 'f-folder', 'viewer', 'accepted', ?, 0, ?, ?, ?)`
+      ).bind(
+        tenantId,
+        expiredIso,
+        oldIso,
+        oldIso,
+        oldIso,
+        tenantId,
+        expiredIso,
+        oldIso,
+        oldIso,
+        oldIso,
+        tenantId,
+        expiredIso,
+        oldIso,
+        oldIso,
+        oldIso,
+        tenantId,
+        farIso,
+        oldIso,
+        oldIso,
+        oldIso
+      ),
+      env.DB.prepare(
+        `INSERT INTO guest_otp_challenges (
+           id, tenant_id, user_id, email, otp_hash, purpose, expires_at,
+           consumed_at, created_at
+         ) VALUES
+           ('cron-otp-old-consumed', ?, 'cron-guest-far', 'cron-far@partner.example', 'h1', 'login', '2026-11-01T00:00:00.000Z', ?, ?),
+           ('cron-otp-old-expired', ?, 'cron-guest-far', 'cron-far@partner.example', 'h2', 'login', ?, NULL, ?),
+           ('cron-otp-fresh', ?, 'cron-guest-far', 'cron-far@partner.example', 'h3', 'login', '2026-11-15T01:00:00.000Z', NULL, ?)`
+      ).bind(
+        tenantId,
+        oldIso,
+        oldIso,
+        tenantId,
+        oldIso,
+        oldIso,
+        tenantId,
+        oldIso
+      ),
+      env.DB.prepare(
+        `INSERT INTO guest_mail_sink (
+           id, tenant_id, kind, to_email, subject, body_text, created_at
+         ) VALUES
+           ('cron-mail-old', ?, 'guest_otp', 'cron-far@partner.example', 'old', 'old', ?),
+           ('cron-mail-fresh', ?, 'guest_otp', 'cron-far@partner.example', 'fresh', 'fresh', ?)`
+      ).bind(tenantId, oldIso, tenantId, '2026-11-14T00:00:00.000Z'),
+    ]);
+
+    const summary = await runDailyMaintenance(buildCronTestEnv(), now);
+    expect(summary.guestsExpiredSuspended).toBe(1);
+    expect(summary.guestSessionsRevoked).toBe(1);
+    expect(summary.invitationsExpired).toBe(1);
+    expect(summary.invitationsCleaned).toBe(2);
+    expect(summary.otpChallengesPurged).toBe(2);
+    expect(summary.expiringSoonNotified).toBe(1);
+
+    const expiredGuest = await env.DB.prepare(
+      "SELECT status, offboarded_at FROM users WHERE id = 'cron-guest-expired'"
+    ).first<{ status: string; offboarded_at: string | null }>();
+    expect(expiredGuest).toEqual({ status: 'suspended', offboarded_at: null });
+    const revokedSession = await env.DB.prepare(
+      "SELECT revoked_at FROM sessions WHERE id = 'cron-guest-sess-expired'"
+    ).first<{ revoked_at: string | null }>();
+    // The guest session is revoked during auto-suspension and then removed by
+    // the same daily run's revoked-session purge, so it can never be replayed.
+    expect(revokedSession).toBeNull();
+    expect(
+      await env.DB.prepare(
+        "SELECT id FROM audit_logs WHERE action = 'guest.auto_suspended_expired' AND target_id = 'cron-guest-expired'"
+      ).first()
+    ).toBeTruthy();
+    expect(
+      await env.DB.prepare(
+        "SELECT seq FROM sync_changes WHERE action = 'guest.auto_suspended_expired' AND entity_id = 'cron-guest-expired'"
+      ).first()
+    ).toBeTruthy();
+
+    const offboardedGuest = await env.DB.prepare(
+      "SELECT status FROM users WHERE id = 'cron-guest-offboarded'"
+    ).first<{ status: string }>();
+    expect(offboardedGuest?.status).toBe('active');
+
+    const soonGuest = await env.DB.prepare(
+      "SELECT expiring_notified_at FROM users WHERE id = 'cron-guest-soon'"
+    ).first<{ expiring_notified_at: string | null }>();
+    expect(soonGuest?.expiring_notified_at).toBe(now.toISOString());
+    const farGuest = await env.DB.prepare(
+      "SELECT expiring_notified_at FROM users WHERE id = 'cron-guest-far'"
+    ).first<{ expiring_notified_at: string | null }>();
+    expect(farGuest?.expiring_notified_at).toBeNull();
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS cnt FROM audit_logs WHERE action = 'guest.expiry_reminder' AND target_id = 'cron-guest-soon'"
+      ).first<{ cnt: number }>()
+    ).toEqual({ cnt: 1 });
+
+    const expiredInvitation = await env.DB.prepare(
+      "SELECT status FROM guest_invitations WHERE id = 'cron-inv-expire'"
+    ).first<{ status: string }>();
+    expect(expiredInvitation?.status).toBe('expired');
+    expect(
+      await env.DB.prepare(
+        "SELECT id FROM guest_invitations WHERE id = 'cron-inv-old-accepted'"
+      ).first()
+    ).toBeTruthy();
+    expect(
+      await env.DB.prepare(
+        "SELECT id FROM guest_invitations WHERE id IN ('cron-inv-old-expired', 'cron-inv-old-revoked')"
+      ).first()
+    ).toBeNull();
+    expect(
+      await env.DB.prepare(
+        "SELECT id FROM guest_otp_challenges WHERE id IN ('cron-otp-old-consumed', 'cron-otp-old-expired')"
+      ).first()
+    ).toBeNull();
+    expect(
+      await env.DB.prepare(
+        "SELECT id FROM guest_otp_challenges WHERE id = 'cron-otp-fresh'"
+      ).first()
+    ).toBeTruthy();
+    expect(
+      await env.DB.prepare(
+        "SELECT id FROM guest_mail_sink WHERE id = 'cron-mail-old'"
+      ).first()
+    ).toBeNull();
+    expect(
+      await env.DB.prepare(
+        "SELECT id FROM guest_mail_sink WHERE id = 'cron-mail-fresh'"
+      ).first()
+    ).toBeTruthy();
+
+    // Second run: no duplicate suspension, no duplicate reminder, no re-cleanup.
+    const second = await runDailyMaintenance(buildCronTestEnv(), now);
+    expect(second.guestsExpiredSuspended).toBe(0);
+    expect(second.guestSessionsRevoked).toBe(0);
+    expect(second.invitationsExpired).toBe(0);
+    expect(second.invitationsCleaned).toBe(0);
+    expect(second.otpChallengesPurged).toBe(0);
+    expect(second.expiringSoonNotified).toBe(0);
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS cnt FROM audit_logs WHERE action = 'guest.expiry_reminder' AND target_id = 'cron-guest-soon'"
+      ).first<{ cnt: number }>()
+    ).toEqual({ cnt: 1 });
+  });
 });

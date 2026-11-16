@@ -13,6 +13,12 @@ export const PERMISSION_AUDIT_ACTION_PREFIXES = [
   'admin.permission.',
 ] as const;
 
+/** Prefix preset used by the guest governance "show audit logs" action. */
+export const GUEST_AUDIT_ACTION_PREFIXES = [
+  'guest.',
+  'admin.guest.',
+] as const;
+
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.root_folder.create': 'ルートフォルダ作成',
   'admin.root_folder.owner_transfer': '所有者移管',
@@ -30,6 +36,12 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'guest.login': '外部ゲストのサインイン',
   'guest.access': '外部ゲストの共有アイテムアクセス',
   'guest.revoke': '外部ゲスト招待の取消',
+  'admin.guest.suspend': 'ゲストの停止',
+  'admin.guest.resume': 'ゲストの再開',
+  'admin.guest.offboard': 'ゲストの完全オフボーディング',
+  'admin.guest.resend_invite': 'ゲスト招待の再送',
+  'guest.auto_suspended_expired': 'ゲストの期限切れ自動停止',
+  'guest.expiry_reminder': 'ゲスト有効期限リマインド',
   'shared_link.create': '共有リンク作成',
   'shared_link.update': '共有リンク権限変更',
   'shared_link.revoke': '共有リンク失効',
@@ -60,6 +72,12 @@ export function isRootFolderAuditAction(action: string): boolean {
 
 export function isPermissionAuditAction(action: string): boolean {
   return PERMISSION_AUDIT_ACTION_PREFIXES.some((prefix) =>
+    action.startsWith(prefix)
+  );
+}
+
+export function isGuestAuditAction(action: string): boolean {
+  return GUEST_AUDIT_ACTION_PREFIXES.some((prefix) =>
     action.startsWith(prefix)
   );
 }

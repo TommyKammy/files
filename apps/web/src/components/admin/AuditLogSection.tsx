@@ -3,6 +3,7 @@
 import { Download, Loader2, X } from 'lucide-react';
 import {
   formatAuditActionLabel,
+  isGuestAuditAction,
   isPermissionAuditAction,
   isRootFolderAuditAction,
 } from '@/lib/admin-audit';
@@ -15,6 +16,7 @@ export function AuditLogSection({
   auditActionFilter,
   auditActionPrefixFilter = '',
   auditActionPrefixes = [],
+  auditPresetKind = null,
   auditTargetType = '',
   auditStatusFilter,
   auditLoadingMore,
@@ -32,6 +34,7 @@ export function AuditLogSection({
   auditActionFilter: string;
   auditActionPrefixFilter?: string;
   auditActionPrefixes?: readonly string[];
+  auditPresetKind?: 'permission' | 'guest' | null;
   auditTargetType?: string;
   auditStatusFilter: '' | 'allowed' | 'blocked';
   auditLoadingMore: boolean;
@@ -97,11 +100,17 @@ export function AuditLogSection({
           )}
           {prefixHighlight && (
             <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[0.6875rem] font-medium text-indigo-800">
-              <span>権限監査のみ</span>
+              <span>
+                {auditPresetKind === 'guest' ? 'ゲスト監査のみ' : '権限監査のみ'}
+              </span>
               {onClearPrefixPreset && (
                 <button
                   type="button"
-                  aria-label="権限監査ログのプレフィックス絞り込みを解除"
+                  aria-label={
+                    auditPresetKind === 'guest'
+                      ? 'ゲスト監査ログのプレフィックス絞り込みを解除'
+                      : '権限監査ログのプレフィックス絞り込みを解除'
+                  }
                   onClick={onClearPrefixPreset}
                   className="rounded-full p-0.5 hover:bg-indigo-100"
                 >
@@ -146,6 +155,8 @@ export function AuditLogSection({
             <option value="folder">フォルダ</option>
             <option value="file">ファイル</option>
             <option value="permission">権限</option>
+            <option value="guest_invitation">ゲスト招待</option>
+            <option value="user">ユーザー / ゲスト</option>
           </select>
           <select
             id="audit-status-filter"
@@ -210,7 +221,9 @@ export function AuditLogSection({
                     ? 'bg-blue-50/40'
                     : prefixHighlight && isPermissionAuditAction(log.action)
                       ? 'bg-indigo-50/40'
-                      : ''
+                      : prefixHighlight && isGuestAuditAction(log.action)
+                        ? 'bg-emerald-50/40'
+                        : ''
                 }`}
               >
                 <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[0.6875rem] text-slate-600">
