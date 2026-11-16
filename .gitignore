@@ -7,6 +7,7 @@ node_modules/
 # Build, Framework & TypeScript Caches
 .turbo/
 .next/
+.next-e2e/
 .open-next/
 .vercel/
 dist/
@@ -62,6 +63,7 @@ test-results/
 blob-report/
 .playwright/
 .playwright-mcp/
+e2e/.auth/
 
 # Logs
 logs/

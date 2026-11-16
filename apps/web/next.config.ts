@@ -25,6 +25,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // E2E runs use a dedicated Next build/dev directory so `next dev` on :3000
+  // (which holds .next/dev/lock) and the Playwright web server never collide.
+  distDir: process.env.NEXT_DIST_DIR?.trim() || '.next',
   async headers() {
     return [
       {
