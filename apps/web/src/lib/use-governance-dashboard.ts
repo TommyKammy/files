@@ -1,0 +1,383 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  adminEmergencyRevokeSharedLink,
+  ApiClientError,
+  bulkApproveAiSuggestions,
+  fetchAdminAiSuggestions,
+  fetchAdminPolicies,
+  fetchAdminSharedLinks,
+  fetchAdminStorageStats,
+  fetchAuditLogs,
+  updateAdminPolicies,
+} from '@/lib/files-api';
+import { AdminAiBatchCoalescer } from '@/lib/mutation-outbox';
+import {
+  getWorkspaceSyncStore,
+  useWorkspaceSyncSnapshot,
+} from '@/lib/sync-store';
+import type {
+  AdminSharedLinkRow,
+  AiSuggestionItem,
+  AuditLogEntry,
+  ClassificationLabel,
+  StorageStatsResponse,
+  TenantPolicyRow,
+} from '@/types/files';
+
+export function useGovernanceDashboard() {
+  const syncStore = getWorkspaceSyncStore();
+  const snapshot = useWorkspaceSyncSnapshot();
+  const user = snapshot.user;
+  const authChecked = snapshot.authStatus !== 'unknown';
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const [stats, setStats] = useState<StorageStatsResponse | null>(null);
+  const [suggestions, setSuggestions] = useState<AiSuggestionItem[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [labelFilter, setLabelFilter] = useState<ClassificationLabel | 'all'>('all');
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  const [sharedLinks, setSharedLinks] = useState<AdminSharedLinkRow[]>([]);
+  const [policy, setPolicy] = useState<TenantPolicyRow | null>(null);
+  const [policySaving, setPolicySaving] = useState(false);
+
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [auditCursor, setAuditCursor] = useState<{
+    createdAt: string;
+    id: string;
+  } | null>(null);
+  const [auditActionFilter, setAuditActionFilter] = useState('');
+  const [auditStatusFilter, setAuditStatusFilter] = useState<'' | 'allowed' | 'blocked'>('');
+  const [auditLoadingMore, setAuditLoadingMore] = useState(false);
+
+  useEffect(() => {
+    void syncStore.hydrateFromScopeHint();
+    void syncStore.bootstrap();
+  }, [syncStore]);
+
+  useEffect(() => {
+    if (snapshot.policy && !policy) {
+      setPolicy(snapshot.policy);
+    }
+  }, [snapshot.policy, policy]);
+
+  const isPrivilegedAdmin =
+    user?.role === 'sys_admin' || user?.role === 'sec_admin';
+
+  const loadAll = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!authChecked || !user || !isPrivilegedAdmin) return;
+      if (!options?.silent) {
+        setLoading(true);
+        setError(null);
+      }
+      try {
+        const [statsRes, aiRes, linksRes, policyRes, logsRes] = await Promise.all([
+          fetchAdminStorageStats(),
+          fetchAdminAiSuggestions({
+            suggestedLabel: labelFilter === 'all' ? undefined : labelFilter,
+            limit: 50,
+          }),
+          fetchAdminSharedLinks(50),
+          fetchAdminPolicies(),
+          fetchAuditLogs({
+            action: auditActionFilter.trim() || undefined,
+            status: auditStatusFilter || undefined,
+            limit: 50,
+          }),
+        ]);
+        setStats(statsRes);
+        setSuggestions(aiRes.suggestions);
+        setSelectedIds(new Set());
+        setSharedLinks(linksRes.links);
+        setPolicy(policyRes.policy);
+        setAuditLogs(logsRes.logs);
+        setAuditCursor(logsRes.nextCursor);
+      } catch (err) {
+        if (!options?.silent) {
+          setError(
+            err instanceof ApiClientError
+              ? err.message
+              : 'ガバナンスデータの読み込みに失敗しました'
+          );
+        }
+      } finally {
+        if (!options?.silent) {
+          setLoading(false);
+        }
+      }
+    },
+    [
+      authChecked,
+      user,
+      isPrivilegedAdmin,
+      labelFilter,
+      auditActionFilter,
+      auditStatusFilter,
+    ]
+  );
+
+  useEffect(() => {
+    if (authChecked && isPrivilegedAdmin) {
+      loadAll();
+    } else if (authChecked) {
+      setLoading(false);
+    }
+  }, [authChecked, isPrivilegedAdmin, loadAll]);
+
+  useEffect(() => {
+    if (!authChecked || !isPrivilegedAdmin) return;
+    let refreshTimer: number | null = null;
+    const unlistenSignals = syncStore.subscribeRealtimeSignals(() => {
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        void loadAll({ silent: true });
+      }, 250);
+    });
+    const unlistenRevocations = syncStore.subscribeSecurityRevocations((event) => {
+      if (event.kind === 'user.suspended') {
+        setStats(null);
+        setSuggestions([]);
+        setSharedLinks([]);
+        setAuditLogs([]);
+        setSelectedIds(new Set());
+        setError(
+          'アカウント停止またはセッション失効のため管理ダッシュボードデータを消去しました。'
+        );
+      }
+    });
+    return () => {
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
+      unlistenSignals();
+      unlistenRevocations();
+    };
+  }, [authChecked, isPrivilegedAdmin, loadAll, syncStore]);
+
+  const aiRollbackRef = useRef(
+    new Map<string, { item: AiSuggestionItem; index: number }>()
+  );
+
+  const aiCoalescer = useMemo(
+    () =>
+      new AdminAiBatchCoalescer({
+        submit: async (batch) => {
+          const res = await bulkApproveAiSuggestions(batch);
+          for (const item of batch) {
+            aiRollbackRef.current.delete(item.fileId);
+          }
+          setNotice(`${res.approvedCount}件のAI分類提案を承認しました。`);
+          void syncStore.syncDelta();
+        },
+        onError: (batch, err) => {
+          setSuggestions((prev) => {
+            const next = [...prev];
+            for (const b of batch) {
+              const snap = aiRollbackRef.current.get(b.fileId);
+              if (snap && !next.some((s) => s.fileId === b.fileId)) {
+                next.splice(Math.min(snap.index, next.length), 0, snap.item);
+              }
+              aiRollbackRef.current.delete(b.fileId);
+            }
+            return next;
+          });
+          setError(
+            err instanceof ApiClientError
+              ? err.message
+              : 'AI分類承認に失敗したためロールバックしました'
+          );
+        },
+      }),
+    [syncStore]
+  );
+
+  useEffect(() => () => aiCoalescer.clear(), [aiCoalescer]);
+
+  function toggleSelection(fileId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileId)) next.delete(fileId);
+      else next.add(fileId);
+      return next;
+    });
+  }
+
+  function handleSelectAllSuggestions(checked: boolean) {
+    setSelectedIds(
+      checked
+        ? new Set(suggestions.slice(0, 50).map((s) => s.fileId))
+        : new Set()
+    );
+  }
+
+  function handleBulkApprove() {
+    if (selectedIds.size === 0 || bulkBusy) return;
+    setError(null);
+    setNotice(null);
+
+    const targetIds = new Set([...selectedIds].slice(0, 50));
+    const items = [...targetIds].map((fileId) => ({ fileId }));
+    suggestions.forEach((item, index) => {
+      if (targetIds.has(item.fileId)) {
+        aiRollbackRef.current.set(item.fileId, { item, index });
+      }
+    });
+
+    setSuggestions((prev) => prev.filter((s) => !targetIds.has(s.fileId)));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of targetIds) next.delete(id);
+      return next;
+    });
+    setNotice(`${items.length}件のAI分類提案を承認しました（同期中）`);
+    aiCoalescer.enqueue(items);
+  }
+
+  function handleSingleApprove(
+    fileId: string,
+    overrideLabel?: Exclude<ClassificationLabel, 'unset'>
+  ) {
+    setError(null);
+    setNotice(null);
+    const index = suggestions.findIndex((s) => s.fileId === fileId);
+    if (index >= 0) {
+      aiRollbackRef.current.set(fileId, { item: suggestions[index], index });
+    }
+    setSuggestions((prev) => prev.filter((s) => s.fileId !== fileId));
+    setSelectedIds((prev) => {
+      if (!prev.has(fileId)) return prev;
+      const next = new Set(prev);
+      next.delete(fileId);
+      return next;
+    });
+    setNotice('1件のファイル分類を確定しました（同期中）');
+    aiCoalescer.enqueue([
+      overrideLabel ? { fileId, label: overrideLabel } : { fileId },
+    ]);
+  }
+
+  async function handleEmergencyRevoke(linkId: string) {
+    setError(null);
+    setNotice(null);
+    const index = sharedLinks.findIndex((l) => l.id === linkId);
+    const snapshot = index >= 0 ? sharedLinks[index] : null;
+
+    setSharedLinks((prev) => prev.filter((l) => l.id !== linkId));
+    setNotice(`共有リンク (${linkId.slice(0, 8)}...) を緊急失効しました。`);
+
+    try {
+      await adminEmergencyRevokeSharedLink(linkId, 'Admin dashboard revocation');
+      void syncStore.syncDelta();
+    } catch (err) {
+      if (snapshot) {
+        setSharedLinks((prev) => {
+          if (prev.some((l) => l.id === linkId)) return prev;
+          const next = [...prev];
+          next.splice(Math.min(index, next.length), 0, snapshot);
+          return next;
+        });
+      }
+      setNotice(null);
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : '共有リンクの緊急失効に失敗しました'
+      );
+    }
+  }
+
+  async function handlePolicySubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!policy || policySaving) return;
+    setPolicySaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await updateAdminPolicies({
+        enforceCompanyOnlyLinks: policy.enforce_company_only_links === 1,
+        requireWatermarkConfidential: policy.require_watermark_confidential === 1,
+        maxLinkExpirationDays: policy.max_link_expiration_days,
+        sessionMaxHours: policy.session_max_hours,
+        trashRetentionDays: policy.trash_retention_days,
+        aiClassificationMode: policy.ai_classification_mode,
+        aiAutoApplyThreshold: policy.ai_auto_apply_threshold,
+      });
+      setPolicy(res.policy);
+      void syncStore.bootstrap({ force: true });
+      setNotice('テナントガバナンスポリシーを更新しました。');
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError ? err.message : 'ポリシー更新に失敗しました'
+      );
+    } finally {
+      setPolicySaving(false);
+    }
+  }
+
+  async function handleLoadMoreLogs() {
+    if (!auditCursor || auditLoadingMore) return;
+    setAuditLoadingMore(true);
+    try {
+      const res = await fetchAuditLogs({
+        action: auditActionFilter.trim() || undefined,
+        status: auditStatusFilter || undefined,
+        cursorCreatedAt: auditCursor.createdAt,
+        cursorId: auditCursor.id,
+        limit: 50,
+      });
+      setAuditLogs((prev) => [...prev, ...res.logs]);
+      setAuditCursor(res.nextCursor);
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError ? err.message : '監査ログの読み込みに失敗しました'
+      );
+    } finally {
+      setAuditLoadingMore(false);
+    }
+  }
+
+  return {
+    syncStore,
+    snapshot,
+    user,
+    authChecked,
+    isPrivilegedAdmin,
+    loading,
+    error,
+    notice,
+    stats,
+    suggestions,
+    selectedIds,
+    labelFilter,
+    bulkBusy,
+    sharedLinks,
+    policy,
+    policySaving,
+    auditLogs,
+    auditCursor,
+    auditActionFilter,
+    auditStatusFilter,
+    auditLoadingMore,
+    setLabelFilter,
+    setAuditActionFilter,
+    setAuditStatusFilter,
+    setPolicy,
+    loadAll,
+    toggleSelection,
+    handleSelectAllSuggestions,
+    handleBulkApprove,
+    handleSingleApprove,
+    handleEmergencyRevoke,
+    handlePolicySubmit,
+    handleLoadMoreLogs,
+  };
+}
