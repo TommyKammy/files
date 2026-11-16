@@ -9,11 +9,13 @@ import {
   ASYNC_COPY_CHUNK_NODES,
   CopyJobState,
   CopyableFileRow,
+  resolveLatestSyncSeq,
+} from './shared';
+import {
   appendStatsAndFolderCopyStatements,
   appendStatsDeltasStatements,
   buildCoWFileCopyStatements,
-  resolveLatestSyncSeq,
-} from './shared';
+} from './copy-statements';
 
 export async function processCopySubtreeJobChunk(
   msg: CopySubtreeQueueMessage,

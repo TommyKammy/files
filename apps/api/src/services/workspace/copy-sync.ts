@@ -6,6 +6,8 @@ import {
   appendStatsAndFolderCopyStatements,
   appendStatsDeltasStatements,
   buildCoWFileCopyStatements,
+} from './copy-statements';
+import {
   resolveLatestSyncSeq,
   type CopyableFileRow,
   type CopyWorkspaceResult,
