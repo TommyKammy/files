@@ -1,0 +1,159 @@
+'use client';
+
+import { Loader2, Trash2 } from 'lucide-react';
+import { ClassificationBadge } from '@/components/ClassificationBadge';
+import { WorkspaceBreadcrumbs } from '@/components/WorkspaceBreadcrumbs';
+import { WorkspaceSelectionBar } from '@/components/WorkspaceSelectionBar';
+import { WorkspaceToolbar } from '@/components/WorkspaceToolbar';
+import type {
+  WorkspaceSortDirection,
+  WorkspaceSortField,
+} from '@/lib/workspace-sort-and-view';
+import type { WorkspaceTableRow } from '@/lib/workspace-table-row';
+import type {
+  BreadcrumbItem,
+  FolderSummary,
+  ResourceRole,
+} from '@/types/files';
+
+export function WorkspaceMainHeader({
+  isTrashView,
+  folderId,
+  breadcrumbs,
+  currentFolder,
+  effectiveRole,
+  nextCursor,
+  sortBy,
+  sortDir,
+  selectedRows,
+  canEditCurrentFolder,
+  canManageCurrentFolderPerms,
+  isPrivilegedAdmin,
+  viewMode,
+  inspectorOpen,
+  onNewFolder,
+  onTogglePin,
+  onOpenFileRequest,
+  onOpenShare,
+  onOpenPermissions,
+  onToggleViewMode,
+  onToggleInspector,
+  onOpenShortcuts,
+  onCopy,
+  onCut,
+  onDuplicate,
+  onMoveCopy,
+  onBulkApproveAi,
+  onClassify,
+  onTrash,
+  onClearSelection,
+}: {
+  isTrashView: boolean;
+  folderId: string | null;
+  breadcrumbs: BreadcrumbItem[];
+  currentFolder: FolderSummary | null;
+  effectiveRole: ResourceRole;
+  nextCursor: string | null;
+  sortBy: WorkspaceSortField;
+  sortDir: WorkspaceSortDirection;
+  selectedRows: WorkspaceTableRow[];
+  canEditCurrentFolder: boolean;
+  canManageCurrentFolderPerms: boolean;
+  isPrivilegedAdmin: boolean;
+  viewMode: 'list' | 'grid';
+  inspectorOpen: boolean;
+  onNewFolder: () => void;
+  onTogglePin: (folder: FolderSummary) => void;
+  onOpenFileRequest: () => void;
+  onOpenShare: () => void;
+  onOpenPermissions: () => void;
+  onToggleViewMode: () => void;
+  onToggleInspector: () => void;
+  onOpenShortcuts: () => void;
+  onCopy: () => void;
+  onCut: () => void;
+  onDuplicate: () => void;
+  onMoveCopy: () => void;
+  onBulkApproveAi: () => void;
+  onClassify: () => void;
+  onTrash: () => void;
+  onClearSelection: () => void;
+}) {
+  return (
+    <header className="flex flex-wrap items-center justify-between gap-4">
+      <div className="min-w-0 space-y-1">
+        {isTrashView ? (
+          <div className="flex items-center gap-2">
+            <Trash2 className="h-5 w-5 text-slate-600" />
+            <h1 className="text-[0.9375rem] font-semibold tracking-[-0.01em] text-[#111214]">
+              ゴミ箱
+            </h1>
+          </div>
+        ) : (
+          <WorkspaceBreadcrumbs
+            folderId={folderId ?? null}
+            breadcrumbs={breadcrumbs}
+          />
+        )}
+
+        {!isTrashView &&
+          (currentFolder ||
+            (nextCursor && (sortBy !== 'name' || sortDir !== 'asc'))) && (
+            <div className="flex flex-wrap items-center gap-2 text-[0.6875rem] text-[#6b6f76]">
+              {currentFolder && (
+                <>
+                  <ClassificationBadge
+                    classification={currentFolder.classification}
+                    compact
+                  />
+                  <span>実効ロール: {effectiveRole}</span>
+                </>
+              )}
+              {nextCursor && (sortBy !== 'name' || sortDir !== 'asc') && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[0.6875rem] font-medium text-amber-700">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>ソート全件同期中...</span>
+                </span>
+              )}
+            </div>
+          )}
+      </div>
+
+      <div className="relative flex w-full flex-wrap items-center gap-1.5">
+        <WorkspaceToolbar
+          isTrashView={isTrashView}
+          hasSelection={!isTrashView && selectedRows.length > 0}
+          canEditCurrentFolder={canEditCurrentFolder}
+          canManageCurrentFolderPerms={canManageCurrentFolderPerms}
+          currentFolder={currentFolder}
+          viewMode={viewMode}
+          inspectorOpen={inspectorOpen}
+          onNewFolder={onNewFolder}
+          onTogglePin={onTogglePin}
+          onOpenFileRequest={onOpenFileRequest}
+          onOpenShare={onOpenShare}
+          onOpenPermissions={onOpenPermissions}
+          onToggleViewMode={onToggleViewMode}
+          onToggleInspector={onToggleInspector}
+          onOpenShortcuts={onOpenShortcuts}
+        />
+
+        {!isTrashView && selectedRows.length > 0 && (
+          <WorkspaceSelectionBar
+            selectedRows={selectedRows}
+            canEditCurrentFolder={canEditCurrentFolder}
+            isPrivilegedAdmin={isPrivilegedAdmin}
+            onCopy={onCopy}
+            onCut={onCut}
+            onDuplicate={onDuplicate}
+            onMoveCopy={onMoveCopy}
+            onBulkApproveAi={onBulkApproveAi}
+            onClassify={onClassify}
+            onTrash={onTrash}
+            onClear={onClearSelection}
+          />
+        )}
+      </div>
+    </header>
+  );
+}

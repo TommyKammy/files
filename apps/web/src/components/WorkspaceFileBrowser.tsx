@@ -66,6 +66,7 @@ import {
   WorkspaceManagementModals,
   type ActiveModal,
 } from '@/components/WorkspaceManagementModals';
+import { WorkspaceMainHeader } from '@/components/WorkspaceMainHeader';
 import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
 import {
@@ -114,6 +115,7 @@ import {
 import { useMarqueeSelection } from '@/lib/use-marquee-selection';
 import { useTableVirtualWindow } from '@/lib/use-virtual-window';
 import { useWorkspaceActions } from '@/lib/use-workspace-actions';
+import { useWorkspaceData } from '@/lib/use-workspace-data';
 import { useWorkspaceDialogs } from '@/lib/use-workspace-dialogs';
 import { useWorkspaceInlineRename } from '@/lib/use-workspace-inline-rename';
 import { useWorkspaceKeyboard } from '@/lib/use-workspace-keyboard';
@@ -179,32 +181,33 @@ export function WorkspaceFileBrowser() {
   const isTrashView = searchParams.get('view') === 'trash';
 
   const syncStore = getWorkspaceSyncStore();
-  const { snapshot, directory, pinnedFolders } = useWorkspaceDirectory(
-    isTrashView ? null : folderId
-  );
-  const user = snapshot.user;
-  const authChecked = snapshot.authStatus !== 'unknown';
+  const {
+    snapshot,
+    directory,
+    pinnedFolders,
+    user,
+    authChecked,
+    trash,
+    error,
+    setError,
+    loadingMore,
+    isInitialLoading,
+    nextCursor,
+    loadActiveView,
+    handleLoadMore,
+  } = useWorkspaceData({ folderId, isTrashView, syncStore });
 
   const prefetcher = useMemo(
     () => new IntentPrefetcher(syncStore),
     [syncStore]
   );
 
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const trash = useWorkspaceTrash({ setError });
 
   const currentFolder = isTrashView ? null : directory.folder;
   const effectiveRole: ResourceRole = isTrashView ? 'editor' : directory.effectiveRole;
   const breadcrumbs = isTrashView ? [] : directory.breadcrumbs;
   const folders = isTrashView ? trash.folders : directory.folders;
   const files = isTrashView ? trash.files : directory.files;
-  const nextCursor = isTrashView ? null : directory.nextCursor;
-
-  const isInitialLoading = isTrashView
-    ? trash.loading && !trash.loaded
-    : !directory.existsInCache &&
-      (!snapshot.bootstrapDone || snapshot.revalidating);
 
   // Keyboard navigation, selection, inline rename, picker, and help overlay state
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
@@ -222,22 +225,6 @@ export function WorkspaceFileBrowser() {
     setContextMenu(null);
     setBackgroundMenu(null);
   }, [folderId, isTrashView]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const hydrated = await syncStore.hydrateFromScopeHint();
-      if (!cancelled && hydrated && !isTrashView) {
-        void syncStore.ensureDirectoryLoaded(folderId).catch(() => undefined);
-      }
-      await syncStore.bootstrap();
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Initial SWR hydration + bootstrap once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [syncStore]);
 
   // Idle-time warm-up ONLY of static pdfjs-dist runtime chunk (NEVER calls /content-url)
   useEffect(() => {
@@ -338,50 +325,6 @@ export function WorkspaceFileBrowser() {
       }
     });
   }, [syncStore, clipboardStore]);
-
-  const loadActiveView = useCallback(
-    async (options?: { force?: boolean }) => {
-      if (snapshot.authStatus !== 'authenticated' || !user) return;
-      setError(null);
-
-      try {
-        if (isTrashView) {
-          await trash.loadTrash();
-        } else {
-          await syncStore.ensureDirectoryLoaded(folderId, {
-            force: options?.force,
-          });
-        }
-      } catch (err) {
-        setError(
-          err instanceof ApiClientError
-            ? err.message
-            : 'フォルダ内容の取得に失敗しました'
-        );
-      }
-    },
-    [snapshot.authStatus, user, isTrashView, syncStore, folderId, trash.loadTrash]
-  );
-
-  useEffect(() => {
-    if (snapshot.authStatus === 'authenticated' && user) {
-      void loadActiveView();
-    }
-  }, [snapshot.authStatus, user, loadActiveView]);
-
-  async function handleLoadMore() {
-    if (!nextCursor || loadingMore || isTrashView) return;
-    setLoadingMore(true);
-    try {
-      await syncStore.loadMoreDirectory(folderId);
-    } catch (err) {
-      setError(
-        err instanceof ApiClientError ? err.message : '追加読み込みに失敗しました'
-      );
-    } finally {
-      setLoadingMore(false);
-    }
-  }
 
   async function handleDownloadFile(fileId: string) {
     try {
@@ -1415,117 +1358,76 @@ export function WorkspaceFileBrowser() {
         {!isTrashView && (
           <h1 className="sr-only">{currentFolder?.name ?? 'マイファイル'}</h1>
         )}
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div className="min-w-0 space-y-1">
-            {isTrashView ? (
-              <div className="flex items-center gap-2">
-                <Trash2 className="h-5 w-5 text-slate-600" />
-                <h1 className="text-[0.9375rem] font-semibold tracking-[-0.01em] text-[#111214]">ゴミ箱</h1>
-              </div>
-            ) : (
-              <WorkspaceBreadcrumbs
-                folderId={folderId ?? null}
-                breadcrumbs={breadcrumbs}
-              />
-            )}
-
-            {!isTrashView &&
-              (currentFolder ||
-                (nextCursor && (sortBy !== 'name' || sortDir !== 'asc'))) && (
-                <div className="flex flex-wrap items-center gap-2 text-[0.6875rem] text-[#6b6f76]">
-                  {currentFolder && (
-                    <>
-                      <ClassificationBadge
-                        classification={currentFolder.classification}
-                        compact
-                      />
-                      <span>実効ロール: {effectiveRole}</span>
-                    </>
-                  )}
-                  {nextCursor && (sortBy !== 'name' || sortDir !== 'asc') && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[0.6875rem] font-medium text-amber-700">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span>ソート全件同期中...</span>
-                    </span>
-                  )}
-                </div>
-              )}
-          </div>
-
-          <div className="relative flex w-full flex-wrap items-center gap-1.5">
-            <WorkspaceToolbar
-              isTrashView={isTrashView}
-              hasSelection={!isTrashView && selectedRows.length > 0}
-              canEditCurrentFolder={canEditCurrentFolder}
-              canManageCurrentFolderPerms={canManageCurrentFolderPerms}
-              currentFolder={currentFolder}
-              viewMode={viewMode}
-              inspectorOpen={inspectorOpen}
-              onNewFolder={() => {
-                setFolderNameInput('');
-                setFolderClassInput(
-                  currentFolder?.classification === 'confidential'
-                    ? 'confidential'
-                    : 'internal'
-                );
-                setActiveModal({
-                  kind: 'createFolder',
-                  parentId: folderId ?? null,
-                });
-              }}
-              onTogglePin={handleTogglePin}
-              onOpenFileRequest={() => {
-                if (!currentFolder) return;
-                setActiveModal({
-                  kind: 'fileRequest',
-                  folderId: currentFolder.id,
-                  folderName: currentFolder.name,
-                  canEdit: canEditCurrentFolder,
-                });
-              }}
-              onOpenShare={() => {
-                if (!currentFolder) return;
-                setActiveModal({
-                  kind: 'share',
-                  targetType: 'folder',
-                  targetId: currentFolder.id,
-                  targetName: currentFolder.name,
-                  classification: currentFolder.classification,
-                  canEdit: canEditCurrentFolder,
-                });
-              }}
-              onOpenPermissions={() => {
-                if (!currentFolder) return;
-                setActiveModal({
-                  kind: 'permissions',
-                  targetType: 'folder',
-                  targetId: currentFolder.id,
-                  targetName: currentFolder.name,
-                  effectiveRole,
-                });
-              }}
-              onToggleViewMode={handleToggleViewMode}
-              onToggleInspector={() => setInspectorOpen((prev) => !prev)}
-              onOpenShortcuts={() => setShortcutsHelpOpen(true)}
-            />
-
-            {!isTrashView && selectedRows.length > 0 && (
-              <WorkspaceSelectionBar
-                selectedRows={selectedRows}
-                canEditCurrentFolder={canEditCurrentFolder}
-                isPrivilegedAdmin={isPrivilegedAdmin}
-                onCopy={() => handleCopyTargets(selectedRows)}
-                onCut={() => handleCutTargets(selectedRows)}
-                onDuplicate={() => handleDuplicateTargets(selectedRows)}
-                onMoveCopy={() => handleOpenMoveCopyModal(selectedRows, 'move')}
-                onBulkApproveAi={handleBulkApproveAi}
-                onClassify={openClassificationPickerFromTarget}
-                onTrash={trashSelectedOrFocused}
-                onClear={() => setSelectedKeys(new Set())}
-              />
-            )}
-          </div>
-        </header>
+        <WorkspaceMainHeader
+          isTrashView={isTrashView}
+          folderId={folderId}
+          breadcrumbs={breadcrumbs}
+          currentFolder={currentFolder}
+          effectiveRole={effectiveRole}
+          nextCursor={nextCursor}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          selectedRows={selectedRows}
+          canEditCurrentFolder={canEditCurrentFolder}
+          canManageCurrentFolderPerms={canManageCurrentFolderPerms}
+          isPrivilegedAdmin={isPrivilegedAdmin}
+          viewMode={viewMode}
+          inspectorOpen={inspectorOpen}
+          onNewFolder={() => {
+            setFolderNameInput('');
+            setFolderClassInput(
+              currentFolder?.classification === 'confidential'
+                ? 'confidential'
+                : 'internal'
+            );
+            setActiveModal({
+              kind: 'createFolder',
+              parentId: folderId ?? null,
+            });
+          }}
+          onTogglePin={handleTogglePin}
+          onOpenFileRequest={() => {
+            if (!currentFolder) return;
+            setActiveModal({
+              kind: 'fileRequest',
+              folderId: currentFolder.id,
+              folderName: currentFolder.name,
+              canEdit: canEditCurrentFolder,
+            });
+          }}
+          onOpenShare={() => {
+            if (!currentFolder) return;
+            setActiveModal({
+              kind: 'share',
+              targetType: 'folder',
+              targetId: currentFolder.id,
+              targetName: currentFolder.name,
+              classification: currentFolder.classification,
+              canEdit: canEditCurrentFolder,
+            });
+          }}
+          onOpenPermissions={() => {
+            if (!currentFolder) return;
+            setActiveModal({
+              kind: 'permissions',
+              targetType: 'folder',
+              targetId: currentFolder.id,
+              targetName: currentFolder.name,
+              effectiveRole,
+            });
+          }}
+          onToggleViewMode={handleToggleViewMode}
+          onToggleInspector={() => setInspectorOpen((prev) => !prev)}
+          onOpenShortcuts={() => setShortcutsHelpOpen(true)}
+          onCopy={() => handleCopyTargets(selectedRows)}
+          onCut={() => handleCutTargets(selectedRows)}
+          onDuplicate={() => handleDuplicateTargets(selectedRows)}
+          onMoveCopy={() => handleOpenMoveCopyModal(selectedRows, 'move')}
+          onBulkApproveAi={handleBulkApproveAi}
+          onClassify={openClassificationPickerFromTarget}
+          onTrash={trashSelectedOrFocused}
+          onClearSelection={() => setSelectedKeys(new Set())}
+        />
 
         <WorkspaceNotices
           activeDirectoryNotice={snapshot.activeDirectoryNotice}
