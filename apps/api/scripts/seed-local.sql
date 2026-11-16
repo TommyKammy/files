@@ -54,5 +54,18 @@ VALUES
 INSERT OR IGNORE INTO groups (id, tenant_id, name)
 VALUES ('group-e2e-collaborators', 'tenant-default', 'E2E Collaborators');
 
+-- E2E-only SCIM bearer token (raw token: dev-e2e-scim-token). It is scoped to
+-- the local dev tenant so Playwright can provision suspended-owner fixtures
+-- without touching the interactive :8787 state.
+INSERT OR IGNORE INTO scim_tokens (id, tenant_id, idp_issuer, name, token_hash, revoked_at)
+VALUES (
+  'scim-dev-e2e',
+  'tenant-default',
+  'dev-e2e',
+  'E2E SCIM',
+  '6ed4d37c5b07e5f2cb9043b23f4194ef9f663afebc7d2bd3c144f9568a40465b',
+  NULL
+);
+
 INSERT OR IGNORE INTO group_members (group_id, user_id)
 VALUES ('group-e2e-collaborators', 'dev-member-001');

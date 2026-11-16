@@ -16,6 +16,24 @@ import { extractLastSyncSeq } from './sync-notifier';
 const ROOT_PERMISSION_CHUNK = 30;
 const FILE_LOCK_CHECK_CHUNK = 20;
 
+export interface AdminRootFolderCandidate {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  classification: ClassificationLabel;
+  deleted_at: string | null;
+}
+
+export interface AdminRootOwnerRef {
+  grantee_type: 'user' | 'group';
+  grantee_id: string;
+}
+
+export interface AdminRootCoOwnerStatementBundle {
+  statements: D1PreparedStatement[];
+  syncStatements: D1PreparedStatement[];
+}
+
 export type AdminRootOwnerStatus = 'active' | 'suspended';
 
 export interface AdminRootOwnerGrant {
@@ -118,7 +136,7 @@ function isRootFolderRow(row: RootFolderRow | null): row is RootFolderRow {
   return row !== null;
 }
 
-function normalizeIdArray(value: unknown, field: string): string[] {
+export function normalizeIdArray(value: unknown, field: string): string[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) {
     throw new AdminRootFolderError(
@@ -145,7 +163,7 @@ function normalizeIdArray(value: unknown, field: string): string[] {
   return ids;
 }
 
-async function assertActiveUser(
+export async function assertActiveUser(
   db: D1Database,
   tenantId: string,
   userId: string,
@@ -163,7 +181,7 @@ async function assertActiveUser(
   }
 }
 
-async function assertTenantGroups(
+export async function assertTenantGroups(
   db: D1Database,
   tenantId: string,
   groupIds: readonly string[]
@@ -187,7 +205,7 @@ async function assertTenantGroups(
   }
 }
 
-async function loadRootFolderRow(
+export async function loadRootFolderRow(
   db: D1Database,
   tenantId: string,
   folderId: string,
@@ -220,6 +238,184 @@ async function loadRootFolderRow(
     throw new AdminRootFolderError(404, 'NOT_FOUND', 'Root folder not found');
   }
   return row;
+}
+
+/**
+ * Load root-folder candidates without throwing for missing/non-root/archived
+ * ids. Bulk operations need per-item results, so a cross-tenant or unknown id
+ * simply never appears in the returned map.
+ */
+export async function loadAdminRootFolderCandidates(
+  db: D1Database,
+  tenantId: string,
+  folderIds: readonly string[]
+): Promise<Map<string, AdminRootFolderCandidate>> {
+  const result = new Map<string, AdminRootFolderCandidate>();
+  for (const chunk of chunkArray([...new Set(folderIds)], ROOT_PERMISSION_CHUNK)) {
+    if (chunk.length === 0) continue;
+    const placeholders = chunk.map(() => '?').join(', ');
+    const rows = await db
+      .prepare(
+        `SELECT id, parent_id, name, classification, deleted_at
+           FROM folders
+          WHERE tenant_id = ? AND id IN (${placeholders})`
+      )
+      .bind(tenantId, ...chunk)
+      .all<AdminRootFolderCandidate>();
+    for (const row of rows.results) result.set(row.id, row);
+  }
+  return result;
+}
+
+/**
+ * Shared co-owner grant statements. Both the single-folder API and the bulk
+ * grant API use this builder, so `owner` grants are never downgraded.
+ */
+export function buildAdminRootCoOwnerStatements(
+  db: D1Database,
+  input: {
+    tenantId: string;
+    folderId: string;
+    userIds: readonly string[];
+    groupIds: readonly string[];
+    grantedBy: string;
+    nowIso: string;
+  }
+): AdminRootCoOwnerStatementBundle {
+  const statements: D1PreparedStatement[] = [];
+  const syncStatements: D1PreparedStatement[] = [];
+
+  for (const [granteeType, ids] of [
+    ['user', input.userIds],
+    ['group', input.groupIds],
+  ] as const) {
+    for (const granteeId of ids) {
+      statements.push(
+        db
+          .prepare(
+            `INSERT INTO permissions (
+               id, tenant_id, target_type, target_id, grantee_type, grantee_id,
+               role, granted_by, created_at
+             ) VALUES (?, ?, 'folder', ?, ?, ?, 'co_owner', ?, ?)
+             ON CONFLICT (target_type, target_id, grantee_type, grantee_id)
+             DO UPDATE SET
+               role = CASE WHEN permissions.role = 'owner' THEN 'owner' ELSE 'co_owner' END,
+               granted_by = CASE WHEN permissions.role = 'owner' THEN permissions.granted_by ELSE excluded.granted_by END`
+          )
+          .bind(
+            crypto.randomUUID(),
+            input.tenantId,
+            input.folderId,
+            granteeType,
+            granteeId,
+            input.grantedBy,
+            input.nowIso
+          )
+      );
+      syncStatements.push(
+        buildSyncChangeStmt(db, {
+          tenantId: input.tenantId,
+          entityType: 'permission',
+          entityId: `${input.folderId}:${granteeType}:${granteeId}`,
+          folderId: input.folderId,
+          action: 'permission.grant',
+          payload: {
+            targetType: 'folder',
+            targetId: input.folderId,
+            granteeType,
+            granteeId,
+            role: 'co_owner',
+          },
+          nowIso: input.nowIso,
+        })
+      );
+    }
+  }
+
+  return { statements, syncStatements };
+}
+
+/**
+ * Shared owner-transfer statements. The new owner is granted/promoted first and
+ * previous owners are demoted/revoked afterwards inside the same D1 batch, so
+ * no intermediate state can drop the last effective owner.
+ */
+export function buildAdminRootOwnerTransferStatements(
+  db: D1Database,
+  input: {
+    tenantId: string;
+    folderId: string;
+    newOwnerUserId: string;
+    demote: 'co_owner' | 'editor' | 'revoke';
+    previousOwners: readonly AdminRootOwnerRef[];
+    grantedBy: string;
+    nowIso: string;
+  }
+): D1PreparedStatement[] {
+  const statements: D1PreparedStatement[] = [
+    db
+      .prepare(
+        `INSERT INTO permissions (
+           id, tenant_id, target_type, target_id, grantee_type, grantee_id,
+           role, granted_by, created_at
+         ) VALUES (?, ?, 'folder', ?, 'user', ?, 'owner', ?, ?)
+         ON CONFLICT (target_type, target_id, grantee_type, grantee_id)
+         DO UPDATE SET role = 'owner', granted_by = excluded.granted_by`
+      )
+      .bind(
+        crypto.randomUUID(),
+        input.tenantId,
+        input.folderId,
+        input.newOwnerUserId,
+        input.grantedBy,
+        input.nowIso
+      ),
+  ];
+
+  for (const previous of input.previousOwners) {
+    if (input.demote === 'revoke') {
+      statements.push(
+        db
+          .prepare(
+            `DELETE FROM permissions
+              WHERE tenant_id = ?
+                AND target_type = 'folder'
+                AND target_id = ?
+                AND grantee_type = ?
+                AND grantee_id = ?`
+          )
+          .bind(
+            input.tenantId,
+            input.folderId,
+            previous.grantee_type,
+            previous.grantee_id
+          )
+      );
+    } else {
+      statements.push(
+        db
+          .prepare(
+            `UPDATE permissions
+                SET role = ?, granted_by = ?
+              WHERE tenant_id = ?
+                AND target_type = 'folder'
+                AND target_id = ?
+                AND grantee_type = ?
+                AND grantee_id = ?`
+          )
+          .bind(
+            input.demote,
+            input.grantedBy,
+            input.tenantId,
+            input.folderId,
+            previous.grantee_type,
+            previous.grantee_id
+          )
+      );
+    }
+  }
+
+  return statements;
 }
 
 async function loadPermissionRows(
@@ -721,68 +917,15 @@ export async function transferAdminRootFolderOwner(
   const previousOwnerIds = previousOwners.map((row) => row.grantee_id);
 
   const nowIso = new Date().toISOString();
-  const statements: D1PreparedStatement[] = [
-    db
-      .prepare(
-        `INSERT INTO permissions (
-           id, tenant_id, target_type, target_id, grantee_type, grantee_id,
-           role, granted_by, created_at
-         ) VALUES (?, ?, 'folder', ?, 'user', ?, 'owner', ?, ?)
-         ON CONFLICT (target_type, target_id, grantee_type, grantee_id)
-         DO UPDATE SET role = 'owner', granted_by = excluded.granted_by`
-      )
-      .bind(
-        crypto.randomUUID(),
-        user.tenantId,
-        folderId,
-        newOwnerUserId,
-        user.id,
-        nowIso
-      ),
-  ];
-
-  for (const previous of previousOwners) {
-    if (demote === 'revoke') {
-      statements.push(
-        db
-          .prepare(
-            `DELETE FROM permissions
-              WHERE tenant_id = ?
-                AND target_type = 'folder'
-                AND target_id = ?
-                AND grantee_type = ?
-                AND grantee_id = ?`
-          )
-          .bind(
-            user.tenantId,
-            folderId,
-            previous.grantee_type,
-            previous.grantee_id
-          )
-      );
-    } else {
-      statements.push(
-        db
-          .prepare(
-            `UPDATE permissions
-                SET role = ?, granted_by = ?
-              WHERE tenant_id = ?
-                AND target_type = 'folder'
-                AND target_id = ?
-                AND grantee_type = ?
-                AND grantee_id = ?`
-          )
-          .bind(
-            demote,
-            user.id,
-            user.tenantId,
-            folderId,
-            previous.grantee_type,
-            previous.grantee_id
-          )
-      );
-    }
-  }
+  const statements = buildAdminRootOwnerTransferStatements(db, {
+    tenantId: user.tenantId,
+    folderId,
+    newOwnerUserId,
+    demote,
+    previousOwners,
+    grantedBy: user.id,
+    nowIso,
+  });
 
   statements.push(
     buildAuditLogStmt(db, {
@@ -870,55 +1013,14 @@ export async function grantAdminRootFolderCoOwners(
   await assertTenantGroups(db, user.tenantId, groupIds);
 
   const nowIso = new Date().toISOString();
-  const statements: D1PreparedStatement[] = [];
-  const syncStatements: D1PreparedStatement[] = [];
-
-  for (const [granteeType, ids] of [
-    ['user', userIds],
-    ['group', groupIds],
-  ] as const) {
-    for (const granteeId of ids) {
-      statements.push(
-        db
-          .prepare(
-            `INSERT INTO permissions (
-               id, tenant_id, target_type, target_id, grantee_type, grantee_id,
-               role, granted_by, created_at
-             ) VALUES (?, ?, 'folder', ?, ?, ?, 'co_owner', ?, ?)
-             ON CONFLICT (target_type, target_id, grantee_type, grantee_id)
-             DO UPDATE SET
-               role = CASE WHEN permissions.role = 'owner' THEN 'owner' ELSE 'co_owner' END,
-               granted_by = CASE WHEN permissions.role = 'owner' THEN permissions.granted_by ELSE excluded.granted_by END`
-          )
-          .bind(
-            crypto.randomUUID(),
-            user.tenantId,
-            folderId,
-            granteeType,
-            granteeId,
-            user.id,
-            nowIso
-          )
-      );
-      syncStatements.push(
-        buildSyncChangeStmt(db, {
-          tenantId: user.tenantId,
-          entityType: 'permission',
-          entityId: `${folderId}:${granteeType}:${granteeId}`,
-          folderId,
-          action: 'permission.grant',
-          payload: {
-            targetType: 'folder',
-            targetId: folderId,
-            granteeType,
-            granteeId,
-            role: 'co_owner',
-          },
-          nowIso,
-        })
-      );
-    }
-  }
+  const { statements, syncStatements } = buildAdminRootCoOwnerStatements(db, {
+    tenantId: user.tenantId,
+    folderId,
+    userIds,
+    groupIds,
+    grantedBy: user.id,
+    nowIso,
+  });
 
   statements.push(
     buildAuditLogStmt(db, {
@@ -943,13 +1045,18 @@ export async function grantAdminRootFolderCoOwners(
   };
 }
 
-export async function archiveAdminRootFolder(
+/**
+ * Archive preflight shared by the single-folder API and bulk dry-run previews.
+ * It validates root state and rejects desktop-exclusive file locks without
+ * mutating anything.
+ */
+export async function assertAdminRootFolderArchivable(
   env: Pick<OidcEnv, 'DB' | 'FILE_LOCK_HUB'>,
-  user: AuthUser,
+  tenantId: string,
   folderId: string
-): Promise<{ deletedAt: string; syncSeq: number | null }> {
+): Promise<RootFolderRow> {
   const db = env.DB;
-  const folder = await loadRootFolderRow(db, user.tenantId, folderId, {
+  const folder = await loadRootFolderRow(db, tenantId, folderId, {
     allowDeleted: true,
   });
   if (folder.deleted_at !== null) {
@@ -973,7 +1080,7 @@ export async function archiveAdminRootFolder(
              WHERE fc.tenant_id = ? AND fc.ancestor_id = ?
           )`
     )
-    .bind(user.tenantId, user.tenantId, folderId)
+    .bind(tenantId, tenantId, folderId)
     .all<{ id: string }>();
 
   for (const chunk of chunkArray(
@@ -991,6 +1098,20 @@ export async function archiveAdminRootFolder(
     }
   }
 
+  return folder;
+}
+
+export async function archiveAdminRootFolder(
+  env: Pick<OidcEnv, 'DB' | 'FILE_LOCK_HUB'>,
+  user: AuthUser,
+  folderId: string
+): Promise<{ deletedAt: string; syncSeq: number | null }> {
+  const db = env.DB;
+  const folder = await assertAdminRootFolderArchivable(
+    env,
+    user.tenantId,
+    folderId
+  );
   const nowIso = new Date().toISOString();
   const batchResults = await db.batch([
     db
@@ -1063,12 +1184,15 @@ export async function archiveAdminRootFolder(
   return { deletedAt: nowIso, syncSeq: extractLastSyncSeq(batchResults) };
 }
 
-export async function restoreAdminRootFolder(
+/**
+ * Restore preflight shared by the single-folder API and bulk dry-run previews.
+ */
+export async function assertAdminRootFolderRestorable(
   db: D1Database,
-  user: AuthUser,
+  tenantId: string,
   folderId: string
-): Promise<{ root: AdminRootFolderRecord; syncSeq: number | null }> {
-  const folder = await loadRootFolderRow(db, user.tenantId, folderId, {
+): Promise<RootFolderRow> {
+  const folder = await loadRootFolderRow(db, tenantId, folderId, {
     allowDeleted: true,
   });
   if (folder.deleted_at === null) {
@@ -1089,7 +1213,7 @@ export async function restoreAdminRootFolder(
           AND id != ?
         LIMIT 1`
     )
-    .bind(user.tenantId, folder.name, folderId)
+    .bind(tenantId, folder.name, folderId)
     .first<{ id: string }>();
   if (duplicate) {
     throw new AdminRootFolderError(
@@ -1098,6 +1222,19 @@ export async function restoreAdminRootFolder(
       `A root folder named "${folder.name}" already exists`
     );
   }
+  return folder;
+}
+
+export async function restoreAdminRootFolder(
+  db: D1Database,
+  user: AuthUser,
+  folderId: string
+): Promise<{ root: AdminRootFolderRecord; syncSeq: number | null }> {
+  const folder = await assertAdminRootFolderRestorable(
+    db,
+    user.tenantId,
+    folderId
+  );
 
   const restored = await restoreFolderWithOptions(db, user, folderId, {
     conflictPolicy: 'fail',

@@ -16,6 +16,84 @@ const MAX_AUDIT_ACTION_LENGTH = 120;
 type ActionFilterResult =
   | { ok: true; actions: string[] }
   | { ok: false; error: string };
+type ActionPrefixFilterResult =
+  | { ok: true; prefixes: string[] }
+  | { ok: false; error: string };
+
+/** Escape LIKE metacharacters so a prefix is always a literal prefix match. */
+function escapeLikePrefix(prefix: string): string {
+  return prefix
+    .replace(/\\/g, '\\\\')
+    .replace(/%/g, '\\%')
+    .replace(/_/g, '\\_');
+}
+
+/**
+ * Parse `actionPrefix` and the additive `actionPrefixes` filter. Both accept
+ * comma-separated values and repeated query keys; the same 20-item / 120-char
+ * bounds as exact actions keep the generated `LIKE ... OR ...` bounded.
+ */
+function parseAuditActionPrefixFilters(c: {
+  req: {
+    query: (name: string) => string | undefined;
+    queries: (name: string) => string[] | undefined;
+  };
+}): ActionPrefixFilterResult {
+  const prefixes: string[] = [];
+  const seen = new Set<string>();
+  let sawPrefixesParam = false;
+
+  const single = c.req.query('actionPrefix');
+  if (single !== undefined) {
+    for (const part of single.split(',')) {
+      const prefix = part.trim();
+      if (!prefix) continue;
+      if (prefix.length > MAX_AUDIT_ACTION_LENGTH) {
+        return {
+          ok: false,
+          error: `Each action prefix must be at most ${MAX_AUDIT_ACTION_LENGTH} characters`,
+        };
+      }
+      if (seen.has(prefix)) continue;
+      seen.add(prefix);
+      prefixes.push(prefix);
+    }
+  }
+
+  const repeated = c.req.queries('actionPrefixes');
+  if (repeated && repeated.length > 0) {
+    sawPrefixesParam = true;
+    for (const raw of repeated) {
+      for (const part of raw.split(',')) {
+        const prefix = part.trim();
+        if (!prefix) continue;
+        if (prefix.length > MAX_AUDIT_ACTION_LENGTH) {
+          return {
+            ok: false,
+            error: `Each action prefix must be at most ${MAX_AUDIT_ACTION_LENGTH} characters`,
+          };
+        }
+        if (seen.has(prefix)) continue;
+        seen.add(prefix);
+        prefixes.push(prefix);
+      }
+    }
+  }
+
+  if (sawPrefixesParam && prefixes.length === 0) {
+    return {
+      ok: false,
+      error: 'actionPrefixes must contain at least one prefix',
+    };
+  }
+  if (prefixes.length > MAX_AUDIT_ACTION_FILTERS) {
+    return {
+      ok: false,
+      error: `At most ${MAX_AUDIT_ACTION_FILTERS} action prefixes are allowed`,
+    };
+  }
+  return { ok: true, prefixes };
+}
 
 /**
  * Parse the legacy single `action` filter and the additive `actions` filter.
@@ -91,6 +169,32 @@ auditLogsRoutes.get('/', async (c) => {
     const placeholders = actionFilters.actions.map(() => '?').join(', ');
     conditions.push(`action IN (${placeholders})`);
     binds.push(...actionFilters.actions);
+  }
+
+  const prefixFilters = parseAuditActionPrefixFilters(c);
+  if (!prefixFilters.ok) {
+    return c.json(
+      { error: prefixFilters.error, code: 'INVALID_ACTION_FILTER' },
+      400
+    );
+  }
+  if (prefixFilters.prefixes.length > 0) {
+    conditions.push(
+      `(${prefixFilters.prefixes
+        .map(() => `action LIKE ? ESCAPE '\\'`)
+        .join(' OR ')})`
+    );
+    binds.push(
+      ...prefixFilters.prefixes.map(
+        (prefix) => `${escapeLikePrefix(prefix)}%`
+      )
+    );
+  }
+
+  const targetType = c.req.query('targetType')?.trim();
+  if (targetType) {
+    conditions.push('target_type = ?');
+    binds.push(targetType);
   }
 
   const status = c.req.query('status')?.trim();

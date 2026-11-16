@@ -625,6 +625,53 @@ export async function revokePermission(
   return body;
 }
 
+const E2E_SCIM_TOKEN = 'dev-e2e-scim-token';
+
+export interface ScimUserLike {
+  id: string;
+  userName: string;
+  displayName: string;
+  active: boolean;
+}
+
+/** POST /scim/v2/Users — provisions an isolated E2E user. */
+export async function createScimUser(
+  actor: ApiActor,
+  input: { email: string; displayName: string }
+): Promise<ScimUserLike> {
+  const res = await actor.api.post('/scim/v2/Users', {
+    headers: { Authorization: `Bearer ${E2E_SCIM_TOKEN}` },
+    data: {
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+      userName: input.email,
+      displayName: input.displayName,
+      emails: [{ value: input.email, primary: true }],
+      active: true,
+    },
+  });
+  expect(res.status(), 'POST /scim/v2/Users should return 201').toBe(201);
+  return (await res.json()) as ScimUserLike;
+}
+
+/** PATCH /scim/v2/Users/:id — suspend an owner fixture for warning coverage. */
+export async function suspendScimUser(
+  actor: ApiActor,
+  userId: string
+): Promise<ScimUserLike> {
+  const res = await actor.api.patch(
+    `/scim/v2/Users/${encodeURIComponent(userId)}`,
+    {
+      headers: { Authorization: `Bearer ${E2E_SCIM_TOKEN}` },
+      data: {
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        Operations: [{ op: 'replace', path: 'active', value: false }],
+      },
+    }
+  );
+  expect(res.status(), 'PATCH /scim/v2/Users/:id should return 200').toBe(200);
+  return (await res.json()) as ScimUserLike;
+}
+
 /** PATCH /api/admin/policies — sys_admin tenant invite policy. */
 export async function updateTenantInvitePolicy(
   actor: ApiActor,

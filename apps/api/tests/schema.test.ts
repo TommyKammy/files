@@ -2,7 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-describe('D1 schema & migrations (0001 + 0002 + 0003)', () => {
+describe('D1 schema & migrations (0001-0012)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -201,6 +201,56 @@ describe('D1 schema & migrations (0001 + 0002 + 0003)', () => {
     await expect(
       env.DB.prepare(
         "UPDATE tenant_policies SET allow_shared_link_edit = 2 WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
+
+    // Migration 0012: durable admin bulk-operation idempotency.
+    const [idempotencyCols, idempotencyTable, idempotencyIndex] =
+      await Promise.all([
+        env.DB.prepare(
+          'PRAGMA table_info(admin_bulk_idempotency)'
+        ).all<{ name: string; pk: number }>(),
+        env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'admin_bulk_idempotency'"
+        ).first<{ name: string }>(),
+        env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_admin_bulk_idempotency_operation'"
+        ).first<{ name: string }>(),
+      ]);
+    expect(idempotencyTable?.name).toBe('admin_bulk_idempotency');
+    expect(idempotencyIndex?.name).toBe(
+      'idx_admin_bulk_idempotency_operation'
+    );
+    expect(idempotencyCols.results.map((c) => c.name)).toEqual([
+      'tenant_id',
+      'operation',
+      'idempotency_key',
+      'request_hash',
+      'status',
+      'response_json',
+      'created_at',
+      'updated_at',
+    ]);
+    expect(
+      idempotencyCols.results
+        .filter((c) => c.pk > 0)
+        .map((c) => c.name)
+        .sort()
+    ).toEqual(['idempotency_key', 'tenant_id']);
+
+    await env.DB.prepare(
+      `INSERT INTO admin_bulk_idempotency (
+         tenant_id, operation, idempotency_key, request_hash, status,
+         response_json
+       ) VALUES ('t1', 'admin.permission.bulk_grant', 'schema-key', 'hash',
+                 'completed', '{"ok":true}')`
+    ).run();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO admin_bulk_idempotency (
+           tenant_id, operation, idempotency_key, request_hash, status
+         ) VALUES ('t1', 'admin.permission.bulk_grant', 'schema-bad', 'hash',
+                   'unknown')`
       ).run()
     ).rejects.toThrow();
   });

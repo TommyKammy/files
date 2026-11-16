@@ -907,6 +907,153 @@ export interface AuditLogEntry {
   createdAt: string;
 }
 
+/* ------------------------------------------------------------------ */
+/* P9-7 / TOM-57 permission audit & admin bulk operations              */
+/* ------------------------------------------------------------------ */
+
+export type AdminPermissionTargetType = 'all' | 'folder' | 'file';
+export type AdminPermissionSource = 'all' | 'direct' | 'inherited';
+export type AdminPermissionGranteeStatus = 'active' | 'suspended' | 'deleted';
+export type AdminPermissionHealth =
+  | 'all'
+  | 'owner_missing'
+  | 'inactive_owner';
+export type AdminPermissionSortBy =
+  | 'createdAt'
+  | 'role'
+  | 'targetName'
+  | 'granteeName';
+export type AdminPermissionSortDir = 'asc' | 'desc';
+
+export interface AdminPermissionAuditEntry {
+  id: string;
+  permissionId: string;
+  targetType: 'folder' | 'file';
+  targetId: string;
+  targetName: string;
+  classification: ClassificationLabel;
+  targetDeletedAt: string | null;
+  rootFolderId: string | null;
+  rootFolderName: string | null;
+  granteeType: 'user' | 'group';
+  granteeId: string;
+  granteeName: string;
+  granteeEmail: string | null;
+  granteeStatus: AdminPermissionGranteeStatus;
+  role: ResourceRole;
+  source: 'direct' | 'inherited';
+  inheritedFromId: string | null;
+  inheritedFromName: string | null;
+  inheritedDepth: number;
+  grantedBy: string;
+  grantedByName: string | null;
+  grantedByEmail: string | null;
+  createdAt: string;
+}
+
+export interface AdminPermissionRootSummary {
+  id: string;
+  name: string;
+  classification: ClassificationLabel;
+  archived: boolean;
+  deletedAt: string | null;
+  ownerCount: number;
+  activeOwnerCount: number;
+  coOwnerCount: number;
+  editorCount: number;
+  totalGrantCount: number;
+  ownerMissing: boolean;
+  hasSuspendedOwner: boolean;
+  hasDeletedOwner: boolean;
+}
+
+export interface AdminPermissionAnomaliesSummary {
+  ownerMissingCount: number;
+  suspendedOwnerCount: number;
+  deletedOwnerCount: number;
+  inactiveGranterCount: number;
+  suspendedGranteeCount: number;
+  deletedGranteeCount: number;
+}
+
+export interface AdminPermissionAuditResponse {
+  entries: AdminPermissionAuditEntry[];
+  totalCount: number;
+  nextOffset: number | null;
+  rootSummaries: AdminPermissionRootSummary[];
+  anomaliesSummary: AdminPermissionAnomaliesSummary;
+}
+
+export interface AdminPermissionAuditQuery {
+  targetType?: 'all' | 'folder' | 'file';
+  targetId?: string | null;
+  rootFolderId?: string | null;
+  includeInherited?: boolean;
+  grantee?: string | null;
+  granteeType?: 'user' | 'group' | null;
+  role?: ResourceRole[] | string | null;
+  source?: AdminPermissionSource;
+  inheritedFromId?: string | null;
+  grantedBy?: string | null;
+  from?: string | null;
+  to?: string | null;
+  granteeStatus?: AdminPermissionGranteeStatus | null;
+  health?: AdminPermissionHealth;
+  sortBy?: AdminPermissionSortBy;
+  sortDir?: AdminPermissionSortDir;
+  limit?: number;
+  offset?: number;
+}
+
+export type AdminBulkItemStatus = 'succeeded' | 'skipped' | 'failed';
+
+export interface AdminBulkItemResult {
+  folderId: string;
+  folderName: string;
+  status: AdminBulkItemStatus;
+  code?: string;
+  message?: string;
+}
+
+export interface AdminBulkSummary {
+  requested: number;
+  succeeded: number;
+  skipped: number;
+  failed: number;
+  executable: number;
+}
+
+export interface AdminBulkResponse {
+  operation: string;
+  dryRun: boolean;
+  replayed: boolean;
+  results: AdminBulkItemResult[];
+  summary: AdminBulkSummary;
+  syncSeq: number | null;
+}
+
+export interface AdminBulkCoOwnerPayload {
+  folderIds: string[];
+  userIds?: string[];
+  groupIds?: string[];
+  dryRun?: boolean;
+  idempotencyKey?: string;
+}
+
+export interface AdminBulkTransferOwnerPayload {
+  folderIds: string[];
+  newOwnerUserId: string;
+  demotePreviousOwnersTo?: 'co_owner' | 'editor' | 'revoke';
+  dryRun?: boolean;
+  idempotencyKey?: string;
+}
+
+export interface AdminBulkLifecyclePayload {
+  folderIds: string[];
+  dryRun?: boolean;
+  idempotencyKey?: string;
+}
+
 export interface UploadTaskProgress {
   mode: 'single' | 'multipart';
   loadedBytes: number;

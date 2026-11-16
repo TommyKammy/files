@@ -121,6 +121,18 @@ body {
   outline: none;
 }
 
+/* Keep scroll gestures inside an open modal from chaining to the page behind
+   it. `::backdrop` must be a scroll container (overflow hidden) for
+   overscroll-behavior to apply. */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
 /* Native modal surface. The browser owns the top layer, focus containment,
    background inertness and Escape handling; these rules only restore the
    app's visual treatment (full-viewport backdrop, centered content). */

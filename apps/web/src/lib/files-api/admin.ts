@@ -1,4 +1,13 @@
+import {
+  buildPermissionAuditHref,
+} from '@/lib/admin-permission-audit';
 import type {
+  AdminBulkCoOwnerPayload,
+  AdminBulkLifecyclePayload,
+  AdminBulkResponse,
+  AdminBulkTransferOwnerPayload,
+  AdminPermissionAuditQuery,
+  AdminPermissionAuditResponse,
   AdminRootFolderListResponse,
   AdminRootFolderRecord,
   AdminSharedLinkRow,
@@ -174,6 +183,9 @@ export function fetchAuditLogs(params?: {
   action?: string;
   /** Additional exact action filters, combined with `action` using IN (...). */
   actions?: string[];
+  /** Prefix filters, e.g. `permission.` / `admin.root_folder.`. */
+  actionPrefixes?: string[];
+  targetType?: string;
   status?: 'allowed' | 'blocked';
   actorEmail?: string;
   cursorCreatedAt?: string;
@@ -188,6 +200,10 @@ export function fetchAuditLogs(params?: {
   if (params?.actions && params.actions.length > 0) {
     qs.set('actions', params.actions.join(','));
   }
+  if (params?.actionPrefixes && params.actionPrefixes.length > 0) {
+    qs.set('actionPrefixes', params.actionPrefixes.join(','));
+  }
+  if (params?.targetType) qs.set('targetType', params.targetType);
   if (params?.status) qs.set('status', params.status);
   if (params?.actorEmail) qs.set('actorEmail', params.actorEmail);
   if (params?.cursorCreatedAt) qs.set('cursorCreatedAt', params.cursorCreatedAt);
@@ -195,6 +211,53 @@ export function fetchAuditLogs(params?: {
   if (params?.limit) qs.set('limit', String(params.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   return apiFetch(`/api/audit-logs${suffix}`);
+}
+
+/** GET /api/admin/permissions — tenant-wide direct/inherited permission audit. */
+export function fetchAdminPermissionAudit(
+  query: AdminPermissionAuditQuery = {}
+): Promise<AdminPermissionAuditResponse> {
+  return apiFetch(buildPermissionAuditHref(query));
+}
+
+/** POST /api/admin/permissions/bulk-co-owner — sys_admin only. */
+export function bulkGrantAdminRootFolderCoOwners(
+  payload: AdminBulkCoOwnerPayload
+): Promise<AdminBulkResponse> {
+  return apiFetch('/api/admin/permissions/bulk-co-owner', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** POST /api/admin/root-folders/bulk-transfer-owner — sys_admin only. */
+export function bulkTransferAdminRootFolderOwners(
+  payload: AdminBulkTransferOwnerPayload
+): Promise<AdminBulkResponse> {
+  return apiFetch('/api/admin/root-folders/bulk-transfer-owner', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** POST /api/admin/root-folders/bulk-archive — sys_admin only. */
+export function bulkArchiveAdminRootFolders(
+  payload: AdminBulkLifecyclePayload
+): Promise<AdminBulkResponse> {
+  return apiFetch('/api/admin/root-folders/bulk-archive', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** POST /api/admin/root-folders/bulk-restore — sys_admin only. */
+export function bulkRestoreAdminRootFolders(
+  payload: AdminBulkLifecyclePayload
+): Promise<AdminBulkResponse> {
+  return apiFetch('/api/admin/root-folders/bulk-restore', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 /** GET /api/admin/trash — tenant-wide Trash metadata and filter candidates. */

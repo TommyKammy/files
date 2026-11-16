@@ -3,6 +3,7 @@
 import { Download, Loader2, X } from 'lucide-react';
 import {
   formatAuditActionLabel,
+  isPermissionAuditAction,
   isRootFolderAuditAction,
 } from '@/lib/admin-audit';
 import { formatAuditDateTime } from '@/lib/formatters';
@@ -12,28 +13,53 @@ export function AuditLogSection({
   auditLogs,
   auditCursor,
   auditActionFilter,
+  auditActionPrefixFilter = '',
+  auditActionPrefixes = [],
+  auditTargetType = '',
   auditStatusFilter,
   auditLoadingMore,
   auditPresetActions = [],
   onActionFilterChange,
+  onActionPrefixFilterChange,
+  onTargetTypeChange,
   onStatusFilterChange,
   onLoadMore,
   onClearPreset,
+  onClearPrefixPreset,
 }: {
   auditLogs: AuditLogEntry[];
   auditCursor: { createdAt: string; id: string } | null;
   auditActionFilter: string;
+  auditActionPrefixFilter?: string;
+  auditActionPrefixes?: readonly string[];
+  auditTargetType?: string;
   auditStatusFilter: '' | 'allowed' | 'blocked';
   auditLoadingMore: boolean;
   auditPresetActions?: readonly string[];
   onActionFilterChange: (value: string) => void;
+  onActionPrefixFilterChange?: (value: string) => void;
+  onTargetTypeChange?: (value: string) => void;
   onStatusFilterChange: (value: '' | 'allowed' | 'blocked') => void;
   onLoadMore: () => void;
   onClearPreset?: () => void;
+  onClearPrefixPreset?: () => void;
 }) {
+  const activePrefixes = [
+    ...auditActionPrefixes,
+    ...(auditActionPrefixFilter.trim()
+      ? [auditActionPrefixFilter.trim()]
+      : []),
+  ].filter(Boolean);
+  const prefixHighlight = auditActionPrefixes.length > 0;
   const csvQuery = new URLSearchParams({ format: 'csv', limit: '200' });
   if (auditActionFilter.trim()) {
     csvQuery.set('action', auditActionFilter.trim());
+  }
+  if (activePrefixes.length > 0) {
+    csvQuery.set('actionPrefixes', activePrefixes.join(','));
+  }
+  if (auditTargetType) {
+    csvQuery.set('targetType', auditTargetType);
   }
   if (auditStatusFilter) {
     csvQuery.set('status', auditStatusFilter);
@@ -69,6 +95,33 @@ export function AuditLogSection({
               )}
             </span>
           )}
+          {prefixHighlight && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[0.6875rem] font-medium text-indigo-800">
+              <span>権限監査のみ</span>
+              {onClearPrefixPreset && (
+                <button
+                  type="button"
+                  aria-label="権限監査ログのプレフィックス絞り込みを解除"
+                  onClick={onClearPrefixPreset}
+                  className="rounded-full p-0.5 hover:bg-indigo-100"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </span>
+          )}
+          <input
+            id="audit-action-prefix-filter"
+            name="auditActionPrefixFilter"
+            aria-label="監査ログのアクションプレフィックスで絞り込む"
+            autoComplete="off"
+            spellCheck={false}
+            type="text"
+            value={auditActionPrefixFilter}
+            onChange={(e) => onActionPrefixFilterChange?.(e.target.value)}
+            placeholder="actionPrefix (例: permission.,admin.root_folder.)"
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
+          />
           <input
             id="audit-action-filter"
             name="auditActionFilter"
@@ -81,6 +134,19 @@ export function AuditLogSection({
             placeholder="action (例: shared_link.create)"
             className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
           />
+          <select
+            id="audit-target-type-filter"
+            name="auditTargetType"
+            aria-label="監査ログの対象種別で絞り込む"
+            value={auditTargetType}
+            onChange={(e) => onTargetTypeChange?.(e.target.value)}
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
+          >
+            <option value="">すべての対象</option>
+            <option value="folder">フォルダ</option>
+            <option value="file">ファイル</option>
+            <option value="permission">権限</option>
+          </select>
           <select
             id="audit-status-filter"
             name="auditStatusFilter"
@@ -142,7 +208,9 @@ export function AuditLogSection({
                   auditPresetActions.length > 0 &&
                   isRootFolderAuditAction(log.action)
                     ? 'bg-blue-50/40'
-                    : ''
+                    : prefixHighlight && isPermissionAuditAction(log.action)
+                      ? 'bg-indigo-50/40'
+                      : ''
                 }`}
               >
                 <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[0.6875rem] text-slate-600">

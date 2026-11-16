@@ -6,12 +6,23 @@ export const ROOT_FOLDER_AUDIT_ACTIONS = [
   'admin.root_folder.restore',
 ] as const;
 
+/** Prefix preset used by the permission-audit "show audit logs" action. */
+export const PERMISSION_AUDIT_ACTION_PREFIXES = [
+  'permission.',
+  'admin.root_folder.',
+  'admin.permission.',
+] as const;
+
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.root_folder.create': 'ルートフォルダ作成',
   'admin.root_folder.owner_transfer': '所有者移管',
   'admin.root_folder.co_owner_grant': '共同所有者付与',
   'admin.root_folder.archive': 'ルートフォルダのアーカイブ',
   'admin.root_folder.restore': 'ルートフォルダの復元',
+  'admin.permission.bulk_grant': '権限の一括付与',
+  'admin.root_folder.bulk_transfer': '所有者の一括移管',
+  'admin.root_folder.bulk_archive': 'ルートフォルダの一括アーカイブ',
+  'admin.root_folder.bulk_restore': 'ルートフォルダの一括復元',
   'admin.policy_updated': 'テナントポリシー更新',
   'shared_link.create': '共有リンク作成',
   'shared_link.update': '共有リンク権限変更',
@@ -39,4 +50,10 @@ export function formatAuditActionLabel(action: string): string {
 
 export function isRootFolderAuditAction(action: string): boolean {
   return (ROOT_FOLDER_AUDIT_ACTIONS as readonly string[]).includes(action);
+}
+
+export function isPermissionAuditAction(action: string): boolean {
+  return PERMISSION_AUDIT_ACTION_PREFIXES.some((prefix) =>
+    action.startsWith(prefix)
+  );
 }

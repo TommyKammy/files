@@ -31,7 +31,10 @@ import type {
   TenantPolicyRow,
   WaterfallInheritanceConflict,
 } from '@/types/files';
-import { ROOT_FOLDER_AUDIT_ACTIONS } from '@/lib/admin-audit';
+import {
+  PERMISSION_AUDIT_ACTION_PREFIXES,
+  ROOT_FOLDER_AUDIT_ACTIONS,
+} from '@/lib/admin-audit';
 
 export function useGovernanceDashboard() {
   const syncStore = getWorkspaceSyncStore();
@@ -96,6 +99,11 @@ export function useGovernanceDashboard() {
   } | null>(null);
   const [auditActionFilter, setAuditActionFilter] = useState('');
   const [auditActionPreset, setAuditActionPreset] = useState<string[]>([]);
+  const [auditActionPrefixFilter, setAuditActionPrefixFilter] = useState('');
+  const [auditActionPrefixPreset, setAuditActionPrefixPreset] = useState<
+    string[]
+  >([]);
+  const [auditTargetType, setAuditTargetType] = useState('');
   const [auditStatusFilter, setAuditStatusFilter] = useState<'' | 'allowed' | 'blocked'>('');
   const [auditLoadingMore, setAuditLoadingMore] = useState(false);
 
@@ -134,6 +142,13 @@ export function useGovernanceDashboard() {
               action: auditActionFilter.trim() || undefined,
               actions:
                 auditActionPreset.length > 0 ? auditActionPreset : undefined,
+              actionPrefixes: [
+                ...auditActionPrefixPreset,
+                ...(auditActionPrefixFilter.trim()
+                  ? [auditActionPrefixFilter.trim()]
+                  : []),
+              ].filter(Boolean),
+              targetType: auditTargetType || undefined,
               status: auditStatusFilter || undefined,
               limit: 50,
             }),
@@ -178,6 +193,9 @@ export function useGovernanceDashboard() {
       labelFilter,
       auditActionFilter,
       auditActionPreset,
+      auditActionPrefixFilter,
+      auditActionPrefixPreset,
+      auditTargetType,
       auditStatusFilter,
     ]
   );
@@ -527,9 +545,7 @@ export function useGovernanceDashboard() {
     }
   }
 
-  function handleShowRootFolderAudit() {
-    setAuditActionFilter('');
-    setAuditActionPreset([...ROOT_FOLDER_AUDIT_ACTIONS]);
+  function scrollToAuditLogs() {
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
         document
@@ -539,13 +555,47 @@ export function useGovernanceDashboard() {
     });
   }
 
+  function handleShowRootFolderAudit() {
+    setAuditActionFilter('');
+    setAuditActionPreset([...ROOT_FOLDER_AUDIT_ACTIONS]);
+    setAuditActionPrefixFilter('');
+    setAuditActionPrefixPreset([]);
+    setAuditTargetType('');
+    scrollToAuditLogs();
+  }
+
+  function handleShowPermissionAudit() {
+    setAuditActionFilter('');
+    setAuditActionPreset([]);
+    setAuditStatusFilter('');
+    setAuditActionPrefixFilter('');
+    setAuditActionPrefixPreset([...PERMISSION_AUDIT_ACTION_PREFIXES]);
+    setAuditTargetType('');
+    scrollToAuditLogs();
+  }
+
   function handleClearAuditPreset() {
     setAuditActionPreset([]);
   }
 
+  function handleClearAuditPrefixPreset() {
+    setAuditActionPrefixPreset([]);
+  }
+
   function handleAuditActionFilterChange(value: string) {
     setAuditActionPreset([]);
+    setAuditActionPrefixPreset([]);
+    setAuditActionPrefixFilter('');
     setAuditActionFilter(value);
+  }
+
+  function handleAuditActionPrefixFilterChange(value: string) {
+    setAuditActionPrefixPreset([]);
+    setAuditActionPrefixFilter(value);
+  }
+
+  function handleAuditTargetTypeChange(value: string) {
+    setAuditTargetType(value);
   }
 
   async function handleLoadMoreLogs() {
@@ -555,6 +605,13 @@ export function useGovernanceDashboard() {
       const res = await fetchAuditLogs({
         action: auditActionFilter.trim() || undefined,
         actions: auditActionPreset.length > 0 ? auditActionPreset : undefined,
+        actionPrefixes: [
+          ...auditActionPrefixPreset,
+          ...(auditActionPrefixFilter.trim()
+            ? [auditActionPrefixFilter.trim()]
+            : []),
+        ].filter(Boolean),
+        targetType: auditTargetType || undefined,
         status: auditStatusFilter || undefined,
         cursorCreatedAt: auditCursor.createdAt,
         cursorId: auditCursor.id,
@@ -608,11 +665,18 @@ export function useGovernanceDashboard() {
     auditCursor,
     auditActionFilter,
     auditActionPreset,
+    auditActionPrefixFilter,
+    auditActionPrefixPreset,
+    auditTargetType,
     auditStatusFilter,
     auditLoadingMore,
     setLabelFilter,
     setAuditActionFilter: handleAuditActionFilterChange,
+    setAuditActionPrefixFilter: handleAuditActionPrefixFilterChange,
+    setAuditTargetType: handleAuditTargetTypeChange,
     setAuditStatusFilter,
+    handleClearAuditPrefixPreset,
+    handleShowPermissionAudit,
     setPolicy,
     loadAll,
     toggleSelection,

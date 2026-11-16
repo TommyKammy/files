@@ -9,6 +9,7 @@ import {
 import Link from 'next/link';
 import { AccessControlSettingsSection } from '@/components/admin/AccessControlSettingsSection';
 import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
+import { AdminPermissionAuditSection } from '@/components/admin/AdminPermissionAuditSection';
 import { AdminRootFoldersSection } from '@/components/admin/AdminRootFoldersSection';
 import { AdminTrashSection } from '@/components/admin/AdminTrashSection';
 import { AuditLogSection } from '@/components/admin/AuditLogSection';
@@ -55,10 +56,15 @@ export function HybridGovernanceDashboard() {
     auditCursor,
     auditActionFilter,
     auditActionPreset,
+    auditActionPrefixFilter,
+    auditActionPrefixPreset,
+    auditTargetType,
     auditStatusFilter,
     auditLoadingMore,
     setLabelFilter,
     setAuditActionFilter,
+    setAuditActionPrefixFilter,
+    setAuditTargetType,
     setAuditStatusFilter,
     setPolicy,
     loadAll,
@@ -73,7 +79,9 @@ export function HybridGovernanceDashboard() {
     handlePermissionInheritanceUpdate,
     handleInvitePolicyUpdate,
     handleShowRootFolderAudit,
+    handleShowPermissionAudit,
     handleClearAuditPreset,
+    handleClearAuditPrefixPreset,
     handleLoadMoreLogs,
   } = useGovernanceDashboard();
 
@@ -245,6 +253,11 @@ export function HybridGovernanceDashboard() {
 
         <AdminTrashSection user={user} />
 
+        <AdminPermissionAuditSection
+          user={user}
+          onShowPermissionAudit={handleShowPermissionAudit}
+        />
+
         <AdminRootFoldersSection
           user={user}
           onShowAuditLogs={handleShowRootFolderAudit}
@@ -254,13 +267,19 @@ export function HybridGovernanceDashboard() {
           auditLogs={auditLogs}
           auditCursor={auditCursor}
           auditActionFilter={auditActionFilter}
+          auditActionPrefixFilter={auditActionPrefixFilter}
+          auditActionPrefixes={auditActionPrefixPreset}
+          auditTargetType={auditTargetType}
           auditStatusFilter={auditStatusFilter}
           auditLoadingMore={auditLoadingMore}
           auditPresetActions={auditActionPreset}
           onActionFilterChange={setAuditActionFilter}
+          onActionPrefixFilterChange={setAuditActionPrefixFilter}
+          onTargetTypeChange={setAuditTargetType}
           onStatusFilterChange={setAuditStatusFilter}
           onLoadMore={handleLoadMoreLogs}
           onClearPreset={handleClearAuditPreset}
+          onClearPrefixPreset={handleClearAuditPrefixPreset}
         />
 
       </main>
