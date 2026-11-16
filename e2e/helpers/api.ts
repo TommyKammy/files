@@ -392,7 +392,7 @@ export async function restoreTrashFile(
 export async function uploadFile(
   actor: ApiActor,
   input: {
-    folderId: string;
+    folderId: string | null;
     name: string;
     content: string | Buffer;
     mimeType?: string;

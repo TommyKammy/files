@@ -83,6 +83,14 @@ export function FolderTreeRow({
           <Folder className="h-3.5 w-3.5 shrink-0 text-[#676b72]" />
         )}
         <span className="truncate">{folder.name}</span>
+        {folder.accessMode === 'path' && (
+          <span
+            title="途中階層 (パスのみ): 子孫フォルダへ移動するための経路です"
+            className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[0.5625rem] font-medium text-sky-700"
+          >
+            パス専用
+          </span>
+        )}
       </button>
 
       {folder.classification === 'confidential' && (

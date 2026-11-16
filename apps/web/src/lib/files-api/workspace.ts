@@ -1,4 +1,5 @@
 import type {
+  AccessMode,
   BatchMoveWorkspaceResponse,
   BreadcrumbItem,
   Capability,
@@ -14,6 +15,7 @@ import type {
   RestoreFolderOptionsPayload,
   RestoreFolderOptionsResponse,
   SearchResultItem,
+  SharedItemEntry,
   TrashBulkItemRef,
   TrashBulkResponse,
   TrashEmptyResponse,
@@ -62,10 +64,19 @@ export function listFolderChildren(
 
 export function getFolderBreadcrumbs(folderId: string): Promise<{
   breadcrumbs: BreadcrumbItem[];
-  effectiveRole?: ResourceRole;
+  accessMode?: AccessMode | null;
+  effectiveRole?: ResourceRole | null;
   capabilities?: Capability[];
 }> {
   return apiFetch(`/api/folders/${encodeURIComponent(folderId)}/breadcrumbs`);
+}
+
+/** GET /api/shared-items — items directly granted to the signed-in user/groups. */
+export function listSharedItems(
+  limit = 200,
+  signal?: AbortSignal
+): Promise<{ items: SharedItemEntry[] }> {
+  return apiFetch(`/api/shared-items?limit=${limit}`, { signal });
 }
 
 export function listTrash(params: {

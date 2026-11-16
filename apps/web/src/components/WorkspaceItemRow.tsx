@@ -113,7 +113,10 @@ export function WorkspaceItemRow({
     file && (file.upload_state === 'pending' || file.optimistic)
   );
   const isDropEligible = Boolean(
-    folder && !isTrashView && folder.deleted_at == null
+    folder &&
+      !isTrashView &&
+      folder.deleted_at == null &&
+      folder.accessMode !== 'path'
   );
   const trashMeta = isTrashView ? folder ?? file : null;
   const trashDeletedAt = isTrashView
@@ -275,6 +278,15 @@ export function WorkspaceItemRow({
               <FileText className="h-4 w-4 shrink-0 text-[#6b6f76]" />
             )}
             <span>{folder ? folder.name : file!.name}</span>
+            {folder?.accessMode === 'path' && (
+              <span
+                data-testid="folder-path-only-badge"
+                title="途中階層 (パスのみ): 子孫フォルダへ移動するための経路です"
+                className="rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[0.625rem] font-medium text-sky-700"
+              >
+                パス専用
+              </span>
+            )}
             {lock && (
               <span
                 title={`${lock.ownerName} が${lock.mode === 'desktop_exclusive' ? 'デスクトップで編集中' : 'Webで編集中'}`}

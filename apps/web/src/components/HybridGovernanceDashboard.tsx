@@ -43,6 +43,11 @@ export function HybridGovernanceDashboard() {
     folderStructureError,
     folderStructureNotice,
     closedModeReport,
+    permissionInheritanceMode,
+    inheritanceSaving,
+    inheritanceError,
+    inheritanceNotice,
+    inheritanceConflictReport,
     auditLogs,
     auditCursor,
     auditActionFilter,
@@ -62,6 +67,7 @@ export function HybridGovernanceDashboard() {
     handlePolicySubmit,
     handleAdvancedRolesUpdate,
     handleFolderStructureUpdate,
+    handlePermissionInheritanceUpdate,
     handleShowRootFolderAudit,
     handleClearAuditPreset,
     handleLoadMoreLogs,
@@ -207,8 +213,15 @@ export function HybridGovernanceDashboard() {
           folderStructureError={folderStructureError}
           folderStructureNotice={folderStructureNotice}
           closedModeReport={closedModeReport}
+          permissionInheritanceMode={permissionInheritanceMode}
+          inheritanceSaving={inheritanceSaving}
+          inheritanceError={inheritanceError}
+          inheritanceNotice={inheritanceNotice}
+          canManagePermissionInheritance={user.role === 'sys_admin'}
+          inheritanceConflictReport={inheritanceConflictReport}
           onSave={handleAdvancedRolesUpdate}
           onSaveFolderStructureMode={handleFolderStructureUpdate}
+          onSavePermissionInheritanceMode={handlePermissionInheritanceUpdate}
           onDirtyChange={setAdvancedRolesDirty}
         />
 

@@ -138,6 +138,7 @@ function isUnauthorizedError(err: unknown): boolean {
           dirKey: ROOT_DIR_KEY,
           folderId: null,
           effectiveRole: 'editor',
+          accessMode: 'full',
           folderIds: ctx.rootFolderIds,
           fileIds: [],
           nextCursor: null,
@@ -319,6 +320,7 @@ function isUnauthorizedError(err: unknown): boolean {
             dirKey: ROOT_DIR_KEY,
             folderId: null,
             effectiveRole: 'editor',
+            accessMode: 'full',
             folderIds: ctx.rootFolderIds,
             fileIds: [],
             nextCursor: rootsRes.nextCursor,
@@ -332,10 +334,19 @@ function isUnauthorizedError(err: unknown): boolean {
             includeBreadcrumbs: true,
             signal: options?.signal,
           });
+          const pathOnly = res.accessMode === 'path';
+          // Path-only access must never keep stale cached files from a
+          // previously broader grant.
+          if (pathOnly) {
+            for (const fileId of cached?.fileIds ?? []) {
+              ctx.filesById.delete(fileId);
+            }
+          }
           if (res.folder) {
             ctx.foldersById.set(res.folder.id, {
               ...res.folder,
-              effectiveRole: res.effectiveRole,
+              effectiveRole: res.effectiveRole ?? undefined,
+              accessMode: res.accessMode ?? null,
             });
           }
           for (const f of res.folders) {
@@ -347,10 +358,11 @@ function isUnauthorizedError(err: unknown): boolean {
           ctx.directoriesByKey.set(dirKey, {
             dirKey,
             folderId,
-            effectiveRole: res.effectiveRole,
+            effectiveRole: res.effectiveRole ?? 'previewer',
             capabilities: res.capabilities,
+            accessMode: res.accessMode ?? null,
             folderIds: res.folders.map((f) => f.id),
-            fileIds: res.files.map((fl) => fl.id),
+            fileIds: pathOnly ? [] : res.files.map((fl) => fl.id),
             nextCursor: res.nextCursor,
             breadcrumbs: res.breadcrumbs ?? cached?.breadcrumbs ?? [],
             lastAccessedAt: nowMs,
@@ -423,14 +435,18 @@ function isUnauthorizedError(err: unknown): boolean {
       for (const f of res.folders) {
         if (!nextFolderIds.includes(f.id)) nextFolderIds.push(f.id);
       }
+      const pathOnly = (res.accessMode ?? current.accessMode) === 'path';
       const nextFileIds = [...current.fileIds];
-      for (const fl of res.files) {
-        if (!nextFileIds.includes(fl.id)) nextFileIds.push(fl.id);
+      if (!pathOnly) {
+        for (const fl of res.files) {
+          if (!nextFileIds.includes(fl.id)) nextFileIds.push(fl.id);
+        }
       }
       ctx.directoriesByKey.set(dirKey, {
         ...current,
+        accessMode: res.accessMode ?? current.accessMode ?? null,
         folderIds: nextFolderIds,
-        fileIds: nextFileIds,
+        fileIds: pathOnly ? [] : nextFileIds,
         nextCursor: res.nextCursor,
         lastAccessedAt: nowMs,
       });

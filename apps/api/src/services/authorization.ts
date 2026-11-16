@@ -58,6 +58,15 @@ export interface TargetMetadata {
   classification: ClassificationLabel;
   deletedAt: string | null;
   uploadState?: 'pending' | 'active' | 'failed';
+  /**
+   * How the caller reaches the target:
+   * - `full`: at least one grant applies (direct or inherited).
+   * - `path`: no grant on this folder itself, but an accessible descendant
+   *   exists. Only `folder.traverse` is exposed so intermediate ancestors leak
+   *   no sibling names, files, or delta metadata.
+   * - `null`: no access at all.
+   */
+  accessMode: 'full' | 'path' | null;
   /** Non-linearly composed effective role (may be null when no grant applies). */
   effectiveRole: ResourceRole | null;
   /** Capability array matching `effectiveRole`, ready to return from APIs. */
@@ -149,6 +158,142 @@ export const GRANTEE_MATCH_SQL = `(
 export const FILE_PREVIEW_ROLE_SQL = capabilityRoleSqlList('item.preview');
 
 /**
+ * SQL predicate for `accessMode: 'path'`: the folder aliased \`alias\` is itself
+ * directly granted, or contains an accessible descendant folder / directly
+ * shared active file. Binds six user ids (self, descendant folder, file).
+ */
+export function reachablePathSql(alias: string): string {
+  return `(
+  EXISTS (
+    SELECT 1 FROM permissions p
+     WHERE p.tenant_id = ${alias}.tenant_id
+       AND p.target_type = 'folder'
+       AND p.target_id = ${alias}.id
+       AND ${GRANTEE_MATCH_SQL}
+  )
+  OR EXISTS (
+    SELECT 1
+      FROM folder_closures fc
+      JOIN folders d
+        ON d.tenant_id = fc.tenant_id
+       AND d.id = fc.descendant_id
+       AND d.deleted_at IS NULL
+     WHERE fc.tenant_id = ${alias}.tenant_id
+       AND fc.ancestor_id = ${alias}.id
+       AND fc.depth > 0
+       AND EXISTS (
+         SELECT 1 FROM permissions p
+          WHERE p.tenant_id = fc.tenant_id
+            AND p.target_type = 'folder'
+            AND p.target_id = d.id
+            AND ${GRANTEE_MATCH_SQL}
+       )
+  )
+  OR EXISTS (
+    SELECT 1
+      FROM files fl
+     WHERE fl.tenant_id = ${alias}.tenant_id
+       AND fl.deleted_at IS NULL
+       AND fl.upload_state = 'active'
+       AND (
+         fl.folder_id = ${alias}.id
+         OR fl.folder_id IN (
+           SELECT fc2.descendant_id
+             FROM folder_closures fc2
+            WHERE fc2.tenant_id = ${alias}.tenant_id
+              AND fc2.ancestor_id = ${alias}.id
+              AND fc2.depth > 0
+         )
+       )
+       AND EXISTS (
+         SELECT 1 FROM permissions p
+          WHERE p.tenant_id = fl.tenant_id
+            AND p.target_type = 'file'
+            AND p.target_id = fl.id
+            AND p.role IN (${FILE_PREVIEW_ROLE_SQL})
+            AND ${GRANTEE_MATCH_SQL}
+       )
+  )
+)`;
+}
+
+/**
+ * True when the user can reach at least one item below `folderId`:
+ * - a strict descendant folder carrying any direct/group folder grant, or
+ * - an active file in the folder/subtree carrying a direct file grant with
+ *   `item.preview` (directly shared files are reachable only through preview).
+ *
+ * Used to derive `accessMode: 'path'` for intermediate ancestors without
+ * granting `folder.list`.
+ */
+async function folderHasReachableDescendant(
+  db: D1Database,
+  user: Pick<AuthUser, 'id' | 'tenantId'>,
+  folderId: string
+): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `SELECT 1 AS hit
+         FROM folder_closures fc
+         JOIN folders d
+           ON d.tenant_id = fc.tenant_id
+          AND d.id = fc.descendant_id
+          AND d.deleted_at IS NULL
+        WHERE fc.tenant_id = ?
+          AND fc.ancestor_id = ?
+          AND fc.depth > 0
+          AND EXISTS (
+            SELECT 1
+              FROM permissions p
+             WHERE p.tenant_id = fc.tenant_id
+               AND p.target_type = 'folder'
+               AND p.target_id = d.id
+               AND ${GRANTEE_MATCH_SQL}
+          )
+       UNION ALL
+       SELECT 1 AS hit
+         FROM files fl
+        WHERE fl.tenant_id = ?
+          AND fl.deleted_at IS NULL
+          AND fl.upload_state = 'active'
+          AND (
+            fl.folder_id = ?
+            OR fl.folder_id IN (
+              SELECT fc2.descendant_id
+                FROM folder_closures fc2
+               WHERE fc2.tenant_id = ?
+                 AND fc2.ancestor_id = ?
+                 AND fc2.depth > 0
+            )
+          )
+          AND EXISTS (
+            SELECT 1
+              FROM permissions p
+             WHERE p.tenant_id = fl.tenant_id
+               AND p.target_type = 'file'
+               AND p.target_id = fl.id
+               AND p.role IN (${FILE_PREVIEW_ROLE_SQL})
+               AND ${GRANTEE_MATCH_SQL}
+          )
+       LIMIT 1`
+    )
+    .bind(
+      user.tenantId,
+      folderId,
+      user.id,
+      user.id,
+      user.tenantId,
+      folderId,
+      user.tenantId,
+      folderId,
+      user.id,
+      user.id
+    )
+    .first<{ hit: number }>();
+  return Boolean(row);
+}
+
+/**
  * Resolve effective RBAC access for a folder or file combining direct
  * permissions and ancestor folder permissions from `folder_closures` for the
  * user plus all their groups.
@@ -195,6 +340,26 @@ export async function resolveTargetAccess(
     if (!folder) return null;
     const grantedRoles = parseRoleList(folder.role_list);
     const access = synthesizeEffectiveAccess(grantedRoles);
+    if (grantedRoles.length > 0) {
+      return {
+        exists: true,
+        targetType: 'folder',
+        targetId: folder.id,
+        folderId: folder.id,
+        classification: folder.classification,
+        deletedAt: folder.deleted_at,
+        accessMode: 'full',
+        effectiveRole: access.effectiveRole,
+        capabilities: access.capabilities,
+        grantedRoles,
+      };
+    }
+
+    // Path-only traversal: no grant on this folder, but an accessible folder or
+    // directly shared active file exists below it. Expose `folder.traverse` only.
+    const pathReachable =
+      folder.deleted_at === null &&
+      (await folderHasReachableDescendant(db, user, folder.id));
     return {
       exists: true,
       targetType: 'folder',
@@ -202,8 +367,9 @@ export async function resolveTargetAccess(
       folderId: folder.id,
       classification: folder.classification,
       deletedAt: folder.deleted_at,
-      effectiveRole: access.effectiveRole,
-      capabilities: access.capabilities,
+      accessMode: pathReachable ? 'path' : null,
+      effectiveRole: null,
+      capabilities: pathReachable ? ['folder.traverse'] : [],
       grantedRoles,
     };
   }
@@ -266,6 +432,7 @@ export async function resolveTargetAccess(
     classification: file.classification,
     deletedAt: file.deleted_at,
     uploadState: file.upload_state,
+    accessMode: access.effectiveRole ? 'full' : null,
     effectiveRole: access.effectiveRole,
     capabilities: access.capabilities,
     grantedRoles: [...new Set(grantedRoles)],

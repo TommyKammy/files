@@ -8,6 +8,12 @@ import {
 } from '../../services/folder-structure';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
+import {
+  findWaterfallInheritanceConflicts,
+  getPermissionInheritanceMode,
+  isPermissionInheritanceMode,
+  type PermissionInheritanceMode,
+} from '../../services/permission-inheritance';
 import type { AiClassificationMode } from '../../types/classification';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -20,7 +26,8 @@ function parseFolderStructureMode(value: unknown): FolderStructureMode | null {
 
 function projectPolicy(
   policy: Record<string, unknown>,
-  folderStructureMode: FolderStructureMode
+  folderStructureMode: FolderStructureMode,
+  permissionInheritanceMode: PermissionInheritanceMode
 ): Record<string, unknown> {
   return {
     ...policy,
@@ -28,6 +35,7 @@ function projectPolicy(
     // for D1/backwards-compatible readers.
     advancedRolesEnabled: policy.advanced_roles_enabled === 1,
     folderStructureMode,
+    permissionInheritanceMode,
   };
 }
 
@@ -35,20 +43,41 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET / PATCH /api/admin/policies — tenant governance policy settings */
   routes.get('/policies', async (c) => {
     const user = getAuthenticatedUser(c);
-    const [policy, folderStructureMode] = await Promise.all([
-      c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
-        .bind(user.tenantId)
-        .first<Record<string, unknown>>(),
-      getFolderStructureMode(c.env.DB, user.tenantId),
-    ]);
-    const closedModeReport =
+    const [policy, folderStructureMode, permissionInheritanceMode] =
+      await Promise.all([
+        c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
+          .bind(user.tenantId)
+          .first<Record<string, unknown>>(),
+        getFolderStructureMode(c.env.DB, user.tenantId),
+        getPermissionInheritanceMode(c.env.DB, user.tenantId),
+      ]);
+    const [closedModeReport, inheritanceConflictReport] = await Promise.all([
       folderStructureMode === 'closed'
-        ? await buildClosedRootReport(c.env.DB, user.tenantId)
-        : null;
+        ? buildClosedRootReport(c.env.DB, user.tenantId)
+        : Promise.resolve(null),
+      findWaterfallInheritanceConflicts(c.env.DB, user.tenantId),
+    ]);
     return c.json({
-      policy: policy ? projectPolicy(policy, folderStructureMode) : null,
+      policy: policy
+        ? projectPolicy(policy, folderStructureMode, permissionInheritanceMode)
+        : null,
       folderStructureMode,
+      permissionInheritanceMode,
       ...(closedModeReport ? { closedModeReport } : {}),
+      inheritanceConflictReport,
+    });
+  });
+
+  /** GET /api/admin/policies/inheritance-conflicts — read-only review for sec_admin too */
+  routes.get('/policies/inheritance-conflicts', async (c) => {
+    const user = getAuthenticatedUser(c);
+    const [permissionInheritanceMode, conflicts] = await Promise.all([
+      getPermissionInheritanceMode(c.env.DB, user.tenantId),
+      findWaterfallInheritanceConflicts(c.env.DB, user.tenantId),
+    ]);
+    return c.json({
+      permissionInheritanceMode,
+      conflicts,
     });
   });
 
@@ -64,6 +93,7 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       aiAutoApplyThreshold?: number | null;
       advancedRolesEnabled?: boolean;
       folderStructureMode?: unknown;
+      permissionInheritanceMode?: unknown;
     } | null;
 
     if (!body || typeof body !== 'object') {
@@ -95,6 +125,29 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       }
       updates.push('folder_structure_mode = ?');
       binds.push(mode);
+    }
+
+    if (body.permissionInheritanceMode !== undefined) {
+      if (user.role !== 'sys_admin') {
+        return c.json(
+          {
+            error: 'Only sys_admin can change permission inheritance mode',
+            code: 'SYS_ADMIN_REQUIRED',
+          },
+          403
+        );
+      }
+      if (!isPermissionInheritanceMode(body.permissionInheritanceMode)) {
+        return c.json(
+          {
+            error: "permissionInheritanceMode must be 'additive' or 'waterfall'",
+            code: 'INVALID_PERMISSION_INHERITANCE_MODE',
+          },
+          400
+        );
+      }
+      updates.push('permission_inheritance_mode = ?');
+      binds.push(body.permissionInheritanceMode);
     }
 
     if (body.enforceCompanyOnlyLinks !== undefined) {
@@ -186,6 +239,9 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
           ...(body.folderStructureMode !== undefined
             ? { folderStructureMode: body.folderStructureMode }
             : {}),
+          ...(body.permissionInheritanceMode !== undefined
+            ? { permissionInheritanceMode: body.permissionInheritanceMode }
+            : {}),
           updatedAt: nowIso,
         },
         nowIso,
@@ -198,20 +254,28 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       eventKind: 'admin.policy_updated',
     });
 
-    const [updated, folderStructureMode] = await Promise.all([
-      c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
-        .bind(user.tenantId)
-        .first<Record<string, unknown>>(),
-      getFolderStructureMode(c.env.DB, user.tenantId),
-    ]);
-    const closedModeReport =
+    const [updated, folderStructureMode, permissionInheritanceMode] =
+      await Promise.all([
+        c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
+          .bind(user.tenantId)
+          .first<Record<string, unknown>>(),
+        getFolderStructureMode(c.env.DB, user.tenantId),
+        getPermissionInheritanceMode(c.env.DB, user.tenantId),
+      ]);
+    const [closedModeReport, inheritanceConflictReport] = await Promise.all([
       folderStructureMode === 'closed'
-        ? await buildClosedRootReport(c.env.DB, user.tenantId)
-        : null;
+        ? buildClosedRootReport(c.env.DB, user.tenantId)
+        : Promise.resolve(null),
+      findWaterfallInheritanceConflicts(c.env.DB, user.tenantId),
+    ]);
     return c.json({
-      policy: updated ? projectPolicy(updated, folderStructureMode) : null,
+      policy: updated
+        ? projectPolicy(updated, folderStructureMode, permissionInheritanceMode)
+        : null,
       folderStructureMode,
+      permissionInheritanceMode,
       ...(closedModeReport ? { closedModeReport } : {}),
+      inheritanceConflictReport,
     });
   });
 }

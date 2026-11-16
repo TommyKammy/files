@@ -1,5 +1,6 @@
 import type { AuthUser } from '../types/api';
 import { FILE_PREVIEW_ROLE_SQL, GRANTEE_MATCH_SQL } from './authorization';
+import { capabilityRoleSqlList } from './capabilities';
 import type { ConditionalWriteGuard } from './statement-guard';
 
 export type SyncEntityType =
@@ -258,6 +259,9 @@ export async function listAuthorizedSyncDeltas(
                        AND p.target_id = fc.ancestor_id
                      WHERE fc.tenant_id = sc.tenant_id
                        AND fc.descendant_id = sc.folder_id
+                       -- Only principals that can view permissions receive
+                       -- other users' permission-change deltas.
+                       AND p.role IN (${capabilityRoleSqlList('permission.view')})
                        AND ${GRANTEE_MATCH_SQL}
                   )
                 )
@@ -269,6 +273,7 @@ export async function listAuthorizedSyncDeltas(
                      WHERE p.tenant_id = sc.tenant_id
                        AND p.target_type = 'file'
                        AND p.target_id = json_extract(sc.payload_json, '$.targetId')
+                       AND p.role IN (${capabilityRoleSqlList('permission.view')})
                        AND ${GRANTEE_MATCH_SQL}
                   )
                 )

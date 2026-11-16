@@ -4,6 +4,7 @@ import {
   parseSearchQuery,
 } from '@/lib/keyboard-shortcuts';
 import type {
+  AccessMode,
   BreadcrumbItem,
   Capability,
   ClassificationLabel,
@@ -21,6 +22,7 @@ export interface DirectoryViewModel {
   folder: FolderSummary | null;
   effectiveRole: ResourceRole;
   capabilities?: Capability[];
+  accessMode?: AccessMode | null;
   folders: FolderSummary[];
   files: FileItem[];
   breadcrumbs: BreadcrumbItem[];
@@ -74,6 +76,9 @@ export function getDirectoryView(
       capabilities: folderId
         ? ctx.foldersById.get(folderId)?.capabilities
         : undefined,
+      accessMode: folderId
+        ? ctx.foldersById.get(folderId)?.accessMode ?? null
+        : 'full',
       folders: [],
       files: [],
       breadcrumbs: [],
@@ -87,9 +92,13 @@ export function getDirectoryView(
     if (f && f.deleted_at == null) folders.push(f);
   }
   const files: FileItem[] = [];
-  for (const id of record.fileIds) {
-    const fl = ctx.filesById.get(id);
-    if (fl && fl.deleted_at == null) files.push(fl);
+  // Defense in depth: a path-only directory must never render cached files,
+  // even if an older IndexedDB snapshot still references them.
+  if (record.accessMode !== 'path') {
+    for (const id of record.fileIds) {
+      const fl = ctx.filesById.get(id);
+      if (fl && fl.deleted_at == null) files.push(fl);
+    }
   }
 
   return {
@@ -100,6 +109,7 @@ export function getDirectoryView(
     folder: folderId ? ctx.foldersById.get(folderId) ?? null : null,
     effectiveRole: record.effectiveRole,
     capabilities: record.capabilities,
+    accessMode: record.accessMode ?? null,
     folders,
     files,
     breadcrumbs: record.breadcrumbs,
@@ -178,6 +188,8 @@ export function searchCachedWorkspaceItems(
     .filter((file) => {
       if (file.deleted_at != null) return false;
       if (file.upload_state === 'pending') return false;
+      const dir = ctx.directoriesByKey.get(dirKeyForFolder(file.folder_id));
+      if (dir?.accessMode === 'path') return false;
       const parentName = file.folder_id
         ? ctx.foldersById.get(file.folder_id)?.name ?? null
         : null;

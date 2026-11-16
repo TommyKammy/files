@@ -1,6 +1,10 @@
 import type { AuthUser, ClassificationLabel } from '../../types/api';
-import { can } from '../capabilities';
-import { resolveTargetAccess, type TargetMetadata } from '../authorization';
+import { can, type Capability } from '../capabilities';
+import {
+  resolveTargetAccess,
+  resolveUserAccessForFolders,
+  type TargetMetadata,
+} from '../authorization';
 
 export const MAX_FOLDER_DEPTH = 20;
 export const INLINE_CLASSIFICATION_PROPAGATION_LIMIT = 100;
@@ -41,6 +45,10 @@ export interface BreadcrumbItem {
   classification: ClassificationLabel;
   depth: number;
   version: number;
+  /** `full` when a grant applies to this crumb, `path` for traversal-only ancestors. */
+  accessMode?: 'full' | 'path' | null;
+  effectiveRole?: string | null;
+  capabilities?: Capability[];
 }
 
 export interface ClassificationStatsBucket {
@@ -133,8 +141,8 @@ export interface FolderBreadcrumbsResult {
 
 /**
  * Resolve breadcrumbs together with the composed access used for the
- * `folder.list` check, so the endpoint can return `effectiveRole` and
- * `capabilities` consistently with the roots/children APIs.
+ * `folder.traverse` check, so the endpoint can return `effectiveRole`,
+ * `capabilities` and per-crumb `accessMode` consistently with roots/children.
  */
 export async function resolveFolderBreadcrumbs(
   db: D1Database,
@@ -145,14 +153,39 @@ export async function resolveFolderBreadcrumbs(
   if (!access || access.deletedAt !== null) {
     throw new FolderServiceError(404, 'NOT_FOUND', 'Folder not found');
   }
-  if (!can(access.capabilities, 'folder.list')) {
+  // Path-only ancestors must be able to render breadcrumbs to reach deep targets.
+  if (!can(access.capabilities, 'folder.traverse')) {
     throw new FolderServiceError(403, 'FORBIDDEN', 'Forbidden');
   }
 
-  return {
-    breadcrumbs: await fetchFolderBreadcrumbsRows(db, user.tenantId, folderId),
-    access,
-  };
+  const rows = await fetchFolderBreadcrumbsRows(db, user.tenantId, folderId);
+  const crumbAccess = await resolveUserAccessForFolders(
+    db,
+    user.tenantId,
+    user.id,
+    rows.map((row) => row.id)
+  );
+  const breadcrumbs = rows.map((row): BreadcrumbItem => {
+    const resolved = crumbAccess.get(row.id);
+    if (resolved?.effectiveRole) {
+      return {
+        ...row,
+        accessMode: 'full',
+        effectiveRole: resolved.effectiveRole,
+        capabilities: resolved.capabilities,
+      };
+    }
+    // Every non-granted ancestor in an authorized breadcrumb chain only exists
+    // as a traversal path toward the authorized target.
+    return {
+      ...row,
+      accessMode: 'path',
+      effectiveRole: null,
+      capabilities: ['folder.traverse'],
+    };
+  });
+
+  return { breadcrumbs, access };
 }
 
 export async function getFolderBreadcrumbs(

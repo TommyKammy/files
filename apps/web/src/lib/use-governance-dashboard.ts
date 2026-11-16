@@ -10,6 +10,7 @@ import {
   fetchAdminSharedLinks,
   fetchAdminStorageStats,
   fetchAuditLogs,
+  fetchInheritanceConflicts,
   updateAdminPolicies,
 } from '@/lib/files-api';
 import { AdminAiBatchCoalescer } from '@/lib/mutation-outbox';
@@ -24,8 +25,10 @@ import type {
   ClassificationLabel,
   ClosedRootReport,
   FolderStructureMode,
+  PermissionInheritanceMode,
   StorageStatsResponse,
   TenantPolicyRow,
+  WaterfallInheritanceConflict,
 } from '@/types/files';
 import { ROOT_FOLDER_AUDIT_ACTIONS } from '@/lib/admin-audit';
 
@@ -65,6 +68,16 @@ export function useGovernanceDashboard() {
   >(null);
   const [closedModeReport, setClosedModeReport] =
     useState<ClosedRootReport | null>(null);
+  const [permissionInheritanceMode, setPermissionInheritanceMode] =
+    useState<PermissionInheritanceMode>('additive');
+  const [inheritanceSaving, setInheritanceSaving] = useState(false);
+  const [inheritanceError, setInheritanceError] = useState<string | null>(null);
+  const [inheritanceNotice, setInheritanceNotice] = useState<string | null>(
+    null
+  );
+  const [inheritanceConflictReport, setInheritanceConflictReport] = useState<
+    WaterfallInheritanceConflict[]
+  >([]);
 
   function setAdvancedRolesDirty(dirty: boolean) {
     advancedRolesDirtyRef.current = dirty;
@@ -102,21 +115,24 @@ export function useGovernanceDashboard() {
         setError(null);
       }
       try {
-        const [statsRes, aiRes, linksRes, policyRes, logsRes] = await Promise.all([
-          fetchAdminStorageStats(),
-          fetchAdminAiSuggestions({
-            suggestedLabel: labelFilter === 'all' ? undefined : labelFilter,
-            limit: 50,
-          }),
-          fetchAdminSharedLinks(50),
-          fetchAdminPolicies(),
-          fetchAuditLogs({
-            action: auditActionFilter.trim() || undefined,
-            actions: auditActionPreset.length > 0 ? auditActionPreset : undefined,
-            status: auditStatusFilter || undefined,
-            limit: 50,
-          }),
-        ]);
+        const [statsRes, aiRes, linksRes, policyRes, logsRes, conflictsRes] =
+          await Promise.all([
+            fetchAdminStorageStats(),
+            fetchAdminAiSuggestions({
+              suggestedLabel: labelFilter === 'all' ? undefined : labelFilter,
+              limit: 50,
+            }),
+            fetchAdminSharedLinks(50),
+            fetchAdminPolicies(),
+            fetchAuditLogs({
+              action: auditActionFilter.trim() || undefined,
+              actions:
+                auditActionPreset.length > 0 ? auditActionPreset : undefined,
+              status: auditStatusFilter || undefined,
+              limit: 50,
+            }),
+            fetchInheritanceConflicts(),
+          ]);
         setStats(statsRes);
         setSuggestions(aiRes.suggestions);
         setSelectedIds(new Set());
@@ -127,6 +143,12 @@ export function useGovernanceDashboard() {
           setPolicy(policyRes.policy);
         }
         setClosedModeReport(policyRes.closedModeReport ?? null);
+        setPermissionInheritanceMode(
+          conflictsRes.permissionInheritanceMode ??
+            policyRes.permissionInheritanceMode ??
+            'additive'
+        );
+        setInheritanceConflictReport(conflictsRes.conflicts ?? []);
         setAuditLogs(logsRes.logs);
         setAuditCursor(logsRes.nextCursor);
       } catch (err) {
@@ -181,6 +203,7 @@ export function useGovernanceDashboard() {
         setSharedLinks([]);
         setAuditLogs([]);
         setSelectedIds(new Set());
+        setInheritanceConflictReport([]);
         setError(
           'アカウント停止またはセッション失効のため管理ダッシュボードデータを消去しました。'
         );
@@ -422,6 +445,46 @@ export function useGovernanceDashboard() {
     }
   }
 
+  async function handlePermissionInheritanceUpdate(
+    nextMode: PermissionInheritanceMode
+  ): Promise<boolean> {
+    if (inheritanceSaving) return false;
+    setInheritanceSaving(true);
+    setInheritanceError(null);
+    setInheritanceNotice(null);
+    try {
+      const res = await updateAdminPolicies({
+        permissionInheritanceMode: nextMode,
+      });
+      setPolicy(res.policy);
+      setPermissionInheritanceMode(
+        res.permissionInheritanceMode ??
+          res.policy.permissionInheritanceMode ??
+          nextMode
+      );
+      setInheritanceConflictReport(res.inheritanceConflictReport ?? []);
+      void syncStore.bootstrap({ force: true });
+      const conflictCount = res.inheritanceConflictReport?.length ?? 0;
+      setInheritanceNotice(
+        nextMode === 'waterfall'
+          ? `権限継承モードを Waterfall (親優先) に変更しました。既存の子上書き ${
+              conflictCount > 0 ? `${conflictCount} 件` : '0 件'
+            } は自動削除されず、競合レポートに表示されています。`
+          : '権限継承モードを Additive (加算) に変更しました。親と子の権限は capability 和集合で合成されます。'
+      );
+      return true;
+    } catch (err) {
+      setInheritanceError(
+        err instanceof ApiClientError
+          ? err.message
+          : '権限継承モードの更新に失敗しました'
+      );
+      return false;
+    } finally {
+      setInheritanceSaving(false);
+    }
+  }
+
   function handleShowRootFolderAudit() {
     setAuditActionFilter('');
     setAuditActionPreset([...ROOT_FOLDER_AUDIT_ACTIONS]);
@@ -491,6 +554,11 @@ export function useGovernanceDashboard() {
     folderStructureError,
     folderStructureNotice,
     closedModeReport,
+    permissionInheritanceMode,
+    inheritanceSaving,
+    inheritanceError,
+    inheritanceNotice,
+    inheritanceConflictReport,
     auditLogs,
     auditCursor,
     auditActionFilter,
@@ -510,6 +578,7 @@ export function useGovernanceDashboard() {
     handlePolicySubmit,
     handleAdvancedRolesUpdate,
     handleFolderStructureUpdate,
+    handlePermissionInheritanceUpdate,
     handleShowRootFolderAudit,
     handleClearAuditPreset,
     handleLoadMoreLogs,

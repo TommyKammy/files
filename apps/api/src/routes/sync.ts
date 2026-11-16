@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import {
   getAuthenticatedUser,
   GRANTEE_MATCH_SQL,
+  reachablePathSql,
 } from '../services/authorization';
 import {
   parseRoleList,
@@ -21,6 +22,10 @@ import {
 } from '../services/crypto-utils';
 import type { FolderRow } from '../services/folder-closure-service';
 import { getFolderStructureMode } from '../services/folder-structure';
+import {
+  getPermissionInheritanceMode,
+  isPermissionInheritanceMode,
+} from '../services/permission-inheritance';
 import { listAuthorizedSyncDeltas } from '../services/sync-changes';
 import type { OidcHonoEnv } from '../types/oidc';
 
@@ -50,18 +55,30 @@ syncRoutes.get('/bootstrap', async (c) => {
       `SELECT ${FOLDER_ALIAS_COLS},
               GROUP_CONCAT(DISTINCT p.role) AS role_list
          FROM folders f
-         JOIN permissions p
+         LEFT JOIN permissions p
            ON p.tenant_id = f.tenant_id
           AND p.target_type = 'folder'
           AND p.target_id = f.id
+          AND ${GRANTEE_MATCH_SQL}
         WHERE f.tenant_id = ?
           AND f.parent_id IS NULL
           AND f.deleted_at IS NULL
-          AND ${GRANTEE_MATCH_SQL}
+          AND (p.id IS NOT NULL OR ${reachablePathSql('f')})
         GROUP BY f.id
         ORDER BY f.is_pinned DESC, f.name ASC, f.id ASC
         LIMIT ?`
-    ).bind(user.tenantId, user.id, user.id, BOOTSTRAP_ROOT_LIMIT),
+    ).bind(
+      user.id,
+      user.id,
+      user.tenantId,
+      user.id,
+      user.id,
+      user.id,
+      user.id,
+      user.id,
+      user.id,
+      BOOTSTRAP_ROOT_LIMIT
+    ),
     c.env.DB.prepare(
       `SELECT ${FOLDER_ALIAS_COLS},
               GROUP_CONCAT(DISTINCT p.role) AS role_list
@@ -96,20 +113,37 @@ syncRoutes.get('/bootstrap', async (c) => {
       ? 'closed'
       : 'open'
     : await getFolderStructureMode(c.env.DB, user.tenantId);
+  const permissionInheritanceMode = isPermissionInheritanceMode(
+    rawPolicy?.permission_inheritance_mode
+  )
+    ? rawPolicy.permission_inheritance_mode
+    : await getPermissionInheritanceMode(c.env.DB, user.tenantId);
   const policy = rawPolicy
     ? {
         ...rawPolicy,
         advancedRolesEnabled: rawPolicy.advanced_roles_enabled === 1,
         folderStructureMode,
+        permissionInheritanceMode,
       }
     : null;
-  // Non-linear composition: a folder carrying both `viewer` and `uploader`
-  // grants must bootstrap as `viewer_uploader`, not `viewer` (MAX rank loss).
+  // Hidden path-only roots expose no grants and only `folder.traverse`.
   const mapFolder = (row: FolderRow & { role_list: string | null }) => {
     const { role_list, ...folder } = row;
-    const access = synthesizeEffectiveAccess(parseRoleList(role_list));
+    const directRoles = parseRoleList(role_list);
+    if (directRoles.length === 0) {
+      return {
+        ...folder,
+        accessMode: 'path' as const,
+        effectiveRole: null,
+        capabilities: ['folder.traverse'],
+      };
+    }
+    // Non-linear composition: a folder carrying both `viewer` and `uploader`
+    // grants must bootstrap as `viewer_uploader`, not `viewer` (MAX rank loss).
+    const access = synthesizeEffectiveAccess(directRoles);
     return {
       ...folder,
+      accessMode: 'full' as const,
       effectiveRole: access.effectiveRole,
       capabilities: access.capabilities,
     };
@@ -118,6 +152,8 @@ syncRoutes.get('/bootstrap', async (c) => {
   const rootFolders = (
     rootsRes.results as Array<FolderRow & { role_list: string | null }>
   ).map(mapFolder);
+  // Pinned quick-access entries always require a real `folder.list` grant, so
+  // path-only intermediate folders are never surfaced here.
   const pinnedFolders = (
     pinnedRes.results as Array<FolderRow & { role_list: string | null }>
   ).map(mapFolder);
@@ -131,6 +167,7 @@ syncRoutes.get('/bootstrap', async (c) => {
     user,
     policy,
     folderStructureMode,
+    permissionInheritanceMode,
     rootFolders,
     pinnedFolders,
     currentSeq,

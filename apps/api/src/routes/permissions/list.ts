@@ -10,6 +10,10 @@ import {
   isAdvancedResourceRole,
   synthesizeEffectiveAccess,
 } from '../../services/capabilities';
+import {
+  findWaterfallInheritanceConflicts,
+  getPermissionInheritanceMode,
+} from '../../services/permission-inheritance';
 import type { ResourceRole } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -105,15 +109,25 @@ export function registerPermissionListRoute(routes: Hono<OidcHonoEnv>) {
       ];
     }
 
-    const [rows, advancedRolesEnabled, membershipRows] = await Promise.all([
-      c.env.DB.prepare(sql).bind(...bindings).all<PermissionListRow>(),
-      areAdvancedRolesEnabled(c.env.DB, user.tenantId),
-      c.env.DB.prepare(
-        'SELECT group_id FROM group_members WHERE user_id = ?'
-      )
-        .bind(user.id)
-        .all<{ group_id: string }>(),
-    ]);
+    const [rows, advancedRolesEnabled, membershipRows, permissionInheritanceMode] =
+      await Promise.all([
+        c.env.DB.prepare(sql).bind(...bindings).all<PermissionListRow>(),
+        areAdvancedRolesEnabled(c.env.DB, user.tenantId),
+        c.env.DB.prepare(
+          'SELECT group_id FROM group_members WHERE user_id = ?'
+        )
+          .bind(user.id)
+          .all<{ group_id: string }>(),
+        getPermissionInheritanceMode(c.env.DB, user.tenantId),
+      ]);
+
+    const inheritanceConflicts =
+      permissionInheritanceMode === 'waterfall'
+        ? await findWaterfallInheritanceConflicts(c.env.DB, user.tenantId)
+        : [];
+    const conflictByPermission = new Map(
+      inheritanceConflicts.map((conflict) => [conflict.permissionId, conflict])
+    );
 
     const myGroupIds = new Set(
       membershipRows.results.map((row) => row.group_id)
@@ -165,6 +179,8 @@ export function registerPermissionListRoute(routes: Hono<OidcHonoEnv>) {
     return c.json({
       targetType,
       targetId,
+      permissionInheritanceMode,
+      accessMode: access.accessMode,
       effectiveRole: access.effectiveRole,
       capabilities: access.capabilities,
       grantedRoles: access.grantedRoles,
@@ -173,6 +189,11 @@ export function registerPermissionListRoute(routes: Hono<OidcHonoEnv>) {
       permissions: rows.results.map((r) => {
         const key = `${r.grantee_type}:${r.grantee_id}`;
         const synthesized = synthesizedByGrantee.get(key);
+        const conflict = conflictByPermission.get(r.id);
+        const inherited = r.is_inherited === 1;
+        const waterfallLocked =
+          permissionInheritanceMode === 'waterfall' &&
+          (inherited || Boolean(conflict));
         return {
           id: r.id,
           targetType: r.target_type,
@@ -182,12 +203,27 @@ export function registerPermissionListRoute(routes: Hono<OidcHonoEnv>) {
           granteeName: r.grantee_name,
           granteeEmail: r.grantee_email,
           role: r.role,
-          inherited: r.is_inherited === 1,
+          inherited,
           sourceName: r.source_name,
           grantedBy: r.granted_by,
           createdAt: r.created_at,
           synthesizedRole: synthesized?.effectiveRole ?? null,
           synthesizedCapabilities: synthesized?.capabilities ?? [],
+          waterfallLocked,
+          ...(waterfallLocked && inherited
+            ? {
+                ancestorFolderId: r.target_id,
+                ancestorFolderName: r.source_name,
+                ancestorRole: r.role,
+              }
+            : {}),
+          ...(conflict
+            ? {
+                ancestorFolderId: conflict.ancestorFolderId,
+                ancestorFolderName: conflict.ancestorFolderName,
+                ancestorRole: conflict.ancestorRole,
+              }
+            : {}),
         };
       }),
     });

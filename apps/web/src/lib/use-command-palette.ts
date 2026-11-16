@@ -29,7 +29,7 @@ export function useCommandPalette({
 }: {
   open: boolean;
   user: AuthUser | null;
-  activeView: 'workspace' | 'trash' | 'admin';
+  activeView: 'workspace' | 'trash' | 'admin' | 'shared';
   workspaceActions?: WorkspacePaletteActions;
   onSelectResult?: (item: SearchResultItem) => void;
   onSelectFolder?: (folderId: string) => void;

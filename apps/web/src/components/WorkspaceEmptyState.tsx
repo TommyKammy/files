@@ -5,6 +5,7 @@ import { Folder, SearchX, Trash2 } from 'lucide-react';
 export function WorkspaceEmptyState({
   isTrashView,
   folderId,
+  pathOnly = false,
   uploadOnly = false,
   trashFilterActive = false,
   rootCreationRestricted = false,
@@ -14,6 +15,7 @@ export function WorkspaceEmptyState({
 }: {
   isTrashView: boolean;
   folderId: string | null;
+  pathOnly?: boolean;
   uploadOnly?: boolean;
   trashFilterActive?: boolean;
   rootCreationRestricted?: boolean;
@@ -43,24 +45,28 @@ export function WorkspaceEmptyState({
           ? '条件に一致するアイテムがありません'
           : isTrashView
             ? 'ゴミ箱は空です'
-            : uploadOnly
-              ? 'Uploader 権限のためファイルは非表示です'
-              : folderId
-                ? 'このフォルダは空です'
-                : 'アクセス可能なルートフォルダがありません'}
+            : pathOnly
+              ? '移動可能な子孫フォルダがありません'
+              : uploadOnly
+                ? 'Uploader 権限のためファイルは非表示です'
+                : folderId
+                  ? 'このフォルダは空です'
+                  : 'アクセス可能なルートフォルダがありません'}
       </p>
       <p className="mt-1 max-w-sm text-[0.6875rem] leading-relaxed text-[#6b6f76]">
         {filteredTrashEmpty
           ? '検索語やフィルタを変更するか、条件をクリアしてください'
           : isTrashView
             ? '削除したアイテムはここに表示されます'
-            : uploadOnly
-              ? 'アップロード専用のため、既存ファイルの一覧・プレビュー・ダウンロードは表示されません。上のアップロード欄から新しいファイルを追加できます。'
-              : rootCreationRestricted
-                ? '現在 Closed 構成のため、ルート直下の作成・移動は sys_admin のみ可能です。既存ルートフォルダ内では引き続き作成できます。'
-              : folderId
-                ? 'ファイルをドロップするか、上の「ファイルを選択」から追加できます'
-                : '「新規フォルダ」からワークスペースを作成できます'}
+            : pathOnly
+              ? 'この階層はアクセス可能な共有フォルダへ移動するためのパス表示です。ファイルのアップロード・編集はできません。'
+              : uploadOnly
+                ? 'アップロード専用のため、既存ファイルの一覧・プレビュー・ダウンロードは表示されません。上のアップロード欄から新しいファイルを追加できます。'
+                : rootCreationRestricted
+                  ? '現在 Closed 構成のため、ルート直下の作成・移動は sys_admin のみ可能です。既存ルートフォルダ内では引き続き作成できます。'
+                  : folderId
+                    ? 'ファイルをドロップするか、上の「ファイルを選択」から追加できます'
+                    : '「新規フォルダ」からワークスペースを作成できます'}
       </p>
       {filteredTrashEmpty && onClearTrashFilters && (
         <button

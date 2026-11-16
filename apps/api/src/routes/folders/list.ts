@@ -1,18 +1,22 @@
 import { Hono } from 'hono';
 import {
+  GRANTEE_MATCH_SQL,
   getAuthenticatedUser,
+  reachablePathSql,
   resolveTargetAccess,
+  resolveUserAccessForFolders,
 } from '../../services/authorization';
 import {
   can,
   parseRoleList,
   synthesizeEffectiveAccess,
+  type Capability,
 } from '../../services/capabilities';
 import {
-  fetchFolderBreadcrumbsRows,
   type FolderRow,
   resolveFolderBreadcrumbs,
 } from '../../services/folder-closure-service';
+import type { ResourceRole } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
   ChildFileRow,
@@ -25,7 +29,7 @@ import {
 } from './shared';
 
 export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
-  /** GET /api/folders/roots — accessible top-level root folders for current user */
+  /** GET /api/folders/roots — accessible roots in `full` or `path` mode */
   routes.get('/roots', async (c) => {
     const user = getAuthenticatedUser(c);
     const limit = parseLimit(c.req.query('limit'));
@@ -48,29 +52,33 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
       `SELECT f.${FOLDER_CHILD_COLS.split(', ').join(', f.')},
               GROUP_CONCAT(DISTINCT p.role) AS role_list
          FROM folders f
-         JOIN permissions p
+         LEFT JOIN permissions p
            ON p.tenant_id = f.tenant_id
           AND p.target_type = 'folder'
           AND p.target_id = f.id
+          AND ${GRANTEE_MATCH_SQL}
         WHERE f.tenant_id = ?
           AND f.parent_id IS NULL
           AND f.deleted_at IS NULL
-          AND (
-            (p.grantee_type = 'user' AND p.grantee_id = ?)
-            OR (
-              p.grantee_type = 'group'
-              AND EXISTS (
-                SELECT 1 FROM group_members gm
-                 WHERE gm.group_id = p.grantee_id AND gm.user_id = ?
-              )
-            )
-          )
+          AND (p.id IS NOT NULL OR ${reachablePathSql('f')})
           ${cursorSql}
         GROUP BY f.id
         ORDER BY f.is_pinned DESC, f.name ASC, f.id ASC
         LIMIT ?`
     )
-      .bind(user.tenantId, user.id, user.id, ...cursorBindings, limit + 1)
+      .bind(
+        user.id,
+        user.id,
+        user.tenantId,
+        user.id,
+        user.id,
+        user.id,
+        user.id,
+        user.id,
+        user.id,
+        ...cursorBindings,
+        limit + 1
+      )
       .all<FolderRow & { role_list: string | null }>();
 
     const hasMore = rows.results.length > limit;
@@ -81,9 +89,19 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
       // Non-linear composition is required here: a root folder can carry both
       // `viewer` and `uploader` grants which must surface as `viewer_uploader`.
       folders: pageItems.map(({ role_list, ...folder }) => {
-        const access = synthesizeEffectiveAccess(parseRoleList(role_list));
+        const directRoles = parseRoleList(role_list);
+        if (directRoles.length === 0) {
+          return {
+            ...folder,
+            accessMode: 'path' as const,
+            effectiveRole: null,
+            capabilities: ['folder.traverse'] as Capability[],
+          };
+        }
+        const access = synthesizeEffectiveAccess(directRoles);
         return {
           ...folder,
+          accessMode: 'full' as const,
           effectiveRole: access.effectiveRole,
           capabilities: access.capabilities,
         };
@@ -98,6 +116,50 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
 }
 
 export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
+  /**
+   * Attach per-child access metadata so the UI can badge intermediate folders
+   * as `path-only` immediately, without an extra request per row.
+   */
+  async function attachChildFolderAccess(
+    db: D1Database,
+    user: { id: string; tenantId: string },
+    childRows: FolderRow[],
+    parentAccess: { accessMode: 'full' | 'path' | null; effectiveRole: ResourceRole | null; capabilities: Capability[] }
+  ) {
+    if (childRows.length === 0) return [];
+    const resolved = await resolveUserAccessForFolders(
+      db,
+      user.tenantId,
+      user.id,
+      childRows.map((row) => row.id)
+    );
+    return childRows.map((row) => {
+      const childAccess = resolved.get(row.id);
+      if (childAccess?.effectiveRole) {
+        return {
+          ...row,
+          accessMode: 'full' as const,
+          effectiveRole: childAccess.effectiveRole,
+          capabilities: childAccess.capabilities,
+        };
+      }
+      if (parentAccess.accessMode === 'full') {
+        return {
+          ...row,
+          accessMode: 'full' as const,
+          effectiveRole: parentAccess.effectiveRole,
+          capabilities: parentAccess.capabilities,
+        };
+      }
+      return {
+        ...row,
+        accessMode: 'path' as const,
+        effectiveRole: null,
+        capabilities: ['folder.traverse'] as Capability[],
+      };
+    });
+  }
+
   /** GET /api/folders/:id/children — Keyset-paginated folders & active files */
   routes.get('/:id/children', async (c) => {
     const user = getAuthenticatedUser(c);
@@ -113,33 +175,101 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
     if (!access || access.deletedAt !== null) {
       return c.json({ error: 'Folder not found' }, 404);
     }
-    // `uploader`/`previewer_uploader` may browse the tree without preview rights.
-    if (
-      !can(access.capabilities, 'folder.list') ||
-      !can(access.capabilities, 'folder.traverse')
-    ) {
+    // `folder.traverse` admits both `full` and `path` access. Every mutating or
+    // listing capability remains absent from a path-only capability set.
+    if (!can(access.capabilities, 'folder.traverse')) {
       return c.json({ error: 'Forbidden' }, 403);
     }
+    const pathOnly = access.accessMode === 'path';
 
     const includeBreadcrumbs = c.req.query('include') === 'breadcrumbs' && !cursor;
     // Roles without `item.preview` (uploader) may navigate folders but must not
-    // receive a file listing; `search` applies the same rule.
-    const canSeeFiles = can(access.capabilities, 'item.preview');
-    const [folder, breadcrumbs] = await Promise.all([
+    // receive a file listing; `search` applies the same rule. Path-only
+    // ancestors never list files at all.
+    const canSeeFiles = !pathOnly && can(access.capabilities, 'item.preview');
+    const [folder, breadcrumbResult] = await Promise.all([
       c.env.DB.prepare(
         `SELECT ${FOLDER_CHILD_COLS} FROM folders WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL`
       )
         .bind(user.tenantId, folderId)
         .first<FolderRow>(),
       includeBreadcrumbs
-        ? fetchFolderBreadcrumbsRows(c.env.DB, user.tenantId, folderId)
+        ? resolveFolderBreadcrumbs(c.env.DB, user, folderId)
         : Promise.resolve(undefined),
     ]);
-    const breadcrumbsField = breadcrumbs !== undefined ? { breadcrumbs } : {};
+    const breadcrumbsField =
+      breadcrumbResult !== undefined
+        ? { breadcrumbs: breadcrumbResult.breadcrumbs }
+        : {};
 
-    let folders: FolderRow[] = [];
-    let files: ChildFileRow[] = [];
+    let folders: Array<
+      FolderRow & {
+        accessMode: 'full' | 'path';
+        effectiveRole: ResourceRole | null;
+        capabilities: Capability[];
+      }
+    > = [];
+    const files: ChildFileRow[] = [];
     let nextCursor: string | null = null;
+
+    if (pathOnly) {
+      // Only direct children that lead to an authorized descendant are listed;
+      // sibling folders and every file stay hidden.
+      if (!cursor || cursor.phase === 'folders') {
+        const hasKeyset = cursor?.name !== undefined && cursor?.id !== undefined;
+        const folderRows = await c.env.DB.prepare(
+          `SELECT ${FOLDER_CHILD_COLS}
+             FROM folders c
+            WHERE c.tenant_id = ?
+              AND c.parent_id = ?
+              AND c.deleted_at IS NULL
+              AND ${reachablePathSql('c')}
+              ${hasKeyset ? 'AND (c.name, c.id) > (?, ?)' : ''}
+            ORDER BY c.name ASC, c.id ASC
+            LIMIT ?`
+        )
+          .bind(
+            user.tenantId,
+            folderId,
+            user.id,
+            user.id,
+            user.id,
+            user.id,
+            user.id,
+            user.id,
+            ...(hasKeyset ? [cursor!.name!, cursor!.id!] : []),
+            limit + 1
+          )
+          .all<FolderRow>();
+
+        const hasMoreFolders = folderRows.results.length > limit;
+        folders = await attachChildFolderAccess(
+          c.env.DB,
+          user,
+          folderRows.results.slice(0, limit),
+          access
+        );
+        if (hasMoreFolders && folders.length > 0) {
+          const last = folders[folders.length - 1];
+          nextCursor = encodeCursor({
+            phase: 'folders',
+            name: last.name,
+            id: last.id,
+          });
+        }
+      }
+
+      return c.json({
+        folder,
+        accessMode: access.accessMode,
+        effectiveRole: access.effectiveRole,
+        capabilities: access.capabilities,
+        folders,
+        files: [],
+        nextCursor,
+        ...breadcrumbsField,
+      });
+    }
 
     if (!cursor || cursor.phase === 'folders') {
       const hasKeyset = cursor?.name !== undefined && cursor?.id !== undefined;
@@ -162,11 +292,17 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
         .all<FolderRow>();
 
       if (folderRows.results.length > limit) {
-        folders = folderRows.results.slice(0, limit);
+        folders = await attachChildFolderAccess(
+          c.env.DB,
+          user,
+          folderRows.results.slice(0, limit),
+          access
+        );
         const last = folders[folders.length - 1];
         nextCursor = encodeCursor({ phase: 'folders', name: last.name, id: last.id });
         return c.json({
           folder,
+          accessMode: access.accessMode,
           effectiveRole: access.effectiveRole,
           capabilities: access.capabilities,
           folders,
@@ -176,12 +312,18 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
         });
       }
 
-      folders = folderRows.results;
+      folders = await attachChildFolderAccess(
+        c.env.DB,
+        user,
+        folderRows.results,
+        access
+      );
       const remaining = limit - folders.length;
 
       if (!canSeeFiles) {
         return c.json({
           folder,
+          accessMode: access.accessMode,
           effectiveRole: access.effectiveRole,
           capabilities: access.capabilities,
           folders,
@@ -204,6 +346,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
         }
         return c.json({
           folder,
+          accessMode: access.accessMode,
           effectiveRole: access.effectiveRole,
           capabilities: access.capabilities,
           folders,
@@ -227,7 +370,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
         .all<ChildFileRow>();
 
       const hasMoreFiles = fileRows.results.length > remaining;
-      files = fileRows.results.slice(0, remaining);
+      files.push(...fileRows.results.slice(0, remaining));
       if (hasMoreFiles && files.length > 0) {
         const lastFile = files[files.length - 1];
         nextCursor = encodeCursor({ phase: 'files', name: lastFile.name, id: lastFile.id });
@@ -254,7 +397,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
         .all<ChildFileRow>();
 
       const hasMoreFiles = fileRows.results.length > limit;
-      files = fileRows.results.slice(0, limit);
+      files.push(...fileRows.results.slice(0, limit));
       if (hasMoreFiles && files.length > 0) {
         const lastFile = files[files.length - 1];
         nextCursor = encodeCursor({ phase: 'files', name: lastFile.name, id: lastFile.id });
@@ -263,6 +406,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
 
     return c.json({
       folder,
+      accessMode: access.accessMode,
       effectiveRole: access.effectiveRole,
       capabilities: access.capabilities,
       folders,
@@ -286,6 +430,7 @@ export function registerFolderBreadcrumbRoutes(routes: Hono<OidcHonoEnv>) {
       );
       return c.json({
         breadcrumbs,
+        accessMode: access.accessMode,
         effectiveRole: access.effectiveRole,
         capabilities: access.capabilities,
       });

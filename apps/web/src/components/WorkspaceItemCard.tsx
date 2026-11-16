@@ -92,7 +92,10 @@ export function WorkspaceItemCard({
   const folder = isFolder ? row.folder : null;
   const file = !isFolder ? row.file : null;
   const isDropEligible = Boolean(
-    folder && !isTrashView && folder.deleted_at == null
+    folder &&
+      !isTrashView &&
+      folder.deleted_at == null &&
+      folder.accessMode !== 'path'
   );
   const trashMeta = isTrashView ? folder ?? file : null;
   const trashDeletedAt = isTrashView
@@ -280,6 +283,15 @@ export function WorkspaceItemCard({
               {folder ? folder.name : file!.name}
             </span>
           </button>
+        )}
+        {folder?.accessMode === 'path' && (
+          <div
+            data-testid="folder-path-only-badge"
+            title="途中階層 (パスのみ): 子孫フォルダへ移動するための経路です"
+            className="mt-1 inline-flex rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[0.625rem] font-medium text-sky-700"
+          >
+            パス専用
+          </div>
         )}
         {lock && (
           <div

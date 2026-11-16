@@ -1,4 +1,5 @@
 import type {
+  AccessMode,
   AuthUser,
   BreadcrumbItem,
   Capability,
@@ -42,6 +43,8 @@ export interface PersistedDirectoryRecord {
   effectiveRole: ResourceRole;
   /** Server-provided capabilities for the current folder. */
   capabilities?: Capability[];
+  /** `path` forbids listing files and all mutation capabilities. */
+  accessMode?: AccessMode | null;
   folderIds: string[];
   fileIds: string[];
   nextCursor: string | null;

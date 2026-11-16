@@ -13,6 +13,7 @@ import type {
   Capability,
   EffectiveBreakdownGrant,
   PermissionEntry,
+  PermissionInheritanceMode,
   PrincipalCandidate,
   ResourceRole,
 } from '@/types/files';
@@ -39,6 +40,19 @@ export function formatPermissionError(
       return 'Owner ロールを付与できるのは Owner のみです。Co-Owner は権限を昇格できません。';
     case 'INHERITED_PERMISSION_READONLY':
       return '継承された権限は親フォルダ側で変更してください。この画面からは削除できません。';
+    case 'WATERFALL_INHERITED_LOCKED': {
+      const ancestor =
+        typeof err.details?.ancestorFolderName === 'string'
+          ? err.details.ancestorFolderName
+          : '親フォルダ';
+      const role =
+        typeof err.details?.inheritedRole === 'string'
+          ? err.details.inheritedRole
+          : null;
+      return `親フォルダ「${ancestor}」から${
+        role ? ` ${role} ` : ''
+      }権限を継承しているため、この子フォルダで再付与・変更はできません。親フォルダで変更してください。`;
+    }
     case 'CIRCULAR_HIERARCHY':
     case 'MAX_DEPTH_EXCEEDED':
       return 'フォルダ階層の制約により、この権限操作は実行できません。';
@@ -63,6 +77,8 @@ export function usePermissionsModal({
     capabilitiesForRole(effectiveRole)
   );
   const [advancedRolesEnabled, setAdvancedRolesEnabled] = useState(false);
+  const [permissionInheritanceMode, setPermissionInheritanceMode] =
+    useState<PermissionInheritanceMode>('additive');
   const [effectiveBreakdown, setEffectiveBreakdown] = useState<
     EffectiveBreakdownGrant[]
   >([]);
@@ -87,6 +103,35 @@ export function usePermissionsModal({
     [capabilities, serverEffectiveRole]
   );
 
+  const selectedPrincipalLock = useMemo(() => {
+    if (permissionInheritanceMode !== 'waterfall' || !selectedPrincipal) {
+      return null;
+    }
+    const matching = permissions.filter(
+      (entry) =>
+        entry.granteeType === selectedPrincipal.type &&
+        entry.granteeId === selectedPrincipal.id
+    );
+    const inherited = matching.find((entry) => entry.inherited);
+    if (inherited) {
+      return {
+        sourceName: inherited.sourceName ?? inherited.ancestorFolderName ?? '親フォルダ',
+        role: inherited.role,
+        inherited: true,
+      };
+    }
+    const locked = matching.find((entry) => entry.waterfallLocked);
+    if (locked) {
+      return {
+        sourceName:
+          locked.ancestorFolderName ?? locked.sourceName ?? '親フォルダ',
+        role: locked.ancestorRole ?? locked.role,
+        inherited: false,
+      };
+    }
+    return null;
+  }, [permissionInheritanceMode, selectedPrincipal, permissions]);
+
   async function reloadPermissions() {
     setLoading(true);
     setError(null);
@@ -95,6 +140,9 @@ export function usePermissionsModal({
       setPermissions(res.permissions);
       setCapabilities(res.capabilities ?? capabilitiesForRole(effectiveRole));
       setAdvancedRolesEnabled(Boolean(res.advancedRolesEnabled));
+      setPermissionInheritanceMode(
+        res.permissionInheritanceMode ?? 'additive'
+      );
       setEffectiveBreakdown(res.effectiveBreakdown ?? []);
       setServerEffectiveRole(res.effectiveRole ?? effectiveRole);
     } catch (err) {
@@ -138,6 +186,12 @@ export function usePermissionsModal({
   async function handleGrant(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedPrincipal || submitting) return;
+    if (selectedPrincipalLock) {
+      setError(
+        `親フォルダ「${selectedPrincipalLock.sourceName}」から権限継承中のため、この子フォルダで再付与・変更はできません。親フォルダで変更してください。`
+      );
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -174,6 +228,7 @@ export function usePermissionsModal({
     permissions,
     capabilities,
     advancedRolesEnabled,
+    permissionInheritanceMode,
     effectiveBreakdown,
     effectiveRole: serverEffectiveRole ?? effectiveRole,
     loading,
@@ -185,6 +240,7 @@ export function usePermissionsModal({
     searching,
     selectedPrincipal,
     setSelectedPrincipal,
+    selectedPrincipalLock,
     role,
     setRole,
     submitting,

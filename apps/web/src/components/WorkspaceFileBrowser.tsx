@@ -1,6 +1,6 @@
 'use client';
 
-import { Keyboard, Loader2 } from 'lucide-react';
+import { Keyboard, Loader2, Route } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShellRail } from '@/components/AppShellRail';
@@ -26,6 +26,7 @@ import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
 import { WorkspacePermissionBanner } from '@/components/WorkspacePermissionBanner';
 import { WorkspaceTrashFilters } from '@/components/WorkspaceTrashFilters';
 import { WorkspaceUtilityOverlays } from '@/components/WorkspaceUtilityOverlays';
+import { WorkspaceSharedItemsView } from '@/components/WorkspaceSharedItemsView';
 import { VersionHistoryModal } from '@/components/VersionHistoryModal';
 import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
 import { useWorkspaceContextMenuActions } from '@/lib/use-workspace-context-menu-actions';
@@ -117,6 +118,7 @@ export function WorkspaceFileBrowser() {
   const folderId = searchParams.get('folderId');
   const previewFileId = searchParams.get('preview');
   const isTrashView = searchParams.get('view') === 'trash';
+  const isSharedView = searchParams.get('view') === 'shared';
 
   const syncStore = getWorkspaceSyncStore();
   const {
@@ -143,10 +145,18 @@ export function WorkspaceFileBrowser() {
 
 
   const currentFolder = isTrashView ? null : directory.folder;
-  const effectiveRole: ResourceRole = isTrashView ? 'editor' : directory.effectiveRole;
+  const effectiveRole: ResourceRole = isTrashView
+    ? 'editor'
+    : directory.effectiveRole ?? 'previewer';
+  const accessMode = isTrashView ? null : directory.accessMode ?? null;
+  const isPathOnly = accessMode === 'path';
   const breadcrumbs = isTrashView ? [] : directory.breadcrumbs;
   const folders = isTrashView ? trash.folders : directory.folders;
-  const files = isTrashView ? trash.files : directory.files;
+  const files = isTrashView
+    ? trash.files
+    : isPathOnly
+      ? []
+      : directory.files;
   const folderStructureMode = readFolderStructureMode(snapshot.policy);
   const isSysAdminUser = user?.role === 'sys_admin';
   const rootCreationRestricted =
@@ -301,10 +311,11 @@ export function WorkspaceFileBrowser() {
     openFileOrEditor({ id: item.id });
   }
 
-  const currentCapabilities =
-    directory.capabilities ?? capabilitiesForRole(effectiveRole);
+  const currentCapabilities = isPathOnly
+    ? directory.capabilities ?? (['folder.traverse'] as Capability[])
+    : directory.capabilities ?? capabilitiesForRole(effectiveRole);
   const currentAccess = {
-    capabilities: directory.capabilities,
+    capabilities: currentCapabilities,
     effectiveRole,
   };
   const canPreviewCurrentFolder =
@@ -338,6 +349,7 @@ export function WorkspaceFileBrowser() {
   const canInspectCurrentFolder = canPreviewCurrentFolder;
   const showRoleBanner =
     !isTrashView &&
+    !isPathOnly &&
     Boolean(currentFolder) &&
     (effectiveRole === 'uploader' ||
       effectiveRole === 'previewer_uploader' ||
@@ -1179,6 +1191,41 @@ export function WorkspaceFileBrowser() {
     );
   }
 
+  if (isSharedView) {
+    return (
+      <div className="flex min-h-screen bg-[#efeff1] text-[#111214]">
+        <AppShellRail
+          user={user}
+          activeView="shared"
+          activeFolderId={null}
+          onSelectResult={handleSearchSelect}
+          onSelectFolder={(targetFolderId) =>
+            router.push(`/workspace?folderId=${encodeURIComponent(targetFolderId)}`)
+          }
+        />
+        <main
+          id="workspace-main"
+          tabIndex={-1}
+          className="mb-2 mr-2 mt-2 min-w-0 flex-1 space-y-4 rounded-2xl border border-[#e7e7ea] bg-[#f9f9fa] px-5 py-4 lg:px-7"
+        >
+          <WorkspaceSharedItemsView
+            onOpenFolder={(targetFolderId) =>
+              router.push(
+                `/workspace?folderId=${encodeURIComponent(targetFolderId)}`
+              )
+            }
+            onOpenFile={(fileId) =>
+              window.open(
+                `/workspace/file/${encodeURIComponent(fileId)}`,
+                '_blank'
+              )
+            }
+          />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <WorkspaceDragProvider
       syncStore={syncStore}
@@ -1373,6 +1420,7 @@ export function WorkspaceFileBrowser() {
         )}
         <WorkspaceMainHeader
           isTrashView={isTrashView}
+          accessMode={accessMode}
           folderId={folderId}
           breadcrumbs={breadcrumbs}
           currentFolder={currentFolder}
@@ -1491,6 +1539,24 @@ export function WorkspaceFileBrowser() {
           onDismissNotice={() => syncStore.clearActiveDirectoryNotice()}
         />
 
+        {isPathOnly && (
+          <div
+            role="status"
+            data-testid="path-only-banner"
+            className="flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-[0.75rem] leading-relaxed text-sky-900"
+          >
+            <Route className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+            <div>
+              <p className="font-semibold">
+                途中階層 (パス専用): アクセス可能な子孫フォルダへ移動するための経路表示です。ファイル一覧・アップロード・編集は許可されていません。
+              </p>
+              <p className="mt-0.5 text-[0.6875rem] text-sky-800">
+                下のフォルダから共有されたターゲットへ移動してください。
+              </p>
+            </div>
+          </div>
+        )}
+
         {showRoleBanner && (
           <WorkspacePermissionBanner
             role={effectiveRole}
@@ -1532,6 +1598,7 @@ export function WorkspaceFileBrowser() {
           viewMode={viewMode}
           isInitialLoading={isInitialLoading}
           isTrashView={isTrashView}
+          pathOnly={isPathOnly}
           folderId={folderId}
           uploadOnly={!isTrashView && effectiveRole === 'uploader'}
           rowCount={rows.length}

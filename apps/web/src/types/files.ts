@@ -45,6 +45,26 @@ export type Capability =
 
 export type UserRole = 'sys_admin' | 'sec_admin' | 'member';
 
+/** `full` = a grant applies; `path` = traversal-only ancestor. */
+export type AccessMode = 'full' | 'path';
+
+/** Additive unions every grant; waterfall locks inherited principals on children. */
+export type PermissionInheritanceMode = 'additive' | 'waterfall';
+
+export interface WaterfallInheritanceConflict {
+  permissionId: string;
+  targetType: 'folder' | 'file';
+  targetId: string;
+  targetName: string;
+  granteeType: 'user' | 'group';
+  granteeId: string;
+  granteeName: string | null;
+  directRole: ResourceRole;
+  ancestorFolderId: string;
+  ancestorFolderName: string;
+  ancestorRole: ResourceRole;
+}
+
 /** Open keeps root creation available; closed restricts root placement to sys_admin. */
 export type FolderStructureMode = 'open' | 'closed';
 
@@ -111,6 +131,7 @@ export interface FolderSummary {
   daysRemaining?: number;
   effectiveRole?: ResourceRole;
   capabilities?: Capability[];
+  accessMode?: AccessMode | null;
   optimistic?: boolean;
 }
 
@@ -145,7 +166,8 @@ export interface FileItem {
 
 export interface FolderChildrenResponse {
   folder: FolderSummary | null;
-  effectiveRole: ResourceRole;
+  accessMode?: AccessMode | null;
+  effectiveRole: ResourceRole | null;
   capabilities?: Capability[];
   folders: FolderSummary[];
   files: FileItem[];
@@ -421,6 +443,7 @@ export interface BootstrapResponse {
   user: AuthUser;
   policy: TenantPolicyRow | null;
   folderStructureMode?: FolderStructureMode;
+  permissionInheritanceMode?: PermissionInheritanceMode;
   rootFolders: FolderSummary[];
   pinnedFolders: FolderSummary[];
   currentSeq: number;
@@ -460,7 +483,8 @@ export interface BreadcrumbItem {
   name: string;
   classification: ClassificationLabel;
   depth: number;
-  effectiveRole?: ResourceRole;
+  accessMode?: AccessMode | null;
+  effectiveRole?: ResourceRole | null;
   capabilities?: Capability[];
 }
 
@@ -476,6 +500,27 @@ export interface SearchResultItem {
   aiSuggestedLabel: ClassificationLabel | null;
   aiConfidence: number | null;
   updatedAt: string;
+}
+
+/** Directly granted folder/file returned by `GET /api/shared-items`. */
+export interface SharedItemEntry {
+  itemType: 'folder' | 'file';
+  id: string;
+  name: string;
+  classification: ClassificationLabel;
+  folderId: string | null;
+  parentId: string | null;
+  updatedAt: string;
+  extension: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  effectiveRole: ResourceRole | null;
+  capabilities: Capability[];
+  directRoles: ResourceRole[];
+  breadcrumbs: Array<{ id: string; name: string }>;
+  pathLabel: string;
+  createdBy: string;
+  grantedAt: string;
 }
 
 export interface EffectiveBreakdownGrant {
@@ -503,11 +548,18 @@ export interface PermissionEntry {
   /** Non-linear composition when one grantee holds several rows. */
   synthesizedRole?: ResourceRole | null;
   synthesizedCapabilities?: Capability[];
+  /** Waterfall mode: inherited or legacy child override cannot be changed here. */
+  waterfallLocked?: boolean;
+  ancestorFolderId?: string | null;
+  ancestorFolderName?: string | null;
+  ancestorRole?: ResourceRole | null;
 }
 
 export interface PermissionsListResponse {
   targetType: 'folder' | 'file';
   targetId: string;
+  permissionInheritanceMode?: PermissionInheritanceMode;
+  accessMode?: AccessMode | null;
   effectiveRole: ResourceRole | null;
   capabilities: Capability[];
   grantedRoles: ResourceRole[];
@@ -676,6 +728,8 @@ export interface TenantPolicyRow {
   advancedRolesEnabled?: boolean;
   folder_structure_mode?: FolderStructureMode;
   folderStructureMode?: FolderStructureMode;
+  permission_inheritance_mode?: PermissionInheritanceMode;
+  permissionInheritanceMode?: PermissionInheritanceMode;
   updated_by: string | null;
   updated_at: string;
 }
@@ -683,7 +737,9 @@ export interface TenantPolicyRow {
 export interface TenantPolicyResponse {
   policy: TenantPolicyRow | null;
   folderStructureMode?: FolderStructureMode;
+  permissionInheritanceMode?: PermissionInheritanceMode;
   closedModeReport?: ClosedRootReport;
+  inheritanceConflictReport?: WaterfallInheritanceConflict[];
 }
 
 export interface AdminRootFolderOwner {

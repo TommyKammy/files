@@ -13,6 +13,10 @@ import {
 } from '../../services/capabilities';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
+import {
+  findInheritedAncestorGrant,
+  getPermissionInheritanceMode,
+} from '../../services/permission-inheritance';
 import type { ResourceRole } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -117,6 +121,32 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
         .first<{ id: string }>();
       if (!granteeGroup) {
         return c.json({ error: 'Target group not found in tenant' }, 404);
+      }
+    }
+
+    // Waterfall inheritance: an ancestor grant is authoritative. Re-granting or
+    // overriding the same principal on a descendant is rejected; new principals
+    // with no inherited grant remain grantable.
+    if ((await getPermissionInheritanceMode(c.env.DB, user.tenantId)) === 'waterfall') {
+      const inherited = await findInheritedAncestorGrant(
+        c.env.DB,
+        user.tenantId,
+        targetType,
+        targetId,
+        granteeType,
+        granteeId
+      );
+      if (inherited) {
+        return c.json(
+          {
+            error: `Permission is inherited from ancestor folder "${inherited.ancestorFolderName}" under waterfall inheritance; update it on the parent folder instead`,
+            code: 'WATERFALL_INHERITED_LOCKED',
+            ancestorFolderId: inherited.ancestorFolderId,
+            ancestorFolderName: inherited.ancestorFolderName,
+            inheritedRole: inherited.inheritedRole,
+          },
+          409
+        );
       }
     }
 

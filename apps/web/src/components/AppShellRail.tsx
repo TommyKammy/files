@@ -1,6 +1,6 @@
 'use client';
 
-import { FolderOpen, LogOut, Search, ShieldAlert, Trash2 } from 'lucide-react';
+import { FolderOpen, LogOut, Search, Share2, ShieldAlert, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -31,7 +31,7 @@ export function AppShellRail({
   workspaceActions,
 }: {
   user: AuthUser | null;
-  activeView?: 'workspace' | 'trash' | 'admin';
+  activeView?: 'workspace' | 'trash' | 'admin' | 'shared';
   activeFolderId?: string | null;
   onSelectResult?: (item: SearchResultItem) => void;
   onSelectFolder?: (folderId: string) => void;
@@ -120,6 +120,18 @@ export function AppShellRail({
             >
               <FolderOpen className="h-4 w-4 text-[#676b72]" />
               <span>マイファイル</span>
+            </Link>
+
+            <Link
+              href="/workspace?view=shared"
+              className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
+                resolvedView === 'shared'
+                  ? 'bg-[#e2e2e6] text-[#111214]'
+                  : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
+              }`}
+            >
+              <Share2 className="h-4 w-4 text-[#676b72]" />
+              <span>共有アイテム</span>
             </Link>
 
             <Link

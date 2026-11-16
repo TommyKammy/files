@@ -93,6 +93,7 @@ export function PermissionsModal({
     permissions,
     capabilities,
     advancedRolesEnabled,
+    permissionInheritanceMode,
     effectiveBreakdown,
     effectiveRole: currentEffectiveRole,
     loading,
@@ -104,6 +105,7 @@ export function PermissionsModal({
     searching,
     selectedPrincipal,
     setSelectedPrincipal,
+    selectedPrincipalLock,
     role,
     setRole,
     submitting,
@@ -227,6 +229,34 @@ export function PermissionsModal({
       <div className="max-h-[75vh] space-y-5 overflow-y-auto p-5">
         <ModalError message={error} />
 
+        <div
+          data-testid="permission-inheritance-mode"
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.6875rem] font-medium ${
+            permissionInheritanceMode === 'waterfall'
+              ? 'border-sky-200 bg-sky-50 text-sky-800'
+              : 'border-slate-200 bg-slate-50 text-slate-700'
+          }`}
+        >
+          <Shield className="h-3.5 w-3.5" />
+          継承:{' '}
+          {permissionInheritanceMode === 'waterfall'
+            ? 'Waterfall (親優先)'
+            : 'Additive (加算)'}
+        </div>
+
+        {canManage &&
+          permissionInheritanceMode === 'waterfall' &&
+          selectedPrincipalLock && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              data-testid="waterfall-inherited-notice"
+              className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs leading-relaxed text-amber-900"
+            >
+              親フォルダ「{selectedPrincipalLock.sourceName}」から権限継承中のため、この子フォルダで再付与・変更はできません。親フォルダで変更してください。
+            </div>
+          )}
+
         {!canViewPermissions ? (
           <div
             role="status"
@@ -340,9 +370,10 @@ export function PermissionsModal({
                         id="permission-role"
                         name="role"
                         value={safeRole}
+                        disabled={Boolean(selectedPrincipalLock)}
                         onChange={(e) => setRole(e.target.value as ResourceRole)}
                         aria-describedby="permission-role-description"
-                        className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                        className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:opacity-50"
                       >
                         {roleGroups.map((group) => (
                           <optgroup key={group.id} label={group.label}>
@@ -359,8 +390,17 @@ export function PermissionsModal({
 
                     <button
                       type="submit"
-                      disabled={!selectedPrincipal || submitting}
-                      className="inline-flex items-center justify-center gap-1.5 self-end rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 sm:mb-0"
+                      disabled={
+                        !selectedPrincipal ||
+                        submitting ||
+                        Boolean(selectedPrincipalLock)
+                      }
+                      title={
+                        selectedPrincipalLock
+                          ? `親フォルダ「${selectedPrincipalLock.sourceName}」で変更してください`
+                          : undefined
+                      }
+                      className="inline-flex items-center justify-center gap-1.5 self-end rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:mb-0"
                     >
                       {submitting && (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -515,6 +555,28 @@ export function PermissionsModal({
                               継承元: {perm.sourceName ?? '親フォルダ'}
                             </span>
                           )}
+                          {perm.inherited && (
+                            <span
+                              data-testid="permission-inherited-guidance"
+                              className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[0.625rem] text-sky-800"
+                            >
+                              親フォルダ「{perm.sourceName ?? '親フォルダ'}」で変更
+                            </span>
+                          )}
+                          {!perm.inherited &&
+                            perm.waterfallLocked &&
+                            permissionInheritanceMode === 'waterfall' && (
+                              <span
+                                data-testid="permission-waterfall-locked-guidance"
+                                className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[0.625rem] text-amber-800"
+                              >
+                                親フォルダ「
+                                {perm.ancestorFolderName ??
+                                  perm.sourceName ??
+                                  '親フォルダ'}
+                                」で変更
+                              </span>
+                            )}
                         </div>
                         {perm.granteeEmail && (
                           <div className="text-[0.6875rem] text-slate-600">

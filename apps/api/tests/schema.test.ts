@@ -93,16 +93,29 @@ describe('D1 schema & migrations (0001 + 0002 + 0003)', () => {
     const [policyCols, policyRow] = await Promise.all([
       env.DB.prepare('PRAGMA table_info(tenant_policies)').all<{ name: string }>(),
       env.DB.prepare(
-        "SELECT folder_structure_mode FROM tenant_policies WHERE tenant_id = 't1'"
-      ).first<{ folder_structure_mode: string }>(),
+        "SELECT folder_structure_mode, permission_inheritance_mode FROM tenant_policies WHERE tenant_id = 't1'"
+      ).first<{
+        folder_structure_mode: string;
+        permission_inheritance_mode: string;
+      }>(),
     ]);
     expect(policyCols.results.map((column) => column.name)).toContain(
       'folder_structure_mode'
     );
+    // Migration 0009: permission inheritance mode (default additive).
+    expect(policyCols.results.map((column) => column.name)).toContain(
+      'permission_inheritance_mode'
+    );
     expect(policyRow?.folder_structure_mode).toBe('open');
+    expect(policyRow?.permission_inheritance_mode).toBe('additive');
     await expect(
       env.DB.prepare(
         "UPDATE tenant_policies SET folder_structure_mode = 'invalid' WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_policies SET permission_inheritance_mode = 'invalid' WHERE tenant_id = 't1'"
       ).run()
     ).rejects.toThrow();
   });

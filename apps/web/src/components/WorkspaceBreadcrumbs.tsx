@@ -62,6 +62,11 @@ export function WorkspaceBreadcrumbs({
             }`}
           >
             {crumb.name}
+            {crumb.accessMode === 'path' && (
+              <span className="ml-1 rounded-full border border-sky-200 bg-sky-50 px-1 py-0.5 text-[0.5625rem] font-medium text-sky-700">
+                パス
+              </span>
+            )}
           </button>
         </span>
       ))}

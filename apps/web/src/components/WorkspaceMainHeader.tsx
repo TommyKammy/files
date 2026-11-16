@@ -11,6 +11,7 @@ import type {
 } from '@/lib/workspace-sort-and-view';
 import type { WorkspaceTableRow } from '@/lib/workspace-table-row';
 import type {
+  AccessMode,
   BreadcrumbItem,
   FolderSummary,
   ResourceRole,
@@ -18,6 +19,7 @@ import type {
 
 export function WorkspaceMainHeader({
   isTrashView,
+  accessMode,
   folderId,
   breadcrumbs,
   currentFolder,
@@ -59,6 +61,7 @@ export function WorkspaceMainHeader({
   onClearSelection,
 }: {
   isTrashView: boolean;
+  accessMode?: AccessMode | null;
   folderId: string | null;
   breadcrumbs: BreadcrumbItem[];
   currentFolder: FolderSummary | null;
@@ -126,7 +129,13 @@ export function WorkspaceMainHeader({
                     classification={currentFolder.classification}
                     compact
                   />
-                  <span>実効ロール: {effectiveRole}</span>
+                  {accessMode === 'path' ? (
+                    <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[0.6875rem] font-medium text-sky-700">
+                      途中階層 (パスのみ)
+                    </span>
+                  ) : (
+                    <span>実効ロール: {effectiveRole}</span>
+                  )}
                 </>
               )}
               {nextCursor && (sortBy !== 'name' || sortDir !== 'asc') && (

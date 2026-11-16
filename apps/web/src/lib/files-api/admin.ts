@@ -9,6 +9,7 @@ import type {
   AuditLogEntry,
   ClassificationLabel,
   FolderStructureMode,
+  PermissionInheritanceMode,
   StorageStatsResponse,
   TenantPolicyResponse,
   TenantPolicyRow,
@@ -17,6 +18,7 @@ import type {
   TrashEmptyResponse,
   TrashSort,
   TrashTypeFilter,
+  WaterfallInheritanceConflict,
 } from '@/types/files';
 import {
   apiFetch,
@@ -71,6 +73,14 @@ export function fetchAdminPolicies(): Promise<TenantPolicyResponse> {
   return apiFetch('/api/admin/policies');
 }
 
+/** GET /api/admin/policies/inheritance-conflicts — sec_admin can review too. */
+export function fetchInheritanceConflicts(): Promise<{
+  permissionInheritanceMode: PermissionInheritanceMode;
+  conflicts: WaterfallInheritanceConflict[];
+}> {
+  return apiFetch('/api/admin/policies/inheritance-conflicts');
+}
+
 export function updateAdminPolicies(payload: {
   enforceCompanyOnlyLinks?: boolean;
   requireWatermarkConfidential?: boolean;
@@ -81,6 +91,7 @@ export function updateAdminPolicies(payload: {
   aiAutoApplyThreshold?: number | null;
   advancedRolesEnabled?: boolean;
   folderStructureMode?: FolderStructureMode;
+  permissionInheritanceMode?: PermissionInheritanceMode;
 }): Promise<TenantPolicyResponse & { policy: TenantPolicyRow }> {
   return apiFetch('/api/admin/policies', {
     method: 'PATCH',

@@ -163,6 +163,8 @@ export class TenantSyncHub extends DurableObject<OidcEnv> {
       scopeFolderIds: sanitizeFolderIds(input.scopeFolderIds),
       eventKind: String(input.eventKind),
       ...(isRevocation ? { revoked: true } : {}),
+      // Only lock-state notifications attach metadata (ids/reason); folder and
+      // file mutation signals never carry names, titles, or payload content.
       ...(input.metadata ? { metadata: input.metadata } : {}),
       timestamp: new Date().toISOString(),
     };
