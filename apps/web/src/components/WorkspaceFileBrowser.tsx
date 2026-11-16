@@ -117,6 +117,7 @@ import { useWorkspaceDialogs } from '@/lib/use-workspace-dialogs';
 import { useWorkspaceInlineRename } from '@/lib/use-workspace-inline-rename';
 import { useWorkspaceKeyboard } from '@/lib/use-workspace-keyboard';
 import { useWorkspaceSelection } from '@/lib/use-workspace-selection';
+import { useWorkspaceTrash } from '@/lib/use-workspace-trash';
 import { useWorkspaceUploads } from '@/lib/use-workspace-uploads';
 import {
   getWorkspaceRowKey,
@@ -209,23 +210,19 @@ export function WorkspaceFileBrowser() {
     [syncStore]
   );
 
-  const [trashFolders, setTrashFolders] = useState<FolderSummary[]>([]);
-  const [trashFiles, setTrashFiles] = useState<FileItem[]>([]);
-  const [trashLoading, setTrashLoading] = useState(false);
-  const [trashLoaded, setTrashLoaded] = useState(false);
-
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const trash = useWorkspaceTrash({ setError });
 
   const currentFolder = isTrashView ? null : directory.folder;
   const effectiveRole: ResourceRole = isTrashView ? 'editor' : directory.effectiveRole;
   const breadcrumbs = isTrashView ? [] : directory.breadcrumbs;
-  const folders = isTrashView ? trashFolders : directory.folders;
-  const files = isTrashView ? trashFiles : directory.files;
+  const folders = isTrashView ? trash.folders : directory.folders;
+  const files = isTrashView ? trash.files : directory.files;
   const nextCursor = isTrashView ? null : directory.nextCursor;
 
   const isInitialLoading = isTrashView
-    ? trashLoading && !trashLoaded
+    ? trash.loading && !trash.loaded
     : !directory.existsInCache &&
       (!snapshot.bootstrapDone || snapshot.revalidating);
 
@@ -369,11 +366,7 @@ export function WorkspaceFileBrowser() {
 
       try {
         if (isTrashView) {
-          setTrashLoading(true);
-          const trash = await listTrash(100);
-          setTrashFolders(trash.folders);
-          setTrashFiles(trash.files);
-          setTrashLoaded(true);
+          await trash.loadTrash();
         } else {
           await syncStore.ensureDirectoryLoaded(folderId, {
             force: options?.force,
@@ -385,13 +378,9 @@ export function WorkspaceFileBrowser() {
             ? err.message
             : 'フォルダ内容の取得に失敗しました'
         );
-      } finally {
-        if (isTrashView) {
-          setTrashLoading(false);
-        }
       }
     },
-    [snapshot.authStatus, user, isTrashView, syncStore, folderId]
+    [snapshot.authStatus, user, isTrashView, syncStore, folderId, trash.loadTrash]
   );
 
   useEffect(() => {
@@ -424,13 +413,13 @@ export function WorkspaceFileBrowser() {
 
   function handleRestoreFolder(folder: FolderSummary) {
     setError(null);
-    setTrashFolders((prev) => prev.filter((f) => f.id !== folder.id));
+    trash.removeFolder(folder.id);
     syncStore.optimisticRestoreFolder(folder, 'rename');
   }
 
   function handleRestoreFile(file: FileItem) {
     setError(null);
-    setTrashFiles((prev) => prev.filter((f) => f.id !== file.id));
+    trash.removeFile(file.id);
     syncStore.optimisticRestoreFile(file);
   }
 
@@ -1783,13 +1772,7 @@ export function WorkspaceFileBrowser() {
                         onSetInlineRename={setInlineRename}
                         onCommitInlineRename={commitInlineRename}
                         onFocusRow={setFocusedRowKey}
-                        onFileUpdated={(updatedFile) => {
-                          setTrashFiles((prev) =>
-                            prev.map((f) =>
-                              f.id === updatedFile.id ? updatedFile : f
-                            )
-                          );
-                        }}
+                        onFileUpdated={trash.updateFile}
                         onError={setError}
                       />
                     );
