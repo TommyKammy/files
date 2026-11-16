@@ -1,4 +1,5 @@
 import { purgeExpiredSyncChanges } from '../services/sync-changes';
+import { purgeExpiredWopiDrafts } from '../services/wopi-drafts';
 import type { Env } from '../types/api';
 import { purgeExpiredOrRevokedSessions } from './maintenance/sessions';
 import { purgeExpiredTrashForTenant } from './maintenance/trash';
@@ -11,6 +12,8 @@ export interface MaintenanceSummary {
   trashedFilesPurged: number;
   trashedFoldersPurged: number;
   syncChangesPurged: number;
+  wopiDraftsPurged: number;
+  wopiSessionsExpired: number;
 }
 
 interface TenantPolicyRetentionRow {
@@ -58,6 +61,8 @@ export async function runDailyMaintenance(
     trashedFoldersPurged += res.foldersPurged;
   }
 
+  const { draftsPurged: wopiDraftsPurged, sessionsExpired: wopiSessionsExpired } =
+    await purgeExpiredWopiDrafts(env, nowMs);
   const syncChangesPurged = await purgeExpiredSyncChanges(env.DB, nowMs);
 
   return {
@@ -67,5 +72,7 @@ export async function runDailyMaintenance(
     trashedFilesPurged,
     trashedFoldersPurged,
     syncChangesPurged,
+    wopiDraftsPurged,
+    wopiSessionsExpired,
   };
 }

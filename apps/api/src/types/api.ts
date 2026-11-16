@@ -30,6 +30,7 @@ export interface Env {
   LOCAL_LLM_MODEL?: string;
   WORKERS_AI_MODEL?: string;
   MIN_SUGGESTION_CONFIDENCE?: string;
+  WOPI_TOKEN_SECRET?: string;
 }
 
 export interface AuthUser {

@@ -3,3 +3,4 @@
 LOCAL_PROXY_SECRET=dev-only-random-secret-change-me-32chars
 OIDC_STATE_COOKIE_KEY=dev-only-32byte-hex-or-base64-key-change-me
 ALLOW_DEV_AUTH=true
+WOPI_TOKEN_SECRET=dev-only-wopi-token-secret-change-me
