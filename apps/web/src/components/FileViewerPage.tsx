@@ -30,10 +30,6 @@ export function FileViewerPage({ fileId }: { fileId: string }) {
       : '/workspace';
     if (typeof window !== 'undefined' && window.opener) {
       window.close();
-      window.setTimeout(() => {
-        if (!window.closed) router.push(target);
-      }, 80);
-      return;
     }
     router.push(target);
   }, [info?.file.folder_id, router]);
