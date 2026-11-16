@@ -1,0 +1,17 @@
+# Local WOPI/Collabora Online validation stack.
+# Start with: docker compose -f docker-compose.collabora.yml up -d
+services:
+  collabora:
+    image: collabora/code:latest
+    container_name: files-collabora
+    ports:
+      - "9980:9980"
+    environment:
+      # Collabora calls the Workers WOPI host directly. host.docker.internal
+      # resolves to the macOS host from inside the container.
+      aliasgroup1: "http://host.docker.internal:8787,http://127.0.0.1:8787"
+      extra_params: "--o:ssl.enable=false --o:ssl.termination=false --o:net.proto=IPv4"
+      DONT_GEN_SSL_CERT: "true"
+    cap_add:
+      - SYS_ADMIN
+    tty: true

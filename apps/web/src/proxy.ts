@@ -12,7 +12,25 @@ function createNonce() {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+function getCollaboraFrameOrigin(): string | null {
+  const raw = process.env.COLLABORA_URL?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 function buildCsp(nonce: string | null) {
+  const collaboraOrigin = getCollaboraFrameOrigin();
+  const frameSrc = [
+    "'self'",
+    'https://challenges.cloudflare.com',
+    ...(collaboraOrigin ? [collaboraOrigin] : []),
+  ].join(' ');
   const scriptSrc = nonce
     ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${
         isDev ? " 'unsafe-eval'" : ''
@@ -30,7 +48,7 @@ function buildCsp(nonce: string | null) {
     `connect-src 'self' https: wss:${isDev ? ' ws:' : ''}`,
     "media-src 'self' blob: https:",
     "worker-src 'self' blob:",
-    "frame-src 'self' https://challenges.cloudflare.com",
+    `frame-src ${frameSrc}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

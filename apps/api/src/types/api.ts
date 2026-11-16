@@ -32,6 +32,9 @@ export interface Env {
   MIN_SUGGESTION_CONFIDENCE?: string;
   WOPI_TOKEN_SECRET?: string;
   WOPI_ALLOWED_CLIENT_IPS?: string;
+  WOPI_HOST_ORIGIN?: string;
+  WOPI_DISCOVERY_URL?: string;
+  COLLABORA_URL?: string;
 }
 
 export interface AuthUser {

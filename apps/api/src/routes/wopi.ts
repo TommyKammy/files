@@ -7,6 +7,11 @@ import {
 } from '../services/authorization';
 import type { FileRow } from '../services/file-upload-common';
 import { issueWopiSessionToken } from '../services/wopi-token';
+import {
+  buildWopiSrc,
+  getWopiDiscovery,
+  resolveWopiActionUrl,
+} from '../services/wopi-discovery';
 import type { OidcHonoEnv } from '../types/oidc';
 
 export const wopiSessionRoutes = new Hono<OidcHonoEnv>();
@@ -42,6 +47,19 @@ wopiSessionRoutes.post('/:id/wopi-session', async (c) => {
   const role = access.effectiveRole!;
   const canWrite = hasAtLeastRole(role, 'editor');
   const sessionId = crypto.randomUUID();
+  const wopiSrc = buildWopiSrc(c.env, fileId);
+  const discovery = await getWopiDiscovery(c.env).catch((err) => {
+    console.warn('[wopi] Discovery resolution failed:', err);
+    return null;
+  });
+  const wopiActionUrl = discovery
+    ? resolveWopiActionUrl(discovery, {
+        extension: file.extension ?? file.name.split('.').pop(),
+        canWrite,
+        wopiSrc,
+      })
+    : null;
+
   const issued = await issueWopiSessionToken(c.env, {
     sessionId,
     fileId,
@@ -83,6 +101,9 @@ wopiSessionRoutes.post('/:id/wopi-session', async (c) => {
       accessToken: issued.token,
       accessTokenExpiresAt: issued.expiresAt,
       wopiFileUrl: `/wopi/files/${encodeURIComponent(fileId)}`,
+      wopiSrc,
+      wopiActionUrl,
+      collaboraOrigin: c.env.COLLABORA_URL ?? null,
     },
     201
   );
