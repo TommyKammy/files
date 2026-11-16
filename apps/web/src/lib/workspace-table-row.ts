@@ -1,4 +1,9 @@
-import type { FileItem, FolderSummary } from '@/types/files';
+import type { DragWorkspaceItem } from '@/lib/drag-drop-controller';
+import type {
+  FileItem,
+  FolderSummary,
+  ResourceRole,
+} from '@/types/files';
 
 export type WorkspaceTableRow =
   | { kind: 'folder'; folder: FolderSummary }
@@ -36,4 +41,28 @@ export function isRowControlTarget(target: EventTarget | null): boolean {
       'button, a, input, select, textarea, [role="menu"], [role="checkbox"], [data-workspace-row-trigger="true"]'
     )
   );
+}
+
+export function toDragWorkspaceItem(
+  row: WorkspaceTableRow,
+  fallbackRole: ResourceRole
+): DragWorkspaceItem {
+  if (row.kind === 'folder') {
+    return {
+      type: 'folder',
+      id: row.folder.id,
+      name: row.folder.name,
+      parentId: row.folder.parent_id,
+      classification: row.folder.classification,
+      effectiveRole: row.folder.effectiveRole ?? fallbackRole,
+    };
+  }
+  return {
+    type: 'file',
+    id: row.file.id,
+    name: row.file.name,
+    parentId: row.file.folder_id,
+    classification: row.file.classification,
+    effectiveRole: fallbackRole,
+  };
 }
