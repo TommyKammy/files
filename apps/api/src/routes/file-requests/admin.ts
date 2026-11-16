@@ -3,6 +3,7 @@ import { sessionAuthMiddleware } from '../../middleware/session-auth';
 import { buildAuditLogStmt } from '../../services/audit';
 import {
   getAuthenticatedUser,
+  requireMemberUser,
   resolveTargetAccess,
 } from '../../services/authorization';
 import { can } from '../../services/capabilities';
@@ -17,7 +18,11 @@ import {
 } from './shared';
 
 export const fileRequestsRoutes = new Hono<OidcHonoEnv>();
-fileRequestsRoutes.use('*', sessionAuthMiddleware({ required: true }));
+fileRequestsRoutes.use(
+  '*',
+  sessionAuthMiddleware({ required: true }),
+  requireMemberUser
+);
 
 fileRequestsRoutes.get('/', async (c) => {
   const user = getAuthenticatedUser(c);

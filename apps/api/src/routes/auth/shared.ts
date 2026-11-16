@@ -122,8 +122,13 @@ export async function issueSessionForUser(
     userId: string;
     email: string;
     ipAddress: string;
-    auditAction: 'auth.login' | 'auth.dev_login';
+    auditAction: 'auth.login' | 'auth.dev_login' | 'guest.login';
     auditMetadata: Record<string, unknown>;
+    /**
+     * Explicit session lifetime for guests (capped by the guest account
+     * expiry). Omit to use the tenant `session_max_hours` policy.
+     */
+    maxAgeSeconds?: number;
   }
 ): Promise<void> {
   const policy = await c.env.DB.prepare(
@@ -133,7 +138,10 @@ export async function issueSessionForUser(
     .first<{ session_max_hours: number }>();
 
   const sessionHours = policy?.session_max_hours ?? DEFAULT_SESSION_HOURS;
-  const maxAgeSec = sessionHours * 3600;
+  const maxAgeSec =
+    params.maxAgeSeconds !== undefined
+      ? Math.max(1, Math.floor(params.maxAgeSeconds))
+      : sessionHours * 3600;
   const nowIso = new Date().toISOString();
   const expiresAtIso = new Date(Date.now() + maxAgeSec * 1000).toISOString();
   const sessionToken = generateRandomToken(32);

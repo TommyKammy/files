@@ -14,7 +14,8 @@ export function registerScimUserPatchRoutes(routes: Hono<ScimHonoEnv>) {
     const userId = c.req.param('id');
 
     const existing = await c.env.DB.prepare(
-      `SELECT ${USER_SELECT_COLUMNS} FROM users WHERE tenant_id = ? AND id = ?`
+      `SELECT ${USER_SELECT_COLUMNS} FROM users
+        WHERE tenant_id = ? AND id = ? AND user_type = 'member'`
     )
       .bind(scim.tenantId, userId)
       .first<ScimUserDbRow>();

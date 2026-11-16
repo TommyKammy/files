@@ -31,8 +31,11 @@ export async function getFolderStructureMode(
  */
 export function canCreateAtRoot(
   mode: FolderStructureMode,
-  user: Pick<AuthUser, 'role'>
+  user: Pick<AuthUser, 'role' | 'userType'>
 ): boolean {
+  // Guests are external collaborators: they may only work inside the exact
+  // folders shared with them and can never create at the workspace root.
+  if (user.userType === 'guest') return false;
   return mode === 'open' || user.role === 'sys_admin';
 }
 

@@ -46,7 +46,9 @@ export function AppShellRail({
   const [searchOpen, setSearchOpen] = useState(false);
   const resolvedView =
     activeView ?? (pathname.startsWith('/admin') ? 'admin' : 'workspace');
-  const isAdmin = user?.role === 'sys_admin' || user?.role === 'sec_admin';
+  const isAdmin =
+    user?.userType !== 'guest' &&
+    (user?.role === 'sys_admin' || user?.role === 'sec_admin');
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {

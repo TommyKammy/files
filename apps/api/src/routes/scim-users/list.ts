@@ -32,7 +32,7 @@ export function registerScimUserListRoutes(routes: Hono<ScimHonoEnv>) {
       return scimError(c, 400, 'Unsupported SCIM filter expression', 'invalidFilter');
     }
 
-    let whereSql = 'tenant_id = ?';
+    let whereSql = "tenant_id = ? AND user_type = 'member'";
     const bindings: unknown[] = [scim.tenantId];
 
     if (filter) {
@@ -86,7 +86,8 @@ export function registerScimUserListRoutes(routes: Hono<ScimHonoEnv>) {
     const userId = c.req.param('id');
 
     const row = await c.env.DB.prepare(
-      `SELECT ${USER_SELECT_COLUMNS} FROM users WHERE tenant_id = ? AND id = ?`
+      `SELECT ${USER_SELECT_COLUMNS} FROM users
+        WHERE tenant_id = ? AND id = ? AND user_type = 'member'`
     )
       .bind(scim.tenantId, userId)
       .first<ScimUserDbRow>();

@@ -152,6 +152,7 @@ function makeUser(): AuthUser {
     displayName: 'RT User',
     role: 'member',
     ipAddress: '127.0.0.1',
+  userType: 'member',
   };
 }
 

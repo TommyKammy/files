@@ -31,20 +31,30 @@ export function registerScimUserCreateRoutes(routes: Hono<ScimHonoEnv>) {
       return scimError(c, 400, (err as Error).message, 'invalidValue');
     }
 
-    // Enforce tenant-scoped uniqueness for both email and (idp_issuer, external_idp_id)
+    // Enforce tenant-scoped uniqueness for both email and (idp_issuer, external_idp_id).
+    // An existing guest row is never implicitly converted into a member; the
+    // same-email drift is rejected explicitly with 409 uniqueness.
     const existingByEmail = await c.env.DB.prepare(
-      'SELECT id FROM users WHERE tenant_id = ? AND email = ?'
+      'SELECT id, user_type FROM users WHERE tenant_id = ? AND email = ?'
     )
       .bind(scim.tenantId, normalized.email)
-      .first<{ id: string }>();
+      .first<{ id: string; user_type: 'member' | 'guest' }>();
     if (existingByEmail) {
-      return scimError(c, 409, 'User with this userName/email already exists', 'uniqueness');
+      return scimError(
+        c,
+        409,
+        existingByEmail.user_type === 'guest'
+          ? 'Email belongs to an external guest account; SCIM cannot convert guests into members'
+          : 'User with this userName/email already exists',
+        'uniqueness'
+      );
     }
 
     if (normalized.externalIdpId) {
       const existingByExternal = await c.env.DB.prepare(
         `SELECT id FROM users
-          WHERE tenant_id = ? AND idp_issuer = ? AND external_idp_id = ?`
+          WHERE tenant_id = ? AND idp_issuer = ? AND external_idp_id = ?
+            AND user_type = 'member'`
       )
         .bind(scim.tenantId, scim.idpIssuer, normalized.externalIdpId)
         .first<{ id: string }>();

@@ -48,6 +48,19 @@ export function registerFolderMutationRoutes(routes: Hono<OidcHonoEnv>) {
       return c.json({ error: 'Invalid classification value' }, 400);
     }
 
+    // External guests can never create at the workspace root, regardless of the
+    // tenant folder-structure mode. They may only create inside a folder that
+    // was explicitly shared with them (folder.create capability).
+    if (user.userType === 'guest' && (body.parentId ?? null) === null) {
+      return c.json(
+        {
+          error: 'Forbidden: guest accounts cannot create root folders',
+          code: 'GUEST_FORBIDDEN',
+        },
+        403
+      );
+    }
+
     try {
       const folder = await createFolderWithClosures(c.env.DB, user, {
         name: body.name,

@@ -119,7 +119,8 @@ export function useGovernanceDashboard() {
   }, [snapshot.policy, policy]);
 
   const isPrivilegedAdmin =
-    user?.role === 'sys_admin' || user?.role === 'sec_admin';
+    user?.userType !== 'guest' &&
+    (user?.role === 'sys_admin' || user?.role === 'sec_admin');
 
   const loadAll = useCallback(
     async (options?: { silent?: boolean }) => {

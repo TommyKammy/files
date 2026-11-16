@@ -129,6 +129,28 @@ export const requireSysAdmin = requireUserRoleMiddleware(['sys_admin']);
 export const requireSecOrSysAdmin = requireUserRoleMiddleware(['sys_admin', 'sec_admin']);
 
 /**
+ * Block external guest accounts from internal/member-only surfaces
+ * (`/api/admin/*`, `/api/audit-logs`, file-request management, ...).
+ * Authentication must already have run.
+ */
+export const requireMemberUser = createMiddleware<OidcHonoEnv>(async (c, next) => {
+  const user = c.get('user');
+  if (!user) {
+    return c.json({ error: 'Authentication required' }, 401);
+  }
+  if (user.userType === 'guest') {
+    return c.json(
+      {
+        error: 'Forbidden: guest accounts cannot access internal features',
+        code: 'GUEST_FORBIDDEN',
+      },
+      403
+    );
+  }
+  await next();
+});
+
+/**
  * @deprecated Legacy 5-role SQL rank. All authorization queries now aggregate
  * `GROUP_CONCAT(DISTINCT p.role)` and compose roles in TypeScript via
  * `joinRoles` / `synthesizeEffectiveAccess`, because `MAX(rank)` loses the

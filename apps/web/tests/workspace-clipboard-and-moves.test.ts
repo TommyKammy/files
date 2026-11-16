@@ -23,6 +23,7 @@ function makeUser(overrides: Partial<AuthUser> = {}): AuthUser {
     displayName: 'User A',
     role: 'member',
     ipAddress: '127.0.0.1',
+    userType: 'member',
     ...overrides,
   };
 }

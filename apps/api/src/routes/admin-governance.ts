@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
-import { requireSecOrSysAdmin } from '../services/authorization';
+import { requireMemberUser, requireSecOrSysAdmin } from '../services/authorization';
 import type { OidcHonoEnv } from '../types/oidc';
 import { registerAiSuggestionRoutes } from './admin/ai-suggestions';
 import { registerAdminPermissionRoutes } from './admin/permissions';
@@ -15,6 +15,7 @@ export const adminGovernanceRoutes = new Hono<OidcHonoEnv>();
 adminGovernanceRoutes.use(
   '*',
   sessionAuthMiddleware({ required: true }),
+  requireMemberUser,
   requireSecOrSysAdmin
 );
 

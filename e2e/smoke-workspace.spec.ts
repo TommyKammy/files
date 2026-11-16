@@ -87,6 +87,9 @@ test.describe('workspace baseline E2E', () => {
       email: 'dev-admin@example.com',
       displayName: 'Dev Admin',
       ipAddress: expect.any(String),
+      userType: 'member',
+      externalOrg: null,
+      expiresAt: null,
     });
   });
 

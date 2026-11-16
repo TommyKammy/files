@@ -6,4 +6,5 @@ export * from './files-api/versions';
 export * from './files-api/sharing';
 export * from './files-api/file-requests';
 export * from './files-api/admin';
+export * from './files-api/guests';
 export * from './files-api/wopi';

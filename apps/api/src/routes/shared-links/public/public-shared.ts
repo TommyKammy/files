@@ -91,6 +91,18 @@ export async function loadAndAuthorizeShareLink(
         };
       }
     }
+
+    // `company_only` is an internal-members scope. External guests are not
+    // company members even though they share the tenant row.
+    if (link.access_scope === 'company_only' && user.userType === 'guest') {
+      return {
+        ok: false,
+        status: 403,
+        error: 'Forbidden: company-only links require an internal member account',
+        code: 'COMPANY_ONLY_MEMBER_REQUIRED',
+        link,
+      };
+    }
   }
 
   return { ok: true, link, tokenHash };

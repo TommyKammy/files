@@ -159,10 +159,11 @@ export function WorkspaceFileBrowser() {
       : directory.files;
   const folderStructureMode = readFolderStructureMode(snapshot.policy);
   const isSysAdminUser = user?.role === 'sys_admin';
+  const isGuestUser = user?.userType === 'guest';
   const rootCreationRestricted =
     !isTrashView &&
     folderId === null &&
-    isRootCreationRestricted(folderStructureMode, isSysAdminUser);
+    (isGuestUser || isRootCreationRestricted(folderStructureMode, isSysAdminUser));
   const trashFilterActive =
     isTrashView &&
     getTrashEmptyState(trash.filters, trash.items.length) ===
@@ -368,7 +369,8 @@ export function WorkspaceFileBrowser() {
   const visibleFiles =
     isTrashView || canPreviewCurrentFolder ? files : [];
   const isPrivilegedAdmin =
-    user?.role === 'sys_admin' || user?.role === 'sec_admin';
+    user?.userType !== 'guest' &&
+    (user?.role === 'sys_admin' || user?.role === 'sec_admin');
   const showTrashDeleterFilter =
     isTrashView &&
     (isPrivilegedAdmin ||

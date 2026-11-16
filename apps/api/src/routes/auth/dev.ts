@@ -97,6 +97,7 @@ export function registerDevAuthRoutes(routes: Hono<OidcHonoEnv>) {
         email: target.email,
         displayName: target.display_name,
         role: target.role,
+        userType: 'member',
       },
     });
   });

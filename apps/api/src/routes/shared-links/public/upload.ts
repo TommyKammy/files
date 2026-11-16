@@ -78,6 +78,7 @@ function sharedLinkActor(
     displayName: 'Shared link collaborator',
     role: 'member',
     ipAddress: getClientIp(req, null),
+    userType: 'member',
   };
 }
 

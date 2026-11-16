@@ -16,6 +16,10 @@ import {
   isRoleWithinCapabilitySubset,
   resolveEffectiveInvitePolicy,
 } from '../../services/invite-policy';
+import {
+  getGuestPolicy,
+  guestRoleRestriction,
+} from '../../services/external-guests';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
 import {
@@ -122,6 +126,59 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
       return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);
     }
 
+    // Validate the grantee before role guardrails so guest-specific role
+    // restrictions can never be bypassed by owner/editor escalation checks.
+    let granteeUserRow: {
+      id: string;
+      status: 'active' | 'suspended';
+      user_type: 'member' | 'guest';
+    } | null = null;
+    if (granteeType === 'user') {
+      granteeUserRow = await c.env.DB.prepare(
+        'SELECT id, status, user_type FROM users WHERE tenant_id = ? AND id = ?'
+      )
+        .bind(user.tenantId, granteeId)
+        .first<{ id: string; status: 'active' | 'suspended'; user_type: 'member' | 'guest' }>();
+      if (!granteeUserRow) {
+        return c.json({ error: 'Target user not found in tenant' }, 404);
+      }
+      if (granteeUserRow.status !== 'active') {
+        return c.json(
+          { error: 'Cannot grant permissions to a suspended user', code: 'SUSPENDED_USER_BLOCKED' },
+          400
+        );
+      }
+    } else {
+      const granteeGroup = await c.env.DB.prepare(
+        'SELECT id FROM groups WHERE tenant_id = ? AND id = ?'
+      )
+        .bind(user.tenantId, granteeId)
+        .first<{ id: string }>();
+      if (!granteeGroup) {
+        return c.json({ error: 'Target group not found in tenant' }, 404);
+      }
+    }
+
+    // P10-1: guest role restrictions apply to direct grants too, not just the
+    // dedicated guest invitation API.
+    if (granteeUserRow?.user_type === 'guest') {
+      const guestPolicy = await getGuestPolicy(c.env.DB, user.tenantId);
+      const restriction = guestRoleRestriction(requestedRole, {
+        allowGuestElevatedRoles: guestPolicy.allowGuestElevatedRoles,
+        advancedRolesEnabled: await areAdvancedRolesEnabled(
+          c.env.DB,
+          user.tenantId
+        ),
+        targetType,
+      });
+      if (restriction) {
+        return c.json(
+          { error: restriction.message, code: restriction.code },
+          restriction.status
+        );
+      }
+    }
+
     // Guardrail 0a: advanced roles are folder-only, independent of tenant policy.
     if (isAdvancedResourceRole(requestedRole) && targetType !== 'folder') {
       return c.json(
@@ -184,33 +241,6 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
         },
         403
       );
-    }
-
-    // Validate grantee exists in same tenant and is not suspended
-    if (granteeType === 'user') {
-      const granteeUser = await c.env.DB.prepare(
-        'SELECT id, status FROM users WHERE tenant_id = ? AND id = ?'
-      )
-        .bind(user.tenantId, granteeId)
-        .first<{ id: string; status: 'active' | 'suspended' }>();
-      if (!granteeUser) {
-        return c.json({ error: 'Target user not found in tenant' }, 404);
-      }
-      if (granteeUser.status !== 'active') {
-        return c.json(
-          { error: 'Cannot grant permissions to a suspended user', code: 'SUSPENDED_USER_BLOCKED' },
-          400
-        );
-      }
-    } else {
-      const granteeGroup = await c.env.DB.prepare(
-        'SELECT id FROM groups WHERE tenant_id = ? AND id = ?'
-      )
-        .bind(user.tenantId, granteeId)
-        .first<{ id: string }>();
-      if (!granteeGroup) {
-        return c.json({ error: 'Target group not found in tenant' }, 404);
-      }
     }
 
     // Guardrail 2: co_owner cannot modify/demote an existing owner

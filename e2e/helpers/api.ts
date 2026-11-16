@@ -699,8 +699,7 @@ export async function updateFolderInvitePolicy(
   );
 }
 
-/** DELETE /api/folders/:id — soft delete a folder subtree for E2E fixtures. */
-export async function softDeleteFolder(
+/** DELETE /api/folders/:id — soft delete a folder subtree for E2E fixtures. */export async function softDeleteFolder(
   actor: ApiActor,
   folderId: string
 ): Promise<void> {
@@ -730,4 +729,172 @@ export async function deleteFolderQuietly(
   } catch (err) {
     console.warn(`[e2e] cleanup failed for folder ${folderId}:`, err);
   }
+}
+
+export interface GuestPolicyPayload {
+  allowExternalCollaborators?: boolean;
+  allowGuestElevatedRoles?: boolean;
+  externalDomainAllowlist?: string[];
+  guestInvitationExpiryDays?: number;
+  guestSessionMaxHours?: number;
+}
+
+export interface GuestPolicyResponse {
+  policy: {
+    allowExternalCollaborators: boolean;
+    allowGuestElevatedRoles: boolean;
+    externalDomainAllowlist: string[];
+    guestInvitationExpiryDays: number;
+    guestSessionMaxHours: number;
+  };
+}
+
+/** PATCH /api/admin/policies — tenant external guest policy. */
+export async function updateGuestPolicy(
+  actor: ApiActor,
+  payload: GuestPolicyPayload
+): Promise<GuestPolicyResponse> {
+  const res = await actor.api.patch('/api/admin/policies', { data: payload });
+  assertOk(res, `PATCH /api/admin/policies guest policy ${JSON.stringify(payload)}`);
+  return (await res.json()) as GuestPolicyResponse;
+}
+
+export interface GuestInvitationLike {
+  id: string;
+  userId: string | null;
+  email: string;
+  displayName: string;
+  externalOrg: string | null;
+  targetType: 'folder' | 'file';
+  targetId: string;
+  targetName: string | null;
+  role: PermissionRole;
+  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  expiresAt: string;
+  resendCount: number;
+}
+
+export interface GuestInvitationCreateResponse {
+  invitation: GuestInvitationLike;
+}
+
+/** POST /api/guests/invitations — returns the raw response for status assertions. */
+export function postGuestInvitation(
+  actor: ApiActor,
+  input: {
+    email: string;
+    displayName?: string;
+    externalOrg?: string | null;
+    targetType: 'folder' | 'file';
+    targetId: string;
+    role: PermissionRole;
+  }
+): ReturnType<APIRequestContext['post']> {
+  return actor.api.post('/api/guests/invitations', { data: input });
+}
+
+/** POST /api/guests/invitations — asserts 201 and returns the created invitation. */
+export async function createGuestInvitation(
+  actor: ApiActor,
+  input: {
+    email: string;
+    displayName?: string;
+    externalOrg?: string | null;
+    targetType: 'folder' | 'file';
+    targetId: string;
+    role: PermissionRole;
+  }
+): Promise<GuestInvitationLike> {
+  const res = await postGuestInvitation(actor, input);
+  expect(res.status(), `POST /api/guests/invitations for ${input.email} should return 201`).toBe(201);
+  const body = (await res.json()) as GuestInvitationCreateResponse;
+  return body.invitation;
+}
+
+export async function resendGuestInvitation(
+  actor: ApiActor,
+  invitationId: string
+): Promise<GuestInvitationLike> {
+  const res = await actor.api.post(
+    `/api/guests/invitations/${encodeURIComponent(invitationId)}/resend`
+  );
+  assertOk(res, `POST /api/guests/invitations/${invitationId}/resend`);
+  const body = (await res.json()) as GuestInvitationCreateResponse;
+  return body.invitation;
+}
+
+export async function revokeGuestInvitation(
+  actor: ApiActor,
+  invitationId: string
+): Promise<GuestInvitationLike> {
+  const res = await actor.api.post(
+    `/api/guests/invitations/${encodeURIComponent(invitationId)}/revoke`
+  );
+  assertOk(res, `POST /api/guests/invitations/${invitationId}/revoke`);
+  const body = (await res.json()) as { invitation: GuestInvitationLike };
+  return body.invitation;
+}
+
+export interface DevGuestMail {
+  id: string;
+  kind: 'guest_invitation' | 'guest_otp';
+  to: string;
+  subject: string;
+  text: string;
+  token: string | null;
+  otpCode: string | null;
+  acceptUrl: string | null;
+  createdAt: string;
+}
+
+/** Local-only `/auth/dev-guest-mails` reader (playwright API context is loopback). */
+export async function listDevGuestMails(
+  actor: ApiActor,
+  params: { to: string; kind?: 'guest_invitation' | 'guest_otp' }
+): Promise<DevGuestMail[]> {
+  const qs = new URLSearchParams({ to: params.to });
+  if (params.kind) qs.set('kind', params.kind);
+  const res = await actor.api.get(`/auth/dev-guest-mails?${qs.toString()}`);
+  assertOk(res, 'GET /auth/dev-guest-mails');
+  const body = (await res.json()) as { mails: DevGuestMail[] };
+  return body.mails;
+}
+
+/** Polls the local mail sink until at least one matching message exists. */
+export async function waitForDevGuestMail(
+  actor: ApiActor,
+  params: { to: string; kind: 'guest_invitation' | 'guest_otp' }
+): Promise<DevGuestMail> {
+  let found: DevGuestMail | undefined;
+  await expect
+    .poll(
+      async () => {
+        const mails = await listDevGuestMails(actor, params);
+        found = mails[0];
+        return Boolean(found);
+      },
+      {
+        timeout: 15_000,
+        message: `expected a ${params.kind} mail for ${params.to}`,
+      }
+    )
+    .toBe(true);
+  return found!;
+}
+
+/** POST /api/guests/invitations/:id/revoke with expected 403 helper. */
+export async function expectGuestInvitationStatus(
+  actor: ApiActor,
+  input: {
+    email: string;
+    targetType: 'folder' | 'file';
+    targetId: string;
+    role: PermissionRole;
+  },
+  status: number
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const res = await postGuestInvitation(actor, input);
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  expect(res.status(), `guest invitation for ${input.email} should return ${status}`).toBe(status);
+  return { status: res.status(), body };
 }

@@ -943,6 +943,7 @@ describe('File version history, historical content URLs and CoW restore (TOM-46)
           displayName: 'Version Editor',
           role: 'member',
           ipAddress: '127.0.0.1',
+          userType: 'member',
         },
         file: {
           ...fileRow!,

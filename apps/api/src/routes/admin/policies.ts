@@ -19,6 +19,10 @@ import {
   isInvitePolicy,
   type InvitePolicy,
 } from '../../services/invite-policy';
+import {
+  parseDomainAllowlistJson,
+  validateDomainAllowlistInput,
+} from '../../services/external-guests';
 import type { AiClassificationMode } from '../../types/classification';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -43,6 +47,13 @@ function projectPolicy(
     allowSharedLinkEdit: policy.allow_shared_link_edit === 1,
     allowPublicEditLinks: policy.allow_public_edit_links === 1,
     allowViewerShareLinks: policy.allow_viewer_share_links === 1,
+    allowExternalCollaborators: policy.allow_external_collaborators === 1,
+    externalDomainAllowlist: parseDomainAllowlistJson(
+      policy.external_domain_allowlist_json
+    ),
+    guestInvitationExpiryDays: Number(policy.guest_invitation_expiry_days ?? 14),
+    guestSessionMaxHours: Number(policy.guest_session_max_hours ?? 24),
+    allowGuestElevatedRoles: policy.allow_guest_elevated_roles === 1,
     folderStructureMode,
     permissionInheritanceMode,
     invitePolicy,
@@ -115,6 +126,11 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       folderStructureMode?: unknown;
       permissionInheritanceMode?: unknown;
       invitePolicy?: unknown;
+      allowExternalCollaborators?: unknown;
+      externalDomainAllowlist?: unknown;
+      guestInvitationExpiryDays?: unknown;
+      guestSessionMaxHours?: unknown;
+      allowGuestElevatedRoles?: unknown;
     } | null;
 
     if (!body || typeof body !== 'object') {
@@ -250,6 +266,95 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       }
       updates.push(`${column} = ?`);
       binds.push(value ? 1 : 0);
+    }
+
+    // P10-1 external guest policies: sys_admin only, sec_admin remains read-only.
+    const guestPolicyFieldsProvided =
+      body.allowExternalCollaborators !== undefined ||
+      body.externalDomainAllowlist !== undefined ||
+      body.guestInvitationExpiryDays !== undefined ||
+      body.guestSessionMaxHours !== undefined ||
+      body.allowGuestElevatedRoles !== undefined;
+    if (guestPolicyFieldsProvided && user.role !== 'sys_admin') {
+      return c.json(
+        {
+          error: 'Only sys_admin can change external guest policies',
+          code: 'SYS_ADMIN_REQUIRED',
+        },
+        403
+      );
+    }
+
+    if (body.allowExternalCollaborators !== undefined) {
+      if (typeof body.allowExternalCollaborators !== 'boolean') {
+        return c.json(
+          { error: 'allowExternalCollaborators must be a boolean', code: 'INVALID_GUEST_POLICY' },
+          400
+        );
+      }
+      updates.push('allow_external_collaborators = ?');
+      binds.push(body.allowExternalCollaborators ? 1 : 0);
+    }
+    if (body.allowGuestElevatedRoles !== undefined) {
+      if (typeof body.allowGuestElevatedRoles !== 'boolean') {
+        return c.json(
+          { error: 'allowGuestElevatedRoles must be a boolean', code: 'INVALID_GUEST_POLICY' },
+          400
+        );
+      }
+      updates.push('allow_guest_elevated_roles = ?');
+      binds.push(body.allowGuestElevatedRoles ? 1 : 0);
+    }
+    if (body.externalDomainAllowlist !== undefined) {
+      const validation = validateDomainAllowlistInput(body.externalDomainAllowlist);
+      if (!validation.ok) {
+        return c.json(
+          {
+            error: `Invalid external guest domain(s): ${validation.invalid.join(', ')}`,
+            code: 'INVALID_DOMAIN_ALLOWLIST',
+            invalidDomains: validation.invalid,
+          },
+          400
+        );
+      }
+      updates.push('external_domain_allowlist_json = ?');
+      binds.push(JSON.stringify(validation.domains));
+    }
+    if (body.guestInvitationExpiryDays !== undefined) {
+      if (
+        typeof body.guestInvitationExpiryDays !== 'number' ||
+        !Number.isInteger(body.guestInvitationExpiryDays) ||
+        body.guestInvitationExpiryDays < 1 ||
+        body.guestInvitationExpiryDays > 365
+      ) {
+        return c.json(
+          {
+            error: 'guestInvitationExpiryDays must be integer 1..365',
+            code: 'INVALID_GUEST_POLICY',
+          },
+          400
+        );
+      }
+      updates.push('guest_invitation_expiry_days = ?');
+      binds.push(body.guestInvitationExpiryDays);
+    }
+    if (body.guestSessionMaxHours !== undefined) {
+      if (
+        typeof body.guestSessionMaxHours !== 'number' ||
+        !Number.isInteger(body.guestSessionMaxHours) ||
+        body.guestSessionMaxHours < 1 ||
+        body.guestSessionMaxHours > 168
+      ) {
+        return c.json(
+          {
+            error: 'guestSessionMaxHours must be integer 1..168',
+            code: 'INVALID_GUEST_POLICY',
+          },
+          400
+        );
+      }
+      updates.push('guest_session_max_hours = ?');
+      binds.push(body.guestSessionMaxHours);
     }
     if (body.aiAutoApplyThreshold !== undefined) {
       if (

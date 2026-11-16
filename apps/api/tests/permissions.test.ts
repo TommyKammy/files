@@ -343,6 +343,7 @@ describe('RBAC Authorization & Permission Management (TOM-10)', () => {
         displayName: 'U1',
         role,
         ipAddress: '127.0.0.1',
+        userType: 'member',
       });
       await next();
     });

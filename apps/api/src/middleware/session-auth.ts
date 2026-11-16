@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import { sha256Hex } from '../services/crypto-utils';
-import type { AuthUser, UserRole } from '../types/api';
+import type { AuthUser, UserRole, UserType } from '../types/api';
 import type { OidcEnv, OidcHonoEnv } from '../types/oidc';
 
 export const SESSION_COOKIE = '__Host-files_session';
@@ -12,16 +12,20 @@ export const LOCAL_DEV_OIDC_STATE_COOKIE = 'files_oidc_local';
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const VALID_ROLES = new Set<UserRole>(['sys_admin', 'sec_admin', 'member']);
+const VALID_USER_TYPES = new Set<UserType>(['member', 'guest']);
 const LOCAL_LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
 interface SessionRow {
-  expires_at: string;
+  session_expires_at: string;
   id: string;
   tenant_id: string;
   email: string;
   display_name: string;
   role: UserRole;
   status: 'active' | 'suspended';
+  user_type: UserType;
+  external_org: string | null;
+  user_expires_at: string | null;
 }
 
 export function shouldUseSecureHostCookie(env: Pick<OidcEnv, 'ENVIRONMENT'>, requestUrl: string): boolean {
@@ -95,6 +99,15 @@ export function isLocalDevBypassAllowed(c: Context<OidcHonoEnv>): boolean {
   return LOCAL_LOOPBACK_HOSTS.has(host);
 }
 
+function isGuestUserExpired(
+  userType: UserType,
+  expiresAt: string | null | undefined,
+  nowIso: string
+): boolean {
+  if (userType !== 'guest') return false;
+  return Boolean(expiresAt) && expiresAt! <= nowIso;
+}
+
 export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
   const isRequired = options.required ?? true;
 
@@ -109,6 +122,20 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
       if (devUserId) {
         const rawRole = c.req.header('X-Dev-User-Role') as UserRole | undefined;
         const role: UserRole = rawRole && VALID_ROLES.has(rawRole) ? rawRole : 'sys_admin';
+        const rawUserType = c.req.header('X-Dev-User-Type');
+        const userType: UserType =
+          rawUserType && VALID_USER_TYPES.has(rawUserType as UserType)
+            ? (rawUserType as UserType)
+            : 'member';
+        const expiresAt = c.req.header('X-Dev-User-Expires-At') ?? null;
+        if (
+          isGuestUserExpired(userType, expiresAt, new Date().toISOString())
+        ) {
+          c.set('user', null);
+          if (isRequired) return c.json({ error: 'Guest account has expired' }, 401);
+          await next();
+          return;
+        }
         c.set('user', {
           id: devUserId,
           tenantId: c.req.header('X-Dev-Tenant-Id') ?? c.env.DEFAULT_TENANT_ID ?? 'tenant-default',
@@ -116,6 +143,9 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
           displayName: c.req.header('X-Dev-User-Name') ?? 'Dev Admin',
           role,
           ipAddress,
+          userType,
+          externalOrg: c.req.header('X-Dev-External-Org') ?? null,
+          expiresAt,
         });
         await next();
         return;
@@ -131,7 +161,9 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
     }
 
     const row = await c.env.DB.prepare(
-      `SELECT s.expires_at, u.id, u.tenant_id, u.email, u.display_name, u.role, u.status
+      `SELECT s.expires_at AS session_expires_at,
+              u.id, u.tenant_id, u.email, u.display_name, u.role, u.status,
+              u.user_type, u.external_org, u.expires_at AS user_expires_at
          FROM sessions s
          JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = ? AND s.revoked_at IS NULL`
@@ -139,7 +171,13 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
       .bind(await sha256Hex(token))
       .first<SessionRow>();
 
-    if (!row || row.expires_at <= new Date().toISOString() || row.status !== 'active') {
+    const nowIso = new Date().toISOString();
+    if (
+      !row ||
+      row.session_expires_at <= nowIso ||
+      row.status !== 'active' ||
+      isGuestUserExpired(row.user_type, row.user_expires_at, nowIso)
+    ) {
       c.set('user', null);
       if (isRequired) return c.json({ error: 'Session expired or revoked' }, 401);
       await next();
@@ -153,6 +191,9 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
       displayName: row.display_name,
       role: row.role,
       ipAddress,
+      userType: row.user_type,
+      externalOrg: row.external_org,
+      expiresAt: row.user_expires_at,
     } satisfies AuthUser);
 
     await next();

@@ -48,7 +48,7 @@ export async function applyUserUpdate(
                 department = ?,
                 status = ?,
                 updated_at = ?
-          WHERE tenant_id = ? AND id = ?`
+          WHERE tenant_id = ? AND id = ? AND user_type = 'member'`
       )
       .bind(
         scim.idpIssuer,

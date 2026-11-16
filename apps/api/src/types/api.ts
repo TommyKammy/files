@@ -23,6 +23,7 @@ export type ResourceRole =
   | 'previewer'
   | 'uploader';
 export type ShareAccessScope = 'public' | 'company_only' | 'collaborators_only';
+export type UserType = 'member' | 'guest';
 
 export interface Env {
   DB: D1Database;
@@ -52,6 +53,10 @@ export interface Env {
   WOPI_HOST_ORIGIN?: string;
   WOPI_DISCOVERY_URL?: string;
   COLLABORA_URL?: string;
+  /** Production transactional mail webhook (guest invitations / OTP). */
+  MAIL_WEBHOOK_URL?: string;
+  MAIL_API_KEY?: string;
+  MAIL_FROM?: string;
 }
 
 export interface AuthUser {
@@ -61,6 +66,11 @@ export interface AuthUser {
   displayName: string;
   role: UserRole;
   ipAddress: string;
+  /** `guest` users are isolated from every internal/member-only surface. */
+  userType: UserType;
+  externalOrg?: string | null;
+  /** Guest account expiry (ISO). Members are `null`. */
+  expiresAt?: string | null;
 }
 
 export interface AppVariables {

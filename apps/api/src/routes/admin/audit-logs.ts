@@ -2,13 +2,19 @@ import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../../middleware/session-auth';
 import {
   getAuthenticatedUser,
+  requireMemberUser,
   requireSecOrSysAdmin,
 } from '../../services/authorization';
 import type { OidcHonoEnv } from '../../types/oidc';
 import type { AuditLogRow } from './shared';
 
 export const auditLogsRoutes = new Hono<OidcHonoEnv>();
-auditLogsRoutes.use('*', sessionAuthMiddleware({ required: true }), requireSecOrSysAdmin);
+auditLogsRoutes.use(
+  '*',
+  sessionAuthMiddleware({ required: true }),
+  requireMemberUser,
+  requireSecOrSysAdmin
+);
 
 const MAX_AUDIT_ACTION_FILTERS = 20;
 const MAX_AUDIT_ACTION_LENGTH = 120;

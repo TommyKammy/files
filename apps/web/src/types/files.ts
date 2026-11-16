@@ -44,6 +44,7 @@ export type Capability =
   | 'owner.transfer';
 
 export type UserRole = 'sys_admin' | 'sec_admin' | 'member';
+export type UserType = 'member' | 'guest';
 
 /** `full` = a grant applies; `path` = traversal-only ancestor. */
 export type AccessMode = 'full' | 'path';
@@ -112,6 +113,9 @@ export interface AuthUser {
   displayName: string;
   role: UserRole;
   ipAddress: string;
+  userType: UserType;
+  externalOrg?: string | null;
+  expiresAt?: string | null;
 }
 
 export interface DevAuthAccount {
@@ -819,6 +823,16 @@ export interface TenantPolicyRow {
   permissionInheritanceMode?: PermissionInheritanceMode;
   invite_policy?: InvitePolicy;
   invitePolicy?: InvitePolicy;
+  allow_external_collaborators?: number;
+  allowExternalCollaborators?: boolean;
+  external_domain_allowlist_json?: string;
+  externalDomainAllowlist?: string[];
+  guest_invitation_expiry_days?: number;
+  guestInvitationExpiryDays?: number;
+  guest_session_max_hours?: number;
+  guestSessionMaxHours?: number;
+  allow_guest_elevated_roles?: number;
+  allowGuestElevatedRoles?: boolean;
   updated_by: string | null;
   updated_at: string;
 }
@@ -838,6 +852,11 @@ export interface UpdateAdminPoliciesPayload {
   folderStructureMode?: FolderStructureMode;
   permissionInheritanceMode?: PermissionInheritanceMode;
   invitePolicy?: InvitePolicy;
+  allowExternalCollaborators?: boolean;
+  externalDomainAllowlist?: string[];
+  guestInvitationExpiryDays?: number;
+  guestSessionMaxHours?: number;
+  allowGuestElevatedRoles?: boolean;
 }
 
 export interface TenantPolicyResponse {
@@ -847,6 +866,97 @@ export interface TenantPolicyResponse {
   invitePolicy?: InvitePolicy;
   closedModeReport?: ClosedRootReport;
   inheritanceConflictReport?: WaterfallInheritanceConflict[];
+}
+
+export type GuestInvitationStatus =
+  | 'pending'
+  | 'accepted'
+  | 'revoked'
+  | 'expired';
+
+export interface GuestInvitationSummary {
+  id: string;
+  userId: string | null;
+  email: string;
+  displayName: string;
+  externalOrg: string | null;
+  invitedBy: string;
+  targetType: 'folder' | 'file';
+  targetId: string;
+  targetName: string | null;
+  role: ResourceRole;
+  status: GuestInvitationStatus;
+  expiresAt: string;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  resendCount: number;
+  lastSentAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GuestInvitationListResponse {
+  invitations: GuestInvitationSummary[];
+}
+
+export interface CreateGuestInvitationPayload {
+  email: string;
+  displayName?: string;
+  externalOrg?: string | null;
+  targetType: 'folder' | 'file';
+  targetId: string;
+  role: ResourceRole;
+}
+
+export interface GuestInviteMeta {
+  id: string;
+  status: GuestInvitationStatus;
+  valid: boolean;
+  expired: boolean;
+  revoked: boolean;
+  used: boolean;
+  tenantName: string;
+  emailMasked: string;
+  displayName: string;
+  externalOrg: string | null;
+  targetType: 'folder' | 'file';
+  targetName: string | null;
+  role: ResourceRole;
+  expiresAt: string;
+  invitedByName: string | null;
+  acceptedAt: string | null;
+  canAccept: boolean;
+  reason: string | null;
+}
+
+export interface GuestAcceptResponse {
+  ok: boolean;
+  email: string;
+  emailMasked: string;
+  targetName: string | null;
+  otpExpiresAt: string;
+}
+
+export interface GuestOtpRequestResponse {
+  ok: boolean;
+  email: string;
+  emailMasked: string;
+  otpExpiresAt: string;
+}
+
+export interface GuestOtpVerifyResponse {
+  ok: boolean;
+  user: {
+    id: string;
+    tenantId: string;
+    email: string;
+    displayName: string;
+    role: UserRole;
+    userType: UserType;
+    externalOrg: string | null;
+    expiresAt: string | null;
+  };
 }
 
 export interface AdminRootFolderOwner {

@@ -14,6 +14,7 @@ import { fileRequestsRoutes, publicFileRequestsRoutes } from './routes/file-requ
 import { filesUploadRoutes } from './routes/files-upload';
 import { fileLockRoutes } from './routes/file-locks';
 import { foldersRoutes } from './routes/folders';
+import { guestsRoutes } from './routes/guests';
 import { permissionsRoutes } from './routes/permissions';
 import { searchRoutes } from './routes/search';
 import { sharedItemsRoutes } from './routes/shared-items';
@@ -61,6 +62,7 @@ app.post('/api/csp-report', async (c) => {
 
 app.route('/', authRoutes);
 app.route('/api', permissionsRoutes);
+app.route('/api/guests', guestsRoutes);
 app.route('/api/sync', syncRoutes);
 app.route('/api/trash', trashRoutes);
 app.route('/api/workspace', workspaceRoutes);

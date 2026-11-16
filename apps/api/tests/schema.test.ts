@@ -2,7 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-describe('D1 schema & migrations (0001-0012)', () => {
+describe('D1 schema & migrations (0001-0013)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -251,6 +251,118 @@ describe('D1 schema & migrations (0001-0012)', () => {
            tenant_id, operation, idempotency_key, request_hash, status
          ) VALUES ('t1', 'admin.permission.bulk_grant', 'schema-bad', 'hash',
                    'unknown')`
+      ).run()
+    ).rejects.toThrow();
+
+    // Migration 0013: external guest accounts, invitations, OTP challenges,
+    // dev mail sink and the five tenant guest policies.
+    const [userCols0013, policyCols0013, guestTables] = await Promise.all([
+      env.DB.prepare('PRAGMA table_info(users)').all<{ name: string }>(),
+      env.DB.prepare('PRAGMA table_info(tenant_policies)').all<{ name: string }>(),
+      env.DB.prepare(
+        `SELECT name FROM sqlite_master
+          WHERE type = 'table'
+            AND name IN ('guest_invitations', 'guest_otp_challenges', 'guest_mail_sink')
+          ORDER BY name`
+      ).all<{ name: string }>(),
+    ]);
+    const userColumnNames = userCols0013.results.map((c) => c.name);
+    expect(userColumnNames).toEqual(
+      expect.arrayContaining([
+        'user_type',
+        'external_org',
+        'invited_by',
+        'expires_at',
+        'last_login_at',
+      ])
+    );
+    const guestPolicyColumns = policyCols0013.results.map((c) => c.name);
+    expect(guestPolicyColumns).toEqual(
+      expect.arrayContaining([
+        'allow_external_collaborators',
+        'external_domain_allowlist_json',
+        'guest_invitation_expiry_days',
+        'guest_session_max_hours',
+        'allow_guest_elevated_roles',
+      ])
+    );
+    expect(guestTables.results.map((t) => t.name)).toEqual([
+      'guest_invitations',
+      'guest_mail_sink',
+      'guest_otp_challenges',
+    ]);
+
+    const guestPolicyDefaults = await env.DB.prepare(
+      `SELECT allow_external_collaborators,
+              external_domain_allowlist_json,
+              guest_invitation_expiry_days,
+              guest_session_max_hours,
+              allow_guest_elevated_roles
+         FROM tenant_policies WHERE tenant_id = 't1'`
+    ).first<{
+      allow_external_collaborators: number;
+      external_domain_allowlist_json: string;
+      guest_invitation_expiry_days: number;
+      guest_session_max_hours: number;
+      allow_guest_elevated_roles: number;
+    }>();
+    expect(guestPolicyDefaults).toEqual({
+      allow_external_collaborators: 0,
+      external_domain_allowlist_json: '[]',
+      guest_invitation_expiry_days: 14,
+      guest_session_max_hours: 24,
+      allow_guest_elevated_roles: 0,
+    });
+
+    const defaultUserType = await env.DB.prepare(
+      "SELECT user_type FROM users WHERE id = 'u1'"
+    ).first<{ user_type: string }>();
+    expect(defaultUserType?.user_type).toBe('member');
+
+    await env.DB.prepare(
+      `INSERT INTO users (id, tenant_id, email, display_name, role, user_type, expires_at)
+       VALUES ('guest-u1', 't1', 'guest@partner.example', 'Guest', 'member', 'guest',
+               '2026-12-31T00:00:00.000Z')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO guest_invitations (
+         id, tenant_id, user_id, email, display_name, invited_by, token_hash,
+         target_type, target_id, role, status, expires_at, created_at, updated_at
+       ) VALUES ('gi-1', 't1', 'guest-u1', 'guest@partner.example', 'Guest', 'u1',
+                 'hash-gi-1', 'folder', 'fld1', 'viewer', 'pending',
+                 '2026-12-31T00:00:00.000Z', '2026-11-17T00:00:00.000Z',
+                 '2026-11-17T00:00:00.000Z')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO guest_otp_challenges (
+         id, tenant_id, user_id, email, otp_hash, purpose, expires_at, created_at
+       ) VALUES ('otp-1', 't1', 'guest-u1', 'guest@partner.example', 'hash',
+                 'login', '2026-12-31T00:00:00.000Z', '2026-11-17T00:00:00.000Z')`
+    ).run();
+
+    await expect(
+      env.DB.prepare(
+        "UPDATE users SET user_type = 'admin' WHERE id = 'guest-u1'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE guest_invitations SET role = 'owner' WHERE id = 'gi-1'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE guest_invitations SET status = 'unknown' WHERE id = 'gi-1'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE guest_otp_challenges SET purpose = 'other' WHERE id = 'otp-1'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_policies SET guest_session_max_hours = 169 WHERE tenant_id = 't1'"
       ).run()
     ).rejects.toThrow();
   });

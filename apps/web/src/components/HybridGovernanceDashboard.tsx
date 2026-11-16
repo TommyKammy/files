@@ -13,6 +13,7 @@ import { AdminPermissionAuditSection } from '@/components/admin/AdminPermissionA
 import { AdminRootFoldersSection } from '@/components/admin/AdminRootFoldersSection';
 import { AdminTrashSection } from '@/components/admin/AdminTrashSection';
 import { AuditLogSection } from '@/components/admin/AuditLogSection';
+import { GuestPolicySection } from '@/components/admin/GuestPolicySection';
 import { SharedLinksPolicySection } from '@/components/admin/SharedLinksPolicySection';
 import { StorageStatsSection } from '@/components/admin/StorageStatsSection';
 import { AppShellRail } from '@/components/AppShellRail';
@@ -249,6 +250,12 @@ export function HybridGovernanceDashboard() {
           onEmergencyRevoke={handleEmergencyRevoke}
           onPolicySubmit={handlePolicySubmit}
           onPolicyChange={setPolicy}
+        />
+
+        <GuestPolicySection
+          policy={policy}
+          canManage={user.role === 'sys_admin'}
+          onPolicyUpdated={setPolicy}
         />
 
         <AdminTrashSection user={user} />

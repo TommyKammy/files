@@ -245,6 +245,21 @@ dialog.modal-shell:focus {
   }
 }
 
+/* P10-1 guest forms: defer error styling until the user committed a value. */
+.field-input:user-invalid {
+  border-color: #dc2626;
+  background-color: #fef2f2;
+}
+
+.field-input[aria-invalid='true'] {
+  border-color: #dc2626;
+}
+
+.field-input:focus-visible {
+  outline: 2px solid #5e6ad2;
+  outline-offset: 2px;
+}
+
 @media print {
   .watermark-protected-viewport {
     display: none !important;

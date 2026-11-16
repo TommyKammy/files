@@ -61,6 +61,7 @@ export function registerPublicFileRequestUploadCompleteRoutes(routes: Hono<OidcH
       displayName: grant.submitterEmail ?? 'External Submitter',
       role: 'member',
       ipAddress: clientIp,
+      userType: 'member',
     };
 
     try {
