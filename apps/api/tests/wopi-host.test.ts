@@ -146,7 +146,8 @@ describe('WOPI Host endpoints (CheckFileInfo / GetFile / Lock / PutFile)', () =>
            ('host-p-editor', ?, 'file', ?, 'user', ?, 'editor', ?),
            ('host-p-viewer', ?, 'file', ?, 'user', ?, 'viewer', ?),
            ('host-p-previewer', ?, 'file', ?, 'user', ?, 'previewer', ?),
-           ('host-p-conf', ?, 'file', ?, 'user', ?, 'editor', ?)`
+           ('host-p-conf', ?, 'file', ?, 'user', ?, 'editor', ?),
+           ('host-p-conf-previewer', ?, 'file', ?, 'user', ?, 'previewer', ?)`
       ).bind(
         TENANT_ID,
         FILE_ID,
@@ -163,6 +164,10 @@ describe('WOPI Host endpoints (CheckFileInfo / GetFile / Lock / PutFile)', () =>
         TENANT_ID,
         CONF_FILE_ID,
         EDITOR_ID,
+        EDITOR_ID,
+        TENANT_ID,
+        CONF_FILE_ID,
+        PREVIEWER_ID,
         EDITOR_ID
       ),
       env.DB.prepare(
@@ -194,6 +199,10 @@ describe('WOPI Host endpoints (CheckFileInfo / GetFile / Lock / PutFile)', () =>
     expect(previewerBody.DisablePrint).toBe(true);
     expect(previewerBody.DisableExport).toBe(true);
     expect(previewerBody.DisableCopy).toBe(true);
+    expect(previewerBody.HidePrintOption).toBe(true);
+    expect(previewerBody.HideSaveOption).toBe(true);
+    expect(previewerBody.HideExportOption).toBe(true);
+    expect(previewerBody.UserCanNotWriteRelative).toBe(true);
     expect(String(previewerBody.WatermarkText)).toContain('previewer@example.com');
 
     const confToken = await issueToken(testEnv, CONF_FILE_ID, EDITOR_ID);
@@ -202,12 +211,79 @@ describe('WOPI Host endpoints (CheckFileInfo / GetFile / Lock / PutFile)', () =>
     expect(confBody.DisablePrint).toBe(true);
     expect(confBody.DisableExport).toBe(true);
     expect(confBody.DisableCopy).toBe(true);
+    expect(confBody.HidePrintOption).toBe(true);
+    expect(confBody.HideSaveOption).toBe(true);
+    expect(confBody.HideExportOption).toBe(true);
+    expect(confBody.UserCanNotWriteRelative).toBe(true);
+    expect(String(confBody.WatermarkText)).toContain('editor@example.com');
+
+    const confPreviewerToken = await issueToken(
+      testEnv,
+      CONF_FILE_ID,
+      PREVIEWER_ID
+    );
+    const confPreviewerInfo = await wopiRequest(
+      testEnv,
+      CONF_FILE_ID,
+      confPreviewerToken
+    );
+    const confPreviewerBody = (await confPreviewerInfo.json()) as Record<
+      string,
+      unknown
+    >;
+    expect(confPreviewerBody.UserCanWrite).toBe(false);
+    expect(confPreviewerBody.ReadOnly).toBe(true);
+    expect(confPreviewerBody.DisablePrint).toBe(true);
+    expect(confPreviewerBody.DisableExport).toBe(true);
+    expect(confPreviewerBody.DisableCopy).toBe(true);
+    expect(String(confPreviewerBody.WatermarkText)).toContain(
+      'previewer@example.com'
+    );
 
     const noToken = await app.fetch(
       new Request(`http://127.0.0.1:8787/wopi/files/${FILE_ID}`),
       testEnv
     );
     expect(noToken.status).toBe(401);
+  });
+
+  it('blocks previewer and confidential DLP sessions from LOCK and PutFile writes', async () => {
+    const testEnv = buildTestEnv();
+
+    for (const { fileId, userId } of [
+      { fileId: FILE_ID, userId: PREVIEWER_ID },
+      { fileId: CONF_FILE_ID, userId: PREVIEWER_ID },
+    ]) {
+      const token = await issueToken(testEnv, fileId, userId);
+      const lockAttempt = await wopiRequest(testEnv, fileId, token, {
+        method: 'POST',
+        headers: { 'X-WOPI-Override': 'LOCK', 'X-WOPI-Lock': 'dlp-lock' },
+      });
+      expect(lockAttempt.status).toBe(403);
+      expect(
+        ((await lockAttempt.json()) as { code: string }).code
+      ).toBe('WOPI_READ_ONLY');
+
+      const putAttempt = await wopiRequest(
+        testEnv,
+        fileId,
+        token,
+        { method: 'POST', headers: { 'X-WOPI-Lock': 'dlp-lock' }, body: 'dlp-write' },
+        '/contents'
+      );
+      expect(putAttempt.status).toBe(403);
+      expect(
+        ((await putAttempt.json()) as { code: string }).code
+      ).toBe('WOPI_READ_ONLY');
+    }
+
+    const fileRow = await testEnv.DB.prepare(
+      'SELECT size_bytes, current_version_num FROM files WHERE tenant_id = ? AND id = ?'
+    )
+      .bind(TENANT_ID, FILE_ID)
+      .first<{ size_bytes: number; current_version_num: number }>();
+    expect(fileRow?.current_version_num).toBe(1);
+    expect(fileRow?.size_bytes).toBe(15);
   });
 
   it('streams GetFile content and rejects a token for another file', async () => {

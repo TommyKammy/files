@@ -133,8 +133,10 @@ const child = spawn(
     'dev',
     '--port',
     String(apiPort),
+    // Collabora is a container: it cannot reach a loopback-only Wrangler.
+    // Binding the E2E-only port makes host.docker.internal:18787 reachable.
     '--ip',
-    '127.0.0.1',
+    '0.0.0.0',
     '--inspector-port',
     String(inspectorPort),
     '--persist-to',
@@ -153,7 +155,10 @@ const child = spawn(
     '--var',
     'DEFAULT_TENANT_ID:tenant-default',
     '--var',
-    `WOPI_HOST_ORIGIN:http://127.0.0.1:${apiPort}`,
+    // Collabora runs inside a container; 127.0.0.1 would point at the
+    // container itself. host.docker.internal reaches the macOS host Wrangler,
+    // and the compose aliasgroup allowlists the same origin.
+    `WOPI_HOST_ORIGIN:http://host.docker.internal:${apiPort}`,
     '--var',
     `COLLABORA_URL:${process.env.E2E_COLLABORA_URL ?? 'http://localhost:9980'}`,
   ],

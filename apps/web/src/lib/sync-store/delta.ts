@@ -319,6 +319,47 @@ export function applyDeltaChangesToCache(
         continue;
       }
 
+      if (change.action === 'file.version_finalized') {
+        const existing = ctx.filesById.get(change.entityId);
+        if (existing) {
+          ctx.filesById.set(change.entityId, {
+            ...existing,
+            folder_id: targetFolderId,
+            size_bytes:
+              typeof p.sizeBytes === 'number'
+                ? p.sizeBytes
+                : existing.size_bytes,
+            mime_type:
+              typeof p.mimeType === 'string'
+                ? p.mimeType
+                : existing.mime_type,
+            current_version_num:
+              typeof p.currentVersionNum === 'number'
+                ? p.currentVersionNum
+                : existing.current_version_num + 1,
+            meta_version:
+              typeof p.metaVersion === 'number'
+                ? p.metaVersion
+                : (existing.meta_version ?? 1) + 1,
+            updated_at:
+              typeof p.updatedAt === 'string' ? p.updatedAt : change.createdAt,
+          });
+        } else {
+          const dir = ctx.directoriesByKey.get(
+            dirKeyForDeltaFolder(targetFolderId)
+          );
+          if (dir) {
+            dir.stale = true;
+            if (
+              dirKeyForDeltaFolder(targetFolderId) === ctx.activeDirKey
+            ) {
+              shouldRevalidateActive = true;
+            }
+          }
+        }
+        continue;
+      }
+
       if (change.action === 'file.update') {
         const prevFolderId = p.previousFolderId as string | null | undefined;
         if (prevFolderId !== undefined && prevFolderId !== targetFolderId) {

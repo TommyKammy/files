@@ -476,6 +476,7 @@ export interface WopiSessionResponse {
   role: ResourceRole;
   canWrite: boolean;
   readOnly: boolean;
+  readOnlyReason: 'desktop_lock' | 'dlp' | 'permission' | null;
   lockMode: 'wopi_collab';
   accessToken: string;
   accessTokenExpiresAt: string;

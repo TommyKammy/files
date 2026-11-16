@@ -57,7 +57,13 @@ Browser -> Next.js (/workspace) -> Collabora iframe
 
 The web CSP `frame-src` is generated from `COLLABORA_URL`, so only the
 configured Collabora origin can be embedded. Collabora's `aliasgroup1`
-allowlists the WOPI host origins it may call.
+allowlists the WOPI host origins it may call. The local compose file allows
+both the interactive `:8787` API and the isolated Playwright `:18787` API.
+
+For the isolated Playwright stack, `e2e/scripts/start-api.mjs` binds Wrangler
+to `0.0.0.0` and advertises `WOPI_HOST_ORIGIN=http://host.docker.internal:18787`,
+because `127.0.0.1` from inside the Collabora container points at the container
+itself. This binding is scoped to the E2E-only port and state directory.
 
 ## Session flow
 
@@ -108,12 +114,15 @@ DELETE /api/files/:id/lock         { lockId }  (or X-Drive-Lock)
 - `GET /lock-status` reports the current lock, `canWrite`, `readOnly`, and
   `syncPolicy`.
 
-### Remaining Phase 7 validation
+### Phase 7 validation
 
 The API/security matrix is covered by `vitest-pool-workers`
 (`file-lock-api.test.ts`, `wopi-host.test.ts`, `wopi-drafts.test.ts`).
-A Playwright two-browser Collabora editing spec and desktop-client
-integration are the remaining end-to-end validation items.
+The real-container Playwright suite (`e2e/collabora.spec.ts`, `@collabora`)
+covers two-browser collaborative editing, `TenantSyncHub` lock propagation,
+`PutFile`/`UNLOCK` version promotion, `previewer`/`confidential` DLP viewer
+mode, and `desktop_exclusive` read-only exclusion. Desktop-client integration
+(macOS FileProvider / Windows Cloud Files) remains a later Files Drive phase.
 
 ## Benchmark-seeded files
 

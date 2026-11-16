@@ -6,6 +6,7 @@ import {
   resolveTargetAccess,
 } from '../services/authorization';
 import type { FileRow } from '../services/file-upload-common';
+import { getFileLockState } from '../services/file-lock';
 import { getActiveWopiDraft } from '../services/wopi-drafts';
 import { issueWopiSessionToken } from '../services/wopi-token';
 import {
@@ -46,7 +47,17 @@ wopiSessionRoutes.post('/:id/wopi-session', async (c) => {
   }
 
   const role = access.effectiveRole!;
-  const canWrite = hasAtLeastRole(role, 'editor');
+  const lock = await getFileLockState(c.env, fileId);
+  const desktopLocked = lock?.mode === 'desktop_exclusive';
+  const canWrite = hasAtLeastRole(role, 'editor') && !desktopLocked;
+  const dlp = file.classification === 'confidential' || role === 'previewer';
+  const readOnlyReason = canWrite
+    ? null
+    : desktopLocked
+      ? 'desktop_lock'
+      : dlp
+        ? 'dlp'
+        : 'permission';
 
   const [currentVersion, activeDraft] = await Promise.all([
     file.current_version_id
@@ -131,6 +142,7 @@ wopiSessionRoutes.post('/:id/wopi-session', async (c) => {
       role,
       canWrite,
       readOnly: !canWrite,
+      readOnlyReason,
       lockMode: 'wopi_collab',
       accessToken: issued.token,
       accessTokenExpiresAt: issued.expiresAt,

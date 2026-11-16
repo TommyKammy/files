@@ -11,8 +11,9 @@ services:
       - "9980:9980"
     environment:
       # Collabora calls the Workers WOPI host directly. host.docker.internal
-      # resolves to the macOS host from inside the container.
-      aliasgroup1: "http://host.docker.internal:8787,http://127.0.0.1:8787"
+      # resolves to the macOS host from inside the container. :8787 is the
+      # interactive dev API; :18787 is the isolated Playwright E2E API.
+      aliasgroup1: "http://host.docker.internal:8787,http://127.0.0.1:8787,http://host.docker.internal:18787,http://127.0.0.1:18787"
       extra_params: "--o:ssl.enable=false --o:ssl.termination=false --o:net.proto=IPv4 --o:disk_space_check.enable=false"
       DONT_GEN_SSL_CERT: "true"
     cap_add:

@@ -227,6 +227,56 @@ describe('Files Drive lock REST API and WOPI/Drive mutual exclusion', () => {
     expect(info.UserCanWrite).toBe(false);
     expect(info.ReadOnly).toBe(true);
 
+    const readOnlySession = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/files/${FILE_A}/wopi-session`, {
+        method: 'POST',
+        headers: authHeaders(),
+      }),
+      testEnv
+    );
+    expect(readOnlySession.status).toBe(201);
+    const readOnlyBody = (await readOnlySession.json()) as {
+      canWrite: boolean;
+      readOnly: boolean;
+      readOnlyReason: string | null;
+      accessToken: string;
+    };
+    expect(readOnlyBody.canWrite).toBe(false);
+    expect(readOnlyBody.readOnly).toBe(true);
+    expect(readOnlyBody.readOnlyReason).toBe('desktop_lock');
+
+    const desktopPutWithReadOnlyToken = await app.fetch(
+      new Request(
+        `http://127.0.0.1:8787/wopi/files/${FILE_A}/contents?access_token=${encodeURIComponent(readOnlyBody.accessToken)}`,
+        {
+          method: 'POST',
+          headers: { 'X-WOPI-Lock': 'drive-desktop-lock' },
+          body: 'desktop-blocked-write',
+        }
+      ),
+      testEnv
+    );
+    expect(desktopPutWithReadOnlyToken.status).toBe(403);
+    expect(
+      ((await desktopPutWithReadOnlyToken.json()) as { code: string }).code
+    ).toBe('WOPI_READ_ONLY');
+
+    const desktopPutWithExistingToken = await app.fetch(
+      new Request(
+        `http://127.0.0.1:8787/wopi/files/${FILE_A}/contents?access_token=${encodeURIComponent(token)}`,
+        {
+          method: 'POST',
+          headers: { 'X-WOPI-Lock': 'drive-desktop-lock' },
+          body: 'desktop-blocked-write',
+        }
+      ),
+      testEnv
+    );
+    expect(desktopPutWithExistingToken.status).toBe(403);
+    expect(
+      ((await desktopPutWithExistingToken.json()) as { code: string }).code
+    ).toBe('WOPI_DESKTOP_LOCK_ACTIVE');
+
     const wopiLock = await app.fetch(
       new Request(
         `http://127.0.0.1:8787/wopi/files/${FILE_A}?access_token=${encodeURIComponent(token)}`,
@@ -270,6 +320,25 @@ describe('Files Drive lock REST API and WOPI/Drive mutual exclusion', () => {
       testEnv
     );
     expect(wopiLock.status).toBe(200);
+
+    const webLockStatus = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/files/${FILE_B}/lock-status`, {
+        headers: authHeaders(),
+      }),
+      testEnv
+    );
+    expect(webLockStatus.status).toBe(200);
+    const webLockBody = (await webLockStatus.json()) as {
+      lock: { mode: string; lockId: string };
+      readOnly: boolean;
+      canWrite: boolean;
+      syncPolicy: string;
+    };
+    expect(webLockBody.lock.mode).toBe('wopi_collab');
+    expect(webLockBody.lock.lockId).toBe('wopi-lock-b');
+    expect(webLockBody.readOnly).toBe(false);
+    expect(webLockBody.canWrite).toBe(true);
+    expect(webLockBody.syncPolicy).toBe('full');
 
     const driveLock = await app.fetch(
       new Request(`http://127.0.0.1:8787/api/files/${FILE_B}/lock`, {
@@ -319,6 +388,22 @@ describe('Files Drive lock REST API and WOPI/Drive mutual exclusion', () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as { syncPolicy: string };
     expect(body.syncPolicy).toBe('cloud_preview_only');
+
+    const status = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/files/${FILE_CONF}/lock-status`, {
+        headers: authHeaders(),
+      }),
+      testEnv
+    );
+    expect(status.status).toBe(200);
+    const statusBody = (await status.json()) as {
+      lock: { mode: string };
+      readOnly: boolean;
+      syncPolicy: string;
+    };
+    expect(statusBody.lock.mode).toBe('desktop_exclusive');
+    expect(statusBody.readOnly).toBe(true);
+    expect(statusBody.syncPolicy).toBe('cloud_preview_only');
 
     await app.fetch(
       new Request(`http://127.0.0.1:8787/api/files/${FILE_CONF}/lock`, {

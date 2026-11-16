@@ -7,7 +7,7 @@ TOM-62 / P7-7 で追加したブラウザ E2E 基盤です。`apps/web/tests` �
 - Node.js 20.9 以上 / pnpm 10
 - Chromium（初回のみ `pnpm exec playwright install chromium`）
 - E2E 用ポートが空いていること
-  - API: `127.0.0.1:18787`（`E2E_API_PORT`）
+  - API: `18787`（`E2E_API_PORT`、`127.0.0.1` と Docker コンテナから `host.docker.internal` で到達可能）
   - Web: `localhost:13000`（`E2E_WEB_PORT`）
 - 通常の開発スタック（`:3000`、`:8787`）や `apps/api/.wrangler/state` は使いません。既存プロセスを停止・再利用しません。
 - `@collabora` タグのテストだけは `http://localhost:9980` の Collabora Online が必要です。通常の `pnpm test:e2e` は `@collabora` を除外するため不要です。
@@ -43,7 +43,7 @@ NEXT_DIST_DIR=.next-e2e pnpm build
 
 | 対象 | 通常開発 | E2E | 実装 |
 | --- | --- | --- | --- |
-| API ポート | `:8787` | `:18787` | `playwright.config.ts` の `webServer` |
+| API ポート | `:8787` | `:18787`（`0.0.0.0` bind） | `playwright.config.ts` の `webServer` + `start-api.mjs` |
 | API 永続化 | `apps/api/.wrangler/state` | `.playwright/wrangler-state` | `e2e/scripts/start-api.mjs` の `--persist-to` |
 | Web ポート | `:3000` | `:13000` | `next dev --port 13000` |
 | Next ビルドディレクトリ | `apps/web/.next` | `apps/web/.next-e2e` | `NEXT_DIST_DIR` → `next.config.ts` の `distDir` |
@@ -63,8 +63,9 @@ NEXT_DIST_DIR=.next-e2e pnpm build
    - `APP_ORIGIN=http://localhost:13000`
    - `STORAGE_MODE=local_proxy`
    - `DEFAULT_TENANT_ID=tenant-default`
-   - `WOPI_HOST_ORIGIN=http://127.0.0.1:18787`
+   - `WOPI_HOST_ORIGIN=http://host.docker.internal:18787`（Collabora コンテナから macOS ホストの Wrangler へ到達させるため）
    - `COLLABORA_URL=http://localhost:9980`
+   - `wrangler dev --ip 0.0.0.0` で起動（コンテナから `host.docker.internal:18787` へ接続するため。E2E 専用ポートのみ）
 6. `/api/health` が 200 を返すまで Playwright が待機。
 
 Web は `next dev`（`NODE_ENV=development`）で起動します。これは `apps/web/next.config.ts` の API rewrite が development 時のみ有効なためです。`NEXT_DIST_DIR=.next-e2e` により `apps/web/.next/dev/lock` と衝突しません。`apps/web/tsconfig.json` は `.next-e2e` を `exclude`、`.gitignore` は `.next-e2e/` / `.playwright/` / `e2e/.auth/` を無視します。
@@ -122,7 +123,14 @@ test('例', async ({ as, cleanup }) => {
 4. `sys_admin` / `sec_admin` は `/admin` を表示でき、`member` は 403 画面と API 403 になる。`member` にはガバナンス導線が出ない。
 5. `sys_admin` と `member` の 2 BrowserContext を同じフォルダに開き、member 側で WebSocket 接続を確認した後、admin の UI アップロードが member 側へリロードなしで反映される。
 
-`e2e/collabora.spec.ts` は `@collabora` タグで `http://localhost:9980/hosting/discovery` の到達性と `docx` の `edit` / `view` アクションを検証します。
+`e2e/collabora.spec.ts` は `@collabora` タグで以下を検証します。
+
+1. `http://localhost:9980/hosting/discovery` の到達性と `docx` の `edit` / `view` アクション。
+2. `e2e/helpers/docx.ts` が生成した実 `.docx` を 2 ブラウザで同時編集し、`TenantSyncHub` のロック表示、Collabora の実 `PutFile`、エディタ終了時の `UNLOCK` による `current_version_num` 更新、R2 実体サイズとワークスペース一覧 `v2` 反映。
+3. `previewer` + `confidential` の Collabora Viewer（読み取り専用）、DLP フラグ・透かし、`PutFile` 拒否、版が変化しないこと。
+4. `desktop_exclusive` ロック中の Web WOPI 自動 Read-only と書込拒否。
+
+Collabora コンテナの `aliasgroup1` は開発用 `:8787` と E2E 用 `:18787` の両方を許可します。`docker-compose.collabora.yml` 変更後は `docker compose -f docker-compose.collabora.yml up -d` で再作成してください（イメージ再ビルドは不要です）。
 
 ## TOM-38 / Phase 8〜10 での利用方法
 

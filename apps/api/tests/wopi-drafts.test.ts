@@ -2,6 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { app } from '../src/index';
+import { runDailyMaintenance } from '../src/consumers/maintenance-cron';
 import {
   finalizeWopiDraft,
   purgeExpiredWopiDrafts,
@@ -19,9 +20,11 @@ const VIEWER_ID = 'wopi-viewer';
 const PREVIEWER_ID = 'wopi-previewer';
 const OUTSIDER_ID = 'wopi-outsider';
 const FILE_ID = 'wopi-file-1';
+const ROUTE_FILE_ID = 'wopi-file-route';
 const DELETED_FILE_ID = 'wopi-file-deleted';
 const NO_CONTENT_FILE_ID = 'wopi-file-no-content';
 const INITIAL_KEY = `tenants/${TENANT_ID}/objects/${FILE_ID}/v1`;
+const ROUTE_INITIAL_KEY = `tenants/${TENANT_ID}/objects/${ROUTE_FILE_ID}/v1`;
 const INITIAL_BYTES = 100;
 
 function authHeaders(userId = EDITOR_ID): Record<string, string> {
@@ -50,15 +53,17 @@ function buildTestEnv(overrides: Partial<OidcEnv> = {}): OidcEnv {
 
 async function createSession(
   testEnv: OidcEnv,
-  userId = EDITOR_ID
+  userId = EDITOR_ID,
+  fileId = FILE_ID
 ): Promise<{
   sessionId: string;
   accessToken: string;
   canWrite: boolean;
   readOnly: boolean;
+  readOnlyReason: 'desktop_lock' | 'dlp' | 'permission' | null;
 }> {
   const res = await app.fetch(
-    new Request(`http://127.0.0.1:8787/api/files/${FILE_ID}/wopi-session`, {
+    new Request(`http://127.0.0.1:8787/api/files/${fileId}/wopi-session`, {
       method: 'POST',
       headers: authHeaders(userId),
     }),
@@ -70,7 +75,24 @@ async function createSession(
     accessToken: string;
     canWrite: boolean;
     readOnly: boolean;
+    readOnlyReason: 'desktop_lock' | 'dlp' | 'permission' | null;
   };
+}
+
+async function wopiHostRequest(
+  testEnv: OidcEnv,
+  fileId: string,
+  token: string,
+  init: RequestInit = {},
+  suffix = ''
+): Promise<Response> {
+  return await app.fetch(
+    new Request(
+      `http://127.0.0.1:8787/wopi/files/${fileId}${suffix}?access_token=${encodeURIComponent(token)}`,
+      init
+    ),
+    testEnv
+  );
 }
 
 async function loadSession(
@@ -123,6 +145,9 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
            (?, ?, NULL, 'collab.docx', 'docx',
              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
              ?, 'active', 'wopi-v1', 1, 'internal', ?, ?, NULL),
+           (?, ?, NULL, 'route.docx', 'docx',
+             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+             ?, 'active', 'wopi-route-v1', 1, 'internal', ?, ?, NULL),
            (?, ?, NULL, 'trashed.docx', 'docx',
              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
              50, 'active', NULL, 1, 'internal', ?, ?, '2026-01-01T00:00:00.000Z'),
@@ -131,6 +156,11 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
              50, 'active', 'missing-version', 1, 'internal', ?, ?, NULL)`
       ).bind(
         FILE_ID,
+        TENANT_ID,
+        INITIAL_BYTES,
+        EDITOR_ID,
+        EDITOR_ID,
+        ROUTE_FILE_ID,
         TENANT_ID,
         INITIAL_BYTES,
         EDITOR_ID,
@@ -148,8 +178,21 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
         `INSERT OR IGNORE INTO file_versions (
            id, tenant_id, file_id, version_num, r2_object_key, size_bytes,
            mime_type, upload_status, uploaded_by
-         ) VALUES ('wopi-v1', ?, ?, 1, ?, ?, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'completed', ?)`
-      ).bind(TENANT_ID, FILE_ID, INITIAL_KEY, INITIAL_BYTES, EDITOR_ID),
+         ) VALUES
+           ('wopi-v1', ?, ?, 1, ?, ?, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'completed', ?),
+           ('wopi-route-v1', ?, ?, 1, ?, ?, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'completed', ?)`
+      ).bind(
+        TENANT_ID,
+        FILE_ID,
+        INITIAL_KEY,
+        INITIAL_BYTES,
+        EDITOR_ID,
+        TENANT_ID,
+        ROUTE_FILE_ID,
+        ROUTE_INITIAL_KEY,
+        INITIAL_BYTES,
+        EDITOR_ID
+      ),
       env.DB.prepare(
         `INSERT OR IGNORE INTO permissions (
            id, tenant_id, target_type, target_id, grantee_type, grantee_id,
@@ -159,7 +202,8 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
            ('wopi-perm-viewer', ?, 'file', ?, 'user', ?, 'viewer', ?),
            ('wopi-perm-previewer', ?, 'file', ?, 'user', ?, 'previewer', ?),
            ('wopi-perm-deleted', ?, 'file', ?, 'user', ?, 'editor', ?),
-           ('wopi-perm-no-content', ?, 'file', ?, 'user', ?, 'editor', ?)`
+           ('wopi-perm-no-content', ?, 'file', ?, 'user', ?, 'editor', ?),
+           ('wopi-perm-route', ?, 'file', ?, 'user', ?, 'editor', ?)`
       ).bind(
         TENANT_ID,
         FILE_ID,
@@ -180,6 +224,10 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
         TENANT_ID,
         NO_CONTENT_FILE_ID,
         EDITOR_ID,
+        EDITOR_ID,
+        TENANT_ID,
+        ROUTE_FILE_ID,
+        EDITOR_ID,
         EDITOR_ID
       ),
       env.DB.prepare(
@@ -189,6 +237,7 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
       ).bind(TENANT_ID, INITIAL_BYTES),
     ]);
     await env.BUCKET.put(INITIAL_KEY, 'initial-document');
+    await env.BUCKET.put(ROUTE_INITIAL_KEY, 'route-initial-document');
   });
 
   it('issues read/write tokens by RBAC and rejects outsiders and trashed files', async () => {
@@ -197,15 +246,18 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
     const editor = await createSession(testEnv, EDITOR_ID);
     expect(editor.canWrite).toBe(true);
     expect(editor.readOnly).toBe(false);
+    expect(editor.readOnlyReason).toBeNull();
     expect(editor.accessToken.startsWith('v1.')).toBe(true);
 
     const viewer = await createSession(testEnv, VIEWER_ID);
     expect(viewer.canWrite).toBe(false);
     expect(viewer.readOnly).toBe(true);
+    expect(viewer.readOnlyReason).toBe('permission');
 
     const previewer = await createSession(testEnv, PREVIEWER_ID);
     expect(previewer.canWrite).toBe(false);
     expect(previewer.readOnly).toBe(true);
+    expect(previewer.readOnlyReason).toBe('dlp');
 
     const outsider = await app.fetch(
       new Request(`http://127.0.0.1:8787/api/files/${FILE_ID}/wopi-session`, {
@@ -261,7 +313,7 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
 
     let previousKey: string | null = null;
     let lastDraftKey = '';
-    for (let i = 1; i <= 10; i += 1) {
+    for (let i = 1; i <= 12; i += 1) {
       const content = new TextEncoder().encode(`draft-${i}`).buffer as ArrayBuffer;
       const saved = await saveWopiDraft({
         env: testEnv,
@@ -304,7 +356,7 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
     expect(finalized).not.toBeNull();
     expect(finalized?.version.version_num).toBe(2);
     expect(finalized?.file.current_version_num).toBe(2);
-    expect(finalized?.file.size_bytes).toBe('draft-10'.length);
+    expect(finalized?.file.size_bytes).toBe('draft-12'.length);
     expect(finalized?.version.r2_object_key).toBe(lastDraftKey);
 
     const afterFinalize = await testEnv.DB.prepare(
@@ -329,7 +381,7 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
       .bind(TENANT_ID)
       .first<{ file_count: number; total_bytes: number }>();
     expect(stats?.file_count).toBe(1);
-    expect(stats?.total_bytes).toBe('draft-10'.length);
+    expect(stats?.total_bytes).toBe('draft-12'.length);
 
     // The promoted draft key is referenced by file_versions and must survive purge.
     await testEnv.DB.prepare(
@@ -362,5 +414,134 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
     const purge = await purgeExpiredWopiDrafts(testEnv, Date.now());
     expect(purge.draftsPurged).toBe(1);
     expect(await testEnv.BUCKET.head(saved.draft.r2_object_key)).toBeNull();
+  });
+
+  it('routes 12 autosaves through PutFile, finalizes on UNLOCK, and keeps the promoted R2 object after purge', async () => {
+    const testEnv = buildTestEnv();
+    const issued = await createSession(testEnv, EDITOR_ID, ROUTE_FILE_ID);
+    const token = issued.accessToken;
+
+    const locked = await wopiHostRequest(testEnv, ROUTE_FILE_ID, token, {
+      method: 'POST',
+      headers: { 'X-WOPI-Override': 'LOCK', 'X-WOPI-Lock': 'route-lock' },
+    });
+    expect(locked.status).toBe(200);
+
+    for (let i = 1; i <= 12; i += 1) {
+      const put = await wopiHostRequest(
+        testEnv,
+        ROUTE_FILE_ID,
+        token,
+        {
+          method: 'POST',
+          headers: { 'X-WOPI-Lock': 'route-lock' },
+          body: `route-draft-${i}`,
+        },
+        '/contents'
+      );
+      expect(put.status).toBe(200);
+    }
+
+    const beforeUnlock = await testEnv.DB.prepare(
+      'SELECT size_bytes, current_version_num FROM files WHERE tenant_id = ? AND id = ?'
+    )
+      .bind(TENANT_ID, ROUTE_FILE_ID)
+      .first<{ size_bytes: number; current_version_num: number }>();
+    expect(beforeUnlock?.current_version_num).toBe(1);
+    expect(beforeUnlock?.size_bytes).toBe(INITIAL_BYTES);
+
+    const activeDraft = await testEnv.DB.prepare(
+      `SELECT * FROM wopi_drafts
+        WHERE tenant_id = ? AND file_id = ? AND is_active = 1
+        ORDER BY updated_at DESC LIMIT 1`
+    )
+      .bind(TENANT_ID, ROUTE_FILE_ID)
+      .first<{
+        id: string;
+        r2_object_key: string;
+        size_bytes: number;
+      }>();
+    expect(activeDraft?.size_bytes).toBe('route-draft-12'.length);
+
+    const unlocked = await wopiHostRequest(testEnv, ROUTE_FILE_ID, token, {
+      method: 'POST',
+      headers: { 'X-WOPI-Override': 'UNLOCK', 'X-WOPI-Lock': 'route-lock' },
+    });
+    expect(unlocked.status).toBe(200);
+
+    const detail = await testEnv.DB.prepare(
+      'SELECT size_bytes, current_version_num, current_version_id FROM files WHERE tenant_id = ? AND id = ?'
+    )
+      .bind(TENANT_ID, ROUTE_FILE_ID)
+      .first<{
+        size_bytes: number;
+        current_version_num: number;
+        current_version_id: string;
+      }>();
+    expect(detail?.current_version_num).toBe(2);
+    expect(detail?.size_bytes).toBe('route-draft-12'.length);
+
+    const promoted = await testEnv.DB.prepare(
+      `SELECT * FROM wopi_drafts
+        WHERE tenant_id = ? AND file_id = ? AND promoted_version_id = ?
+        LIMIT 1`
+    )
+      .bind(TENANT_ID, ROUTE_FILE_ID, detail!.current_version_id)
+      .first<{
+        id: string;
+        r2_object_key: string;
+        promoted_at: string | null;
+      }>();
+    expect(promoted).toBeTruthy();
+    expect(promoted!.promoted_at).not.toBeNull();
+    expect(await testEnv.BUCKET.head(promoted!.r2_object_key)).not.toBeNull();
+
+    const getFile = await wopiHostRequest(
+      testEnv,
+      ROUTE_FILE_ID,
+      token,
+      {},
+      '/contents'
+    );
+    expect(new TextDecoder().decode(await getFile.arrayBuffer())).toBe(
+      'route-draft-12'
+    );
+
+    await testEnv.DB.prepare(
+      `UPDATE wopi_drafts SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = ?`
+    )
+      .bind(promoted!.id)
+      .run();
+    const cronSummary = await runDailyMaintenance(testEnv);
+    expect(cronSummary.wopiDraftsPurged).toBe(0);
+    expect(await testEnv.BUCKET.head(promoted!.r2_object_key)).not.toBeNull();
+
+    const versionRow = await testEnv.DB.prepare(
+      'SELECT r2_object_key FROM file_versions WHERE tenant_id = ? AND id = ?'
+    )
+      .bind(TENANT_ID, detail!.current_version_id)
+      .first<{ r2_object_key: string }>();
+    expect(versionRow?.r2_object_key).toBe(promoted!.r2_object_key);
+  });
+
+  it('rejects draft persistence for a previewer read-only session', async () => {
+    const testEnv = buildTestEnv();
+    const previewer = await createSession(testEnv, PREVIEWER_ID);
+    const session = await loadSession(testEnv, previewer.sessionId);
+    await expect(
+      saveWopiDraft({
+        env: testEnv,
+        session,
+        content: new TextEncoder().encode('previewer-write').buffer as ArrayBuffer,
+        mimeType: 'application/msword',
+      })
+    ).rejects.toThrow('WOPI session is read-only');
+
+    const drafts = await testEnv.DB.prepare(
+      'SELECT COUNT(*) AS cnt FROM wopi_drafts WHERE tenant_id = ? AND session_id = ?'
+    )
+      .bind(TENANT_ID, previewer.sessionId)
+      .first<{ cnt: number }>();
+    expect(drafts?.cnt).toBe(0);
   });
 });

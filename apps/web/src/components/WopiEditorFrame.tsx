@@ -149,7 +149,11 @@ export function WopiEditorFrame({
           </div>
           <div className="text-[0.6875rem] text-slate-500">
             {session?.readOnly
-              ? '閲覧専用（DLP保護）'
+              ? session.readOnlyReason === 'desktop_lock'
+                ? '閲覧専用（Files Drive 編集中）'
+                : session.readOnlyReason === 'dlp'
+                  ? '閲覧専用（DLP保護）'
+                  : '閲覧専用'
               : 'Collabora Online 同時編集'}
             {' / '}
             {statusText}

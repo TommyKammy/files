@@ -23,6 +23,52 @@ export interface FileLike {
   deleted_at?: string | null;
 }
 
+export interface FileVersionLike {
+  id: string;
+  version_num: number;
+  size_bytes: number;
+  mime_type: string;
+  upload_status: string;
+  uploaded_by: string;
+  created_at: string;
+}
+
+export interface FileDetailResponse {
+  file: FileLike;
+  effectiveRole: string;
+  canDownload: boolean;
+  versions: FileVersionLike[];
+}
+
+export interface FileLockStatusResponse {
+  fileId: string;
+  lock: {
+    fileId: string;
+    tenantId: string;
+    mode: 'wopi_collab' | 'desktop_exclusive';
+    lockId: string;
+    ownerId: string;
+    ownerName: string;
+    ownerEmail: string | null;
+    sessionId: string | null;
+    acquiredAt: number;
+    expiresAt: number;
+    updatedAt: number;
+  } | null;
+  canWrite: boolean;
+  readOnly: boolean;
+  syncPolicy: 'full' | 'cloud_preview_only';
+}
+
+export interface DriveLockResponse {
+  ok: boolean;
+  fileId: string;
+  lockId: string;
+  expiresAt: number;
+  syncPolicy: 'full' | 'cloud_preview_only';
+  lock: FileLockStatusResponse['lock'];
+}
+
 interface FolderChildrenResponse {
   folder: FolderLike;
   effectiveRole: string;
@@ -220,12 +266,14 @@ export async function uploadFile(
   input: {
     folderId: string;
     name: string;
-    content: string;
+    content: string | Buffer;
     mimeType?: string;
   }
 ): Promise<FileLike> {
   const mimeType = input.mimeType ?? 'text/plain; charset=utf-8';
-  const body = Buffer.from(input.content, 'utf8');
+  const body = Buffer.isBuffer(input.content)
+    ? input.content
+    : Buffer.from(input.content, 'utf8');
 
   const initRes = await actor.api.post('/api/files/upload-init', {
     data: {
@@ -259,6 +307,112 @@ export async function uploadFile(
   ).toBe(true);
   const complete = (await completeRes.json()) as { file: FileLike };
   return complete.file;
+}
+
+/** GET /api/files/:id — file metadata plus completed version history. */
+export async function getFileDetails(
+  actor: ApiActor,
+  fileId: string
+): Promise<FileDetailResponse> {
+  const res = await actor.api.get(`/api/files/${encodeURIComponent(fileId)}`);
+  assertOk(res, `GET /api/files/${fileId}`);
+  return (await res.json()) as FileDetailResponse;
+}
+
+/** Waits until a file reaches at least `minVersion` (WOPI finalization is async). */
+export async function waitForFileVersion(
+  actor: ApiActor,
+  fileId: string,
+  minVersion: number,
+  timeout = 30_000
+): Promise<FileDetailResponse> {
+  let detail: FileDetailResponse | undefined;
+  await expect
+    .poll(
+      async () => {
+        detail = await getFileDetails(actor, fileId);
+        return detail.file.current_version_num ?? 0;
+      },
+      {
+        timeout,
+        message: `file ${fileId} should reach version >= ${minVersion}`,
+      }
+    )
+    .toBeGreaterThanOrEqual(minVersion);
+  return detail!;
+}
+
+/** Downloads the current version bytes through the signed local-proxy URL. */
+export async function downloadFileBytes(
+  actor: ApiActor,
+  fileId: string
+): Promise<Buffer> {
+  const res = await actor.api.get(
+    `/api/files/${encodeURIComponent(fileId)}/content-url?intent=download`
+  );
+  assertOk(res, `GET /api/files/${fileId}/content-url`);
+  const body = (await res.json()) as { url: string };
+  const download = await actor.api.get(body.url);
+  assertOk(download, `GET signed download for ${fileId}`);
+  return download.body();
+}
+
+export async function getLockStatus(
+  actor: ApiActor,
+  fileId: string
+): Promise<FileLockStatusResponse> {
+  const res = await actor.api.get(
+    `/api/files/${encodeURIComponent(fileId)}/lock-status`
+  );
+  assertOk(res, `GET /api/files/${fileId}/lock-status`);
+  return (await res.json()) as FileLockStatusResponse;
+}
+
+export async function waitForLockStatus(
+  actor: ApiActor,
+  fileId: string,
+  predicate: (status: FileLockStatusResponse) => boolean,
+  timeout = 30_000
+): Promise<FileLockStatusResponse> {
+  let status: FileLockStatusResponse | undefined;
+  await expect
+    .poll(
+      async () => {
+        status = await getLockStatus(actor, fileId);
+        return predicate(status);
+      },
+      { timeout, message: `lock status for ${fileId} should match` }
+    )
+    .toBe(true);
+  return status!;
+}
+
+export async function acquireDriveLock(
+  actor: ApiActor,
+  fileId: string,
+  input: { lockId: string; ttlSeconds?: number }
+): Promise<DriveLockResponse> {
+  const res = await actor.api.post(
+    `/api/files/${encodeURIComponent(fileId)}/lock`,
+    { data: input }
+  );
+  expect(
+    res.status(),
+    `POST /api/files/${fileId}/lock should return 201`
+  ).toBe(201);
+  return (await res.json()) as DriveLockResponse;
+}
+
+export async function releaseDriveLock(
+  actor: ApiActor,
+  fileId: string,
+  lockId: string
+): Promise<void> {
+  const res = await actor.api.delete(
+    `/api/files/${encodeURIComponent(fileId)}/lock`,
+    { data: { lockId } }
+  );
+  assertOk(res, `DELETE /api/files/${fileId}/lock`);
 }
 
 export async function searchFiles(
