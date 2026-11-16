@@ -42,41 +42,54 @@ export function WorkspaceTableHeader({
         </th>
         {(
           [
-            { field: 'name', label: '名前' },
-            { field: 'classification', label: '機密分類 / AI' },
-            { field: 'size_bytes', label: 'サイズ' },
+            { field: 'name', label: '名前', sortable: true },
+            {
+              field: 'classification',
+              label: isTrashView ? '削除者' : '機密分類 / AI',
+              sortable: !isTrashView,
+            },
+            { field: 'size_bytes', label: 'サイズ', sortable: !isTrashView },
             {
               field: 'updated_at',
               label: isTrashView ? '削除日時' : '更新日時',
+              sortable: true,
             },
           ] as const
-        ).map(({ field, label }) => {
+        ).map(({ field, label, sortable }) => {
           const isActiveSort = sortBy === field;
           return (
             <th
               key={field}
               scope="col"
-              aria-sort={getAriaSortValue(field, sortBy, sortDir)}
+              aria-sort={
+                sortable
+                  ? getAriaSortValue(field, sortBy, sortDir)
+                  : undefined
+              }
               className="px-3 py-2"
             >
-              <button
-                type="button"
-                onClick={() => onSort(field)}
-                className={`inline-flex min-h-6 items-center gap-1 rounded px-1 py-0.5 transition hover:bg-slate-200/60 hover:text-slate-900 ${
-                  isActiveSort ? 'text-slate-900' : 'text-slate-500'
-                }`}
-              >
-                <span>{label}</span>
-                {isActiveSort ? (
-                  sortDir === 'asc' ? (
-                    <ArrowUp className="h-3 w-3 text-blue-600" />
+              {sortable ? (
+                <button
+                  type="button"
+                  onClick={() => onSort(field)}
+                  className={`inline-flex min-h-6 items-center gap-1 rounded px-1 py-0.5 transition hover:bg-slate-200/60 hover:text-slate-900 ${
+                    isActiveSort ? 'text-slate-900' : 'text-slate-500'
+                  }`}
+                >
+                  <span>{label}</span>
+                  {isActiveSort ? (
+                    sortDir === 'asc' ? (
+                      <ArrowUp className="h-3 w-3 text-blue-600" />
+                    ) : (
+                      <ArrowDown className="h-3 w-3 text-blue-600" />
+                    )
                   ) : (
-                    <ArrowDown className="h-3 w-3 text-blue-600" />
-                  )
-                ) : (
-                  <ArrowUpDown className="h-3 w-3 opacity-40" />
-                )}
-              </button>
+                    <ArrowUpDown className="h-3 w-3 opacity-40" />
+                  )}
+                </button>
+              ) : (
+                <span className="px-1 text-slate-500">{label}</span>
+              )}
             </th>
           );
         })}

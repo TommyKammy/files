@@ -140,6 +140,7 @@ export async function createFolderWithClosures(
     is_pinned: isPinned,
     created_by: user.id,
     deleted_at: null,
+    deleted_by: null,
     created_at: nowIso,
     updated_at: nowIso,
   };

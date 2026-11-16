@@ -164,6 +164,7 @@ export function buildCoWFileCopyStatements(
     ai_confidence: null,
     ai_reason: null,
     deleted_at: null,
+    deleted_by: null,
     created_by: params.actor.id,
     updated_by: params.actor.id,
     created_at: params.nowIso,
@@ -202,6 +203,7 @@ export function appendStatsAndFolderCopyStatements(
     is_pinned: 0,
     created_by: params.actor.id,
     deleted_at: null,
+    deleted_by: null,
     created_at: params.nowIso,
     updated_at: params.nowIso,
   };

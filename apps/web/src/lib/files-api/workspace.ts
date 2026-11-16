@@ -8,6 +8,9 @@ import type {
   FolderSummary,
   ResourceRole,
   SearchResultItem,
+  TrashListResponse,
+  TrashSort,
+  TrashTypeFilter,
   WorkspaceBatchItemRef,
   WorkspaceConflictPolicy,
   WorkspaceJobStatus,
@@ -15,6 +18,7 @@ import type {
 import {
   apiFetch,
 } from './core';
+import { buildTrashQueryString } from '@/lib/trash-view';
 
 export function listRootFolders(
   cursor?: string | null,
@@ -50,11 +54,28 @@ export function getFolderBreadcrumbs(folderId: string): Promise<{
   return apiFetch(`/api/folders/${encodeURIComponent(folderId)}/breadcrumbs`);
 }
 
-export function listTrash(limit = 50): Promise<{
-  folders: FolderSummary[];
-  files: FileItem[];
-}> {
-  return apiFetch(`/api/folders/trash?limit=${limit}`);
+export function listTrash(params: {
+  limit?: number;
+  cursor?: string | null;
+  query?: string;
+  type?: TrashTypeFilter;
+  deletedBy?: string | null;
+  deletedFrom?: string | null;
+  deletedTo?: string | null;
+  sort?: TrashSort;
+} = {}): Promise<TrashListResponse> {
+  return apiFetch(
+    `/api/folders/trash?${buildTrashQueryString({
+      limit: params.limit ?? 50,
+      cursor: params.cursor ?? null,
+      query: params.query ?? '',
+      type: params.type ?? 'all',
+      deletedBy: params.deletedBy ?? null,
+      deletedFrom: params.deletedFrom ?? null,
+      deletedTo: params.deletedTo ?? null,
+      sort: params.sort ?? 'deletedAt_desc',
+    })}`
+  );
 }
 
 export function createFolder(payload: {

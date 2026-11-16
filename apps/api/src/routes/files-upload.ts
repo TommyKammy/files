@@ -236,9 +236,9 @@ filesUploadRoutes.delete('/:id', async (c) => {
     c.env.DB.prepare('DELETE FROM files_fts WHERE file_id = ?').bind(fileId),
     c.env.DB.prepare(
       `UPDATE files
-          SET deleted_at = ?, meta_version = meta_version + 1, updated_by = ?, updated_at = ?
+          SET deleted_at = ?, deleted_by = ?, meta_version = meta_version + 1, updated_by = ?, updated_at = ?
         WHERE tenant_id = ? AND id = ?`
-    ).bind(nowIso, user.id, nowIso, user.tenantId, fileId),
+    ).bind(nowIso, user.id, user.id, nowIso, user.tenantId, fileId),
     buildAuditLogStmt(c.env.DB, {
       tenantId: user.tenantId,
       actorId: user.id,
@@ -248,7 +248,7 @@ filesUploadRoutes.delete('/:id', async (c) => {
       targetType: 'file',
       targetId: fileId,
       classificationSnapshot: access.classification,
-      metadata: { deletedAt: nowIso },
+      metadata: { deletedAt: nowIso, deletedBy: user.id },
       nowIso,
     }),
     buildSyncChangeStmt(c.env.DB, {
@@ -259,6 +259,7 @@ filesUploadRoutes.delete('/:id', async (c) => {
       action: 'file.soft_delete',
       payload: {
         deletedAt: nowIso,
+        deletedBy: user.id,
         metaVersion: currentFile.meta_version + 1,
         updatedAt: nowIso,
       },

@@ -90,7 +90,7 @@ export function registerFileRestoreRoute(routes: Hono<OidcHonoEnv>) {
     const batchResults = await c.env.DB.batch([
       c.env.DB.prepare(
         `UPDATE files
-         SET deleted_at = NULL, name = ?, extension = ?, meta_version = meta_version + 1, updated_by = ?, updated_at = ?
+         SET deleted_at = NULL, deleted_by = NULL, name = ?, extension = ?, meta_version = meta_version + 1, updated_by = ?, updated_at = ?
          WHERE tenant_id = ? AND id = ? AND deleted_at IS NOT NULL`
       ).bind(restoredName, restoredExt, user.id, nowIso, user.tenantId, file.id),
       c.env.DB.prepare('DELETE FROM files_fts WHERE file_id = ?').bind(file.id),
@@ -120,6 +120,7 @@ export function registerFileRestoreRoute(routes: Hono<OidcHonoEnv>) {
           name: restoredName,
           extension: restoredExt,
           folderId: file.folder_id,
+          deletedBy: null,
           metaVersion: file.meta_version + 1,
           updatedAt: nowIso,
         },

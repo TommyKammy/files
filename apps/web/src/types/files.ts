@@ -55,6 +55,13 @@ export interface FolderSummary {
   version: number;
   updated_at: string;
   deleted_at?: string | null;
+  deleted_by?: string | null;
+  deleted_by_name?: string | null;
+  deletedAt?: string;
+  deletedBy?: string | null;
+  deletedByName?: string | null;
+  purgeAt?: string;
+  daysRemaining?: number;
   effectiveRole?: ResourceRole;
   optimistic?: boolean;
 }
@@ -74,6 +81,13 @@ export interface FileItem {
   ai_reason: string | null;
   updated_at: string;
   deleted_at?: string | null;
+  deleted_by?: string | null;
+  deleted_by_name?: string | null;
+  deletedAt?: string;
+  deletedBy?: string | null;
+  deletedByName?: string | null;
+  purgeAt?: string;
+  daysRemaining?: number;
   upload_state?: 'pending' | 'active' | 'failed';
   upload_progress?: number;
   optimistic?: boolean;
@@ -86,6 +100,89 @@ export interface FolderChildrenResponse {
   files: FileItem[];
   nextCursor: string | null;
   breadcrumbs?: BreadcrumbItem[];
+}
+
+export type TrashItemType = 'file' | 'folder';
+export type TrashTypeFilter = 'all' | 'file' | 'folder';
+export type TrashSort =
+  | 'deletedAt_desc'
+  | 'deletedAt_asc'
+  | 'name_asc'
+  | 'name_desc';
+
+export interface TrashItemMeta {
+  type: TrashItemType;
+  deleted_at: string | null;
+  deleted_by: string | null;
+  deleted_by_name: string | null;
+  deletedAt: string;
+  deletedBy: string | null;
+  deletedByName: string | null;
+  purgeAt: string;
+  daysRemaining: number;
+}
+
+export interface TrashFolderItem
+  extends Omit<
+      FolderSummary,
+      | 'deleted_at'
+      | 'deleted_by'
+      | 'deleted_by_name'
+      | 'deletedAt'
+      | 'deletedBy'
+      | 'deletedByName'
+      | 'purgeAt'
+      | 'daysRemaining'
+    >,
+    TrashItemMeta {
+  type: 'folder';
+}
+
+export interface TrashFileItem
+  extends Omit<
+      FileItem,
+      | 'deleted_at'
+      | 'deleted_by'
+      | 'deleted_by_name'
+      | 'deletedAt'
+      | 'deletedBy'
+      | 'deletedByName'
+      | 'purgeAt'
+      | 'daysRemaining'
+    >,
+    TrashItemMeta {
+  type: 'file';
+}
+
+export type TrashItem = TrashFolderItem | TrashFileItem;
+
+export interface TrashDeleter {
+  id: string;
+  name: string;
+}
+
+export interface TrashFilters {
+  query: string;
+  type: TrashTypeFilter;
+  /** User id, the `unknown` sentinel for legacy NULL deleted_by rows, or null. */
+  deletedBy: string | null;
+  deletedFrom: string | null;
+  deletedTo: string | null;
+  sort: TrashSort;
+}
+
+export interface TrashListResponse {
+  type: 'trash';
+  limit: number;
+  sort: TrashSort;
+  folders: TrashFolderItem[];
+  files: TrashFileItem[];
+  items: TrashItem[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  trashRetentionDays: number;
+  deleters: TrashDeleter[];
+  hasUnknownDeleter: boolean;
 }
 
 export interface BootstrapResponse {

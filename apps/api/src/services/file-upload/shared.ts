@@ -31,6 +31,7 @@ export interface FileRow {
   ai_confidence: number | null;
   ai_reason: string | null;
   deleted_at: string | null;
+  deleted_by: string | null;
   created_by: string;
   updated_by: string;
   created_at: string;

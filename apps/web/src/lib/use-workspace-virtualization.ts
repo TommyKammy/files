@@ -10,18 +10,22 @@ const GRID_COLUMNS = 4;
 export function useWorkspaceVirtualization({
   rows,
   viewMode,
+  rowHeightOverride,
 }: {
   rows: WorkspaceTableRow[];
   viewMode: 'list' | 'grid';
+  rowHeightOverride?: number;
 }) {
   const gridRows = useMemo(
     () => chunkItemsIntoGridRows(rows, GRID_COLUMNS),
     [rows]
   );
 
+  const rowHeight =
+    rowHeightOverride ?? (viewMode === 'grid' ? 156 : 52);
   const virtualItemCount = viewMode === 'grid' ? gridRows.length : rows.length;
   const virtualWindow = useTableVirtualWindow(virtualItemCount, {
-    rowHeight: viewMode === 'grid' ? 156 : 52,
+    rowHeight,
     overscan: viewMode === 'grid' ? 4 : 10,
     threshold: viewMode === 'grid' ? 12 : 40,
   });

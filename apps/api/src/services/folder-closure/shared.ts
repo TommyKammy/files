@@ -27,6 +27,7 @@ export interface FolderRow {
   is_pinned: number;
   created_by: string;
   deleted_at: string | null;
+  deleted_by: string | null;
   created_at: string;
   updated_at: string;
 }

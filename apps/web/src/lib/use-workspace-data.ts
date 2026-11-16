@@ -21,13 +21,14 @@ export function useWorkspaceData({
   const user = snapshot.user;
   const authChecked = snapshot.authStatus !== 'unknown';
 
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [directoryLoadingMore, setDirectoryLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const trash = useWorkspaceTrash({ setError });
+  const trash = useWorkspaceTrash();
 
-  const nextCursor = isTrashView ? null : directory.nextCursor;
+  const nextCursor = isTrashView ? trash.nextCursor : directory.nextCursor;
+  const loadingMore = isTrashView ? trash.loadingMore : directoryLoadingMore;
   const isInitialLoading = isTrashView
-    ? trash.loading && !trash.loaded
+    ? !trash.loaded && !trash.error
     : !directory.existsInCache &&
       (!snapshot.bootstrapDone || snapshot.revalidating);
 
@@ -87,8 +88,12 @@ export function useWorkspaceData({
   }, [snapshot.authStatus, user, loadActiveView]);
 
   async function handleLoadMore() {
-    if (!nextCursor || loadingMore || isTrashView) return;
-    setLoadingMore(true);
+    if (!nextCursor || loadingMore) return;
+    if (isTrashView) {
+      await trash.loadMore();
+      return;
+    }
+    setDirectoryLoadingMore(true);
     try {
       await syncStore.loadMoreDirectory(folderId);
     } catch (err) {
@@ -98,7 +103,7 @@ export function useWorkspaceData({
           : '追加読み込みに失敗しました'
       );
     } finally {
-      setLoadingMore(false);
+      setDirectoryLoadingMore(false);
     }
   }
 
@@ -109,6 +114,7 @@ export function useWorkspaceData({
     user,
     authChecked,
     trash,
+    trashError: trash.error,
     error,
     setError,
     loadingMore,

@@ -17,6 +17,7 @@ import { WorkspaceManagementModals } from '@/components/WorkspaceManagementModal
 import { WorkspaceMainHeader } from '@/components/WorkspaceMainHeader';
 import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
+import { WorkspaceTrashFilters } from '@/components/WorkspaceTrashFilters';
 import { WorkspaceUtilityOverlays } from '@/components/WorkspaceUtilityOverlays';
 import { VersionHistoryModal } from '@/components/VersionHistoryModal';
 import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
@@ -49,7 +50,16 @@ import {
   useWorkspaceClipboard,
 } from '@/lib/workspace-clipboard';
 import { resolveContextSelection } from '@/lib/workspace-actions';
-import { sortWorkspaceFoldersAndFiles } from '@/lib/workspace-sort-and-view';
+import {
+  getTrashEmptyState,
+  nextTrashSortForField,
+  trashItemToWorkspaceRow,
+  trashSortToTableSort,
+} from '@/lib/trash-view';
+import {
+  sortWorkspaceFoldersAndFiles,
+  type WorkspaceSortField,
+} from '@/lib/workspace-sort-and-view';
 import type { FileItem, ResourceRole, SearchResultItem } from '@/types/files';
 
 function collectDragItemsForRow(
@@ -84,6 +94,7 @@ export function WorkspaceFileBrowser() {
     user,
     authChecked,
     trash,
+    trashError,
     error,
     setError,
     loadingMore,
@@ -104,6 +115,10 @@ export function WorkspaceFileBrowser() {
   const breadcrumbs = isTrashView ? [] : directory.breadcrumbs;
   const folders = isTrashView ? trash.folders : directory.folders;
   const files = isTrashView ? trash.files : directory.files;
+  const trashFilterActive =
+    isTrashView &&
+    getTrashEmptyState(trash.filters, trash.items.length) ===
+      'filtered-empty';
 
   // Keyboard navigation, selection, inline rename, picker, and help overlay state
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
@@ -173,6 +188,9 @@ export function WorkspaceFileBrowser() {
     handleSortHeaderClick,
     handleToggleViewMode,
   } = useWorkspaceViewPrefs(user);
+  const trashTableSort = trashSortToTableSort(trash.filters.sort);
+  const listSortBy = isTrashView ? trashTableSort.sortBy : sortBy;
+  const listSortDir = isTrashView ? trashTableSort.sortDir : sortDir;
   const sortDrainErrorKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -254,6 +272,24 @@ export function WorkspaceFileBrowser() {
     : false;
   const isPrivilegedAdmin =
     user?.role === 'sys_admin' || user?.role === 'sec_admin';
+  const showTrashDeleterFilter =
+    isTrashView &&
+    (isPrivilegedAdmin ||
+      trash.deleters.length + (trash.hasUnknownDeleter ? 1 : 0) > 1);
+
+  const handleListSort = useCallback(
+    (field: WorkspaceSortField) => {
+      if (!isTrashView) {
+        handleSortHeaderClick(field);
+        return;
+      }
+      const nextSort = nextTrashSortForField(trash.filters.sort, field);
+      if (nextSort) {
+        void trash.applyFilters({ sort: nextSort });
+      }
+    },
+    [isTrashView, handleSortHeaderClick, trash]
+  );
 
   // Background catch-up when sorting an incomplete multi-page folder off default name ASC
   useEffect(() => {
@@ -294,11 +330,17 @@ export function WorkspaceFileBrowser() {
   );
 
   const rows = useMemo<WorkspaceTableRow[]>(
-    () => [
-      ...sortedFolders.map((folder) => ({ kind: 'folder' as const, folder })),
-      ...sortedFiles.map((file) => ({ kind: 'file' as const, file })),
-    ],
-    [sortedFolders, sortedFiles]
+    () =>
+      isTrashView
+        ? trash.items.map(trashItemToWorkspaceRow)
+        : [
+            ...sortedFolders.map((folder) => ({
+              kind: 'folder' as const,
+              folder,
+            })),
+            ...sortedFiles.map((file) => ({ kind: 'file' as const, file })),
+          ],
+    [isTrashView, trash.items, sortedFolders, sortedFiles]
   );
 
   const {
@@ -327,7 +369,15 @@ export function WorkspaceFileBrowser() {
     visibleRows,
     visibleGridRows,
     scrollLinearRowIntoView,
-  } = useWorkspaceVirtualization({ rows, viewMode });
+  } = useWorkspaceVirtualization({
+    rows,
+    viewMode,
+    rowHeightOverride: isTrashView
+      ? viewMode === 'grid'
+        ? 200
+        : 64
+      : undefined,
+  });
 
   const {
     previewTarget,
@@ -1018,8 +1068,8 @@ export function WorkspaceFileBrowser() {
           currentFolder={currentFolder}
           effectiveRole={effectiveRole}
           nextCursor={nextCursor}
-          sortBy={sortBy}
-          sortDir={sortDir}
+          sortBy={listSortBy}
+          sortDir={listSortDir}
           selectedRows={selectedRows}
           canEditCurrentFolder={canEditCurrentFolder}
           canManageCurrentFolderPerms={canManageCurrentFolderPerms}
@@ -1082,6 +1132,22 @@ export function WorkspaceFileBrowser() {
           onClearSelection={() => setSelectedKeys(new Set())}
         />
 
+        {isTrashView && (
+          <WorkspaceTrashFilters
+            filters={trash.filters}
+            deleters={trash.deleters}
+            hasUnknownDeleter={trash.hasUnknownDeleter}
+            showDeleterFilter={showTrashDeleterFilter}
+            loading={trash.loading}
+            onChange={(patch) => {
+              void trash.applyFilters(patch);
+            }}
+            onClear={() => {
+              void trash.clearFilters();
+            }}
+          />
+        )}
+
         <WorkspaceNotices
           activeDirectoryNotice={snapshot.activeDirectoryNotice}
           error={error}
@@ -1129,10 +1195,12 @@ export function WorkspaceFileBrowser() {
           gridColumns={GRID_COLUMNS}
           selectableRowKeys={selectableRowKeys}
           selectedRowCount={selectedRows.length}
-          sortBy={sortBy}
-          sortDir={sortDir}
+          sortBy={listSortBy}
+          sortDir={listSortDir}
           nextCursor={nextCursor}
           loadingMore={loadingMore}
+          trashError={trashError}
+          trashFilterActive={trashFilterActive}
           marqueeSurfaceRef={marqueeSurfaceRef}
           containerRef={virtualWindow.containerRef}
           onMarqueePointerDown={marquee.onPointerDown}
@@ -1145,8 +1213,14 @@ export function WorkspaceFileBrowser() {
               setSelectedKeys(new Set(selectableRowKeys));
             }
           }}
-          onSort={handleSortHeaderClick}
+          onSort={handleListSort}
           onLoadMore={handleLoadMore}
+          onRetryTrash={() => {
+            void trash.retry();
+          }}
+          onClearTrashFilters={() => {
+            void trash.clearFilters();
+          }}
           registerScrollContainer={dragCtx.registerScrollContainer}
           renderCard={renderGridRowCard}
           renderRow={renderTableRow}

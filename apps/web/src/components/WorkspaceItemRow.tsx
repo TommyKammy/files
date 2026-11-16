@@ -8,10 +8,12 @@ import {
   Lock,
   MoreHorizontal,
   RotateCcw,
+  UserRound,
 } from 'lucide-react';
 import type { Dispatch, MouseEvent, SetStateAction } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
 import { ClassificationCell } from '@/components/ClassificationCell';
+import { TrashRetentionBadge } from '@/components/TrashRetentionBadge';
 import { WorkspaceSelectionCheckbox } from '@/components/WorkspaceSelectionCheckbox';
 import { formatBytes, formatDateTime, isPdfFile } from '@/lib/formatters';
 import { isImeComposingEvent } from '@/lib/keyboard-shortcuts';
@@ -113,6 +115,13 @@ export function WorkspaceItemRow({
   const isDropEligible = Boolean(
     folder && !isTrashView && folder.deleted_at == null
   );
+  const trashMeta = isTrashView ? folder ?? file : null;
+  const trashDeletedAt = isTrashView
+    ? folder
+      ? folder.deleted_at
+      : file?.deleted_at
+    : null;
+  const trashDeletedByName = trashMeta?.deletedByName ?? null;
 
   const rowClassName = `h-11 transition-colors ${
     isPendingUpload
@@ -291,7 +300,16 @@ export function WorkspaceItemRow({
         )}
       </td>
       <td className="px-3 py-2">
-        {isFolder ? (
+        {isTrashView ? (
+          <span
+            className="inline-flex items-center gap-1 text-[0.75rem] text-[#3c3f46]"
+            title="削除者"
+            data-trash-deleter={trashMeta?.deletedBy ?? 'unknown'}
+          >
+            <UserRound className="h-3.5 w-3.5 shrink-0 text-[#8a8d94]" />
+            <span>{trashDeletedByName ?? '不明'}</span>
+          </span>
+        ) : isFolder ? (
           <ClassificationBadge
             classification={folder!.classification}
             compact
@@ -317,14 +335,26 @@ export function WorkspaceItemRow({
         {isFolder ? 'フォルダ' : formatBytes(file!.size_bytes)}
       </td>
       <td className="px-3 py-2 text-[#55565a]">
-        {formatDateTime(
-          isFolder
-            ? isTrashView
-              ? folder!.deleted_at
-              : folder!.updated_at
-            : isTrashView
-              ? file!.deleted_at
+        {isTrashView ? (
+          <div
+            className="space-y-0.5"
+            data-trash-purge-at={trashMeta?.purgeAt ?? undefined}
+            data-trash-days-remaining={trashMeta?.daysRemaining}
+          >
+            <div>{formatDateTime(trashDeletedAt)}</div>
+            <div className="text-[0.625rem] text-[#8a8d94]">
+              予定 {formatDateTime(trashMeta?.purgeAt)}
+            </div>
+            <TrashRetentionBadge
+              daysRemaining={trashMeta?.daysRemaining}
+            />
+          </div>
+        ) : (
+          formatDateTime(
+            isFolder
+              ? folder!.updated_at
               : file!.updated_at
+          )
         )}
       </td>
       <td className="px-3 py-2 text-right">

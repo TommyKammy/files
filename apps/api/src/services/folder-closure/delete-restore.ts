@@ -64,7 +64,7 @@ export async function softDeleteFolderSubtree(
     db
       .prepare(
         `UPDATE files
-            SET deleted_at = ?, meta_version = meta_version + 1, updated_at = ?
+            SET deleted_at = ?, deleted_by = ?, meta_version = meta_version + 1, updated_at = ?
           WHERE tenant_id = ?
             AND deleted_at IS NULL
             AND folder_id IN (
@@ -73,11 +73,11 @@ export async function softDeleteFolderSubtree(
                WHERE tenant_id = ? AND ancestor_id = ?
             )`
       )
-      .bind(nowIso, nowIso, user.tenantId, user.tenantId, folderId),
+      .bind(nowIso, user.id, nowIso, user.tenantId, user.tenantId, folderId),
     db
       .prepare(
         `UPDATE folders
-            SET deleted_at = ?, version = version + 1, updated_at = ?
+            SET deleted_at = ?, deleted_by = ?, version = version + 1, updated_at = ?
           WHERE tenant_id = ?
             AND deleted_at IS NULL
             AND id IN (
@@ -86,7 +86,7 @@ export async function softDeleteFolderSubtree(
                WHERE tenant_id = ? AND ancestor_id = ?
             )`
       )
-      .bind(nowIso, nowIso, user.tenantId, user.tenantId, folderId),
+      .bind(nowIso, user.id, nowIso, user.tenantId, user.tenantId, folderId),
     buildAuditLogStmt(db, {
       tenantId: user.tenantId,
       actorId: user.id,
@@ -96,7 +96,7 @@ export async function softDeleteFolderSubtree(
       targetType: 'folder',
       targetId: folderId,
       classificationSnapshot: access.classification,
-      metadata: { deletedAt: nowIso },
+      metadata: { deletedAt: nowIso, deletedBy: user.id },
       nowIso,
     }),
     buildSyncChangeStmt(db, {
@@ -108,6 +108,7 @@ export async function softDeleteFolderSubtree(
       payload: {
         parentId: existing.parent_id,
         deletedAt: nowIso,
+        deletedBy: user.id,
         version: existing.version + 1,
       },
       nowIso,
@@ -203,7 +204,7 @@ export async function restoreFolderSubtree(
     db
       .prepare(
         `UPDATE files
-            SET deleted_at = NULL, meta_version = meta_version + 1, updated_at = ?
+            SET deleted_at = NULL, deleted_by = NULL, meta_version = meta_version + 1, updated_at = ?
           WHERE tenant_id = ?
             AND deleted_at = ?
             AND folder_id IN (
@@ -217,6 +218,7 @@ export async function restoreFolderSubtree(
       .prepare(
         `UPDATE folders
             SET deleted_at = NULL,
+                deleted_by = NULL,
                 name = CASE WHEN id = ? THEN ? ELSE name END,
                 version = version + 1,
                 updated_at = ?
@@ -258,6 +260,7 @@ export async function restoreFolderSubtree(
           ...folder,
           name: nextName,
           deleted_at: null,
+          deleted_by: null,
           version: folder.version + 1,
           updated_at: nowIso,
         },

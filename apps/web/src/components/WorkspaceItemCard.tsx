@@ -8,9 +8,11 @@ import {
   MoreHorizontal,
   RotateCcw,
   Sparkles,
+  UserRound,
 } from 'lucide-react';
 import type { Dispatch, MouseEvent, SetStateAction } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
+import { TrashRetentionBadge } from '@/components/TrashRetentionBadge';
 import { WorkspaceSelectionCheckbox } from '@/components/WorkspaceSelectionCheckbox';
 import { formatBytes, formatDateTime, isPdfFile } from '@/lib/formatters';
 import { isImeComposingEvent } from '@/lib/keyboard-shortcuts';
@@ -92,6 +94,12 @@ export function WorkspaceItemCard({
   const isDropEligible = Boolean(
     folder && !isTrashView && folder.deleted_at == null
   );
+  const trashMeta = isTrashView ? folder ?? file : null;
+  const trashDeletedAt = isTrashView
+    ? folder
+      ? folder.deleted_at
+      : file?.deleted_at
+    : null;
 
   return (
     <div
@@ -116,7 +124,9 @@ export function WorkspaceItemCard({
         if (isRowControlTarget(e.target)) return;
         onOpenRow(row);
       }}
-      className={`flex h-[136px] flex-col justify-between rounded-lg border p-3 transition-colors ${
+      className={`flex flex-col justify-between rounded-lg border p-3 transition-colors ${
+        isTrashView ? 'h-[184px]' : 'h-[136px]'
+      } ${
         dropClass
           ? dropClass
           : isPendingUpload
@@ -280,6 +290,28 @@ export function WorkspaceItemCard({
             編集中
           </div>
         )}
+        {isTrashView && trashMeta && (
+          <div className="mt-1.5 space-y-1 text-[0.625rem] text-[#6b6f76]">
+            <div
+              className="flex items-center gap-1"
+              title="削除者"
+              data-trash-deleter={trashMeta.deletedBy ?? 'unknown'}
+            >
+              <UserRound className="h-3 w-3 shrink-0 text-[#8a8d94]" />
+              <span>削除者: {trashMeta.deletedByName ?? '不明'}</span>
+            </div>
+            <div
+              className="flex flex-wrap items-center gap-1"
+              data-trash-purge-at={trashMeta.purgeAt}
+              data-trash-days-remaining={trashMeta.daysRemaining}
+            >
+              <span>削除予定 {formatDateTime(trashMeta.purgeAt)}</span>
+              <TrashRetentionBadge
+                daysRemaining={trashMeta.daysRemaining}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-2 text-[0.6875rem] text-[#6b6f76]">
@@ -298,11 +330,13 @@ export function WorkspaceItemCard({
           )}
         </div>
         <span className="shrink-0 font-mono text-[0.625rem] text-[#6b6f76]">
-          {folder
+          {isTrashView
             ? formatDateTime(
-                isTrashView ? folder.deleted_at : folder.updated_at
+                folder ? folder.deleted_at : file!.deleted_at
               )
-            : formatBytes(file!.size_bytes)}
+            : isFolder
+              ? formatDateTime(folder!.updated_at)
+              : formatBytes(file!.size_bytes)}
         </span>
       </div>
     </div>

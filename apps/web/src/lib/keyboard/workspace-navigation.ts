@@ -199,7 +199,6 @@ export function handleWorkspaceNavigationKey(
   }
 
   if (lower === 'v') {
-    if (ctx.isTrashView) return false;
     e.preventDefault();
     ctx.handleToggleViewMode();
     return true;

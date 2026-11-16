@@ -77,9 +77,30 @@ interface FolderChildrenResponse {
   files: FileLike[];
 }
 
-interface TrashResponse {
+export interface TrashItemLike {
+  id: string;
+  name: string;
+  type?: 'file' | 'folder';
+  folder_id?: string | null;
+  parent_id?: string | null;
+  deleted_at?: string | null;
+  deletedAt?: string;
+  deletedBy?: string | null;
+  deletedByName?: string | null;
+  purgeAt?: string;
+  daysRemaining?: number;
+  version?: number;
+}
+
+export interface TrashResponse {
   folders: FolderLike[];
   files: FileLike[];
+  items?: TrashItemLike[];
+  nextCursor?: string | null;
+  hasMore?: boolean;
+  trashRetentionDays?: number;
+  deleters?: Array<{ id: string; name: string }>;
+  hasUnknownDeleter?: boolean;
 }
 
 interface SearchResultLike {
@@ -242,7 +263,9 @@ export async function waitForTrashFile(
   await expect
     .poll(
       async () => {
-        const res = await actor.api.get('/api/folders/trash?limit=100');
+        const res = await actor.api.get(
+          `/api/folders/trash?limit=100&query=${encodeURIComponent(fileName)}`
+        );
         assertOk(res, 'GET /api/folders/trash');
         const body = (await res.json()) as TrashResponse;
         found = body.files.find((file) => file.name === fileName);
@@ -255,6 +278,93 @@ export async function waitForTrashFile(
     )
     .toBe(true);
   return found ?? null;
+}
+
+/**
+ * GET /api/folders/trash with the full filter/sort/cursor contract.
+ */
+export async function listTrash(
+  actor: ApiActor,
+  params: {
+    limit?: number;
+    cursor?: string | null;
+    query?: string;
+    type?: 'all' | 'file' | 'folder';
+    deletedBy?: string | null;
+    deletedFrom?: string | null;
+    deletedTo?: string | null;
+    sort?: 'deletedAt_desc' | 'deletedAt_asc' | 'name_asc' | 'name_desc';
+  } = {}
+): Promise<TrashResponse> {
+  const search = new URLSearchParams();
+  search.set('limit', String(params.limit ?? 50));
+  if (params.cursor) search.set('cursor', params.cursor);
+  if (params.query) search.set('query', params.query);
+  if (params.type && params.type !== 'all') search.set('type', params.type);
+  if (params.deletedBy) search.set('deletedBy', params.deletedBy);
+  if (params.deletedFrom) search.set('deletedFrom', params.deletedFrom);
+  if (params.deletedTo) search.set('deletedTo', params.deletedTo);
+  if (params.sort) search.set('sort', params.sort);
+  const res = await actor.api.get(`/api/folders/trash?${search.toString()}`);
+  assertOk(res, 'GET /api/folders/trash');
+  return (await res.json()) as TrashResponse;
+}
+
+/** Reads every Trash page for a query using the server cursor. */
+export async function listAllTrash(
+  actor: ApiActor,
+  params: {
+    limit?: number;
+    query?: string;
+    type?: 'all' | 'file' | 'folder';
+    deletedBy?: string | null;
+    deletedFrom?: string | null;
+    deletedTo?: string | null;
+    sort?: 'deletedAt_desc' | 'deletedAt_asc' | 'name_asc' | 'name_desc';
+  } = {}
+): Promise<TrashItemLike[]> {
+  const items: TrashItemLike[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 50; page++) {
+    const response = await listTrash(actor, {
+      ...params,
+      limit: params.limit ?? 200,
+      cursor,
+    });
+    items.push(...(response.items ?? [...response.folders, ...response.files]));
+    cursor = response.nextCursor ?? null;
+    if (!cursor) return items;
+  }
+  throw new Error('Trash pagination did not terminate');
+}
+
+/** DELETE /api/files/:id — soft delete for E2E fixtures. */
+export async function softDeleteFile(
+  actor: ApiActor,
+  fileId: string
+): Promise<void> {
+  const res = await actor.api.delete(
+    `/api/files/${encodeURIComponent(fileId)}`
+  );
+  expect(
+    res.ok(),
+    `DELETE /api/files/${fileId} failed with HTTP ${res.status()}`
+  ).toBe(true);
+}
+
+/** POST /api/files/:id/restore — restore an E2E trash fixture. */
+export async function restoreTrashFile(
+  actor: ApiActor,
+  fileId: string
+): Promise<void> {
+  const res = await actor.api.post(
+    `/api/files/${encodeURIComponent(fileId)}/restore`,
+    { data: {} }
+  );
+  expect(
+    res.ok(),
+    `POST /api/files/${fileId}/restore failed with HTTP ${res.status()}`
+  ).toBe(true);
 }
 
 /**
@@ -479,6 +589,20 @@ export async function revokePermission(
   const body = (await res.json()) as { ok: boolean; id: string };
   expect(body).toEqual({ ok: true, id: permissionId });
   return body;
+}
+
+/** DELETE /api/folders/:id — soft delete a folder subtree for E2E fixtures. */
+export async function softDeleteFolder(
+  actor: ApiActor,
+  folderId: string
+): Promise<void> {
+  const res = await actor.api.delete(
+    `/api/folders/${encodeURIComponent(folderId)}`
+  );
+  expect(
+    res.ok(),
+    `DELETE /api/folders/${folderId} failed with HTTP ${res.status()}`
+  ).toBe(true);
 }
 
 /** Best-effort teardown: soft-deletes a test-created folder subtree. */
