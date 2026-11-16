@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Folder, FolderOpen, Info, Loader2, Pin, X } 
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
+import { FolderTreeRow } from '@/components/FolderTreeRow';
 import {
   type FolderTreeMenuAction,
   FolderTreeContextMenu,
@@ -310,64 +311,24 @@ export function AppShellFolderTree({
 
       return (
         <div key={folder.id}>
-          <div
-            data-drop-folder-id={folder.id}
-            data-drop-label={folder.name}
+          <FolderTreeRow
+            folder={folder}
+            depth={depth}
+            isExpanded={isExpanded}
+            isLoading={isLoading}
+            isActive={isActive}
+            isContextMenuOpen={contextMenu?.folder.id === folder.id}
+            dropRing={dropRing}
+            onToggle={() => toggleExpand(folder.id)}
+            onNavigate={() => navigateToFolder(folder.id)}
             onContextMenu={(e) => openFolderContextMenu(e, folder)}
-            style={{ paddingLeft: `${8 + depth * 12}px` }}
-            className={`group flex h-7 items-center gap-1 rounded-md pr-2 text-[0.75rem] transition ${
-              dropRing
-                ? `${dropRing} text-[#111214]`
-                : isActive
-                  ? 'bg-[#e2e2e6] text-[#111214]'
-                  : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
-            }`}
-          >
-            <button
-              type="button"
-              aria-label={isExpanded ? `${folder.name} を閉じる` : `${folder.name} を展開`}
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleExpand(folder.id);
-              }}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[#676b72] hover:bg-[#e6e6e8] hover:text-[#111214]"
-            >
-              {isLoading ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : isExpanded ? (
-                <ChevronDown className="h-3 w-3" />
-              ) : (
-                <ChevronRight className="h-3 w-3" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              data-folder-trigger="true"
-              aria-haspopup="menu"
-              aria-expanded={contextMenu?.folder.id === folder.id}
-              onClick={() => navigateToFolder(folder.id)}
-              onKeyDown={(e) => openFolderMenuFromKeyboard(e, folder)}
-              className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-            >
-              {isExpanded || isActive ? (
-                <FolderOpen className="h-3.5 w-3.5 shrink-0 text-[#676b72]" />
-              ) : (
-                <Folder className="h-3.5 w-3.5 shrink-0 text-[#676b72]" />
-              )}
-              <span className="truncate">{folder.name}</span>
-            </button>
-
-            {folder.classification === 'confidential' && (
-              <span
-                title="Confidential (極秘)"
-                className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#d9343f]"
-              />
-            )}
-          </div>
+            onKeyDown={(e) => openFolderMenuFromKeyboard(e, folder)}
+          />
 
           {isExpanded && childView && childView.folders.length > 0 && (
-            <div className="space-y-0.5">{renderTreeNodes(childView.folders, depth + 1)}</div>
+            <div className="space-y-0.5">
+              {renderTreeNodes(childView.folders, depth + 1)}
+            </div>
           )}
         </div>
       );
