@@ -73,6 +73,7 @@ import {
 import { WorkspaceSelectionBar } from '@/components/WorkspaceSelectionBar';
 import { WorkspaceSelectionCheckbox } from '@/components/WorkspaceSelectionCheckbox';
 import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
+import { WorkspaceTableHeader } from '@/components/WorkspaceTableHeader';
 import { WorkspaceToolbar } from '@/components/WorkspaceToolbar';
 import {
   getDropTargetClassName,
@@ -2263,74 +2264,21 @@ export function WorkspaceFileBrowser() {
                   >
                     ファイルとフォルダの一覧
                   </caption>
-                  <thead className="sticky top-0 z-10 border-b border-[#ededf0] bg-[#fbfbfc]/95 text-[0.6875rem] font-medium tracking-normal text-[#6b6f76] backdrop-blur-xs">
-                    <tr aria-rowindex={1}>
-                      <th scope="col" className="w-10 px-3 py-2">
-                        {!isTrashView && selectableRowKeys.length > 0 && (
-                          <WorkspaceSelectionCheckbox
-                            checked={
-                              selectedRows.length > 0 &&
-                              selectedRows.length === selectableRowKeys.length
-                            }
-                            label="すべて選択"
-                            onClick={() => {
-                              if (
-                                selectedRows.length ===
-                                selectableRowKeys.length
-                              ) {
-                                setSelectedKeys(new Set());
-                              } else {
-                                setSelectedKeys(new Set(selectableRowKeys));
-                              }
-                            }}
-                          />
-                        )}
-                      </th>
-                      {(
-                        [
-                          { field: 'name', label: '名前' },
-                          { field: 'classification', label: '機密分類 / AI' },
-                          { field: 'size_bytes', label: 'サイズ' },
-                          {
-                            field: 'updated_at',
-                            label: isTrashView ? '削除日時' : '更新日時',
-                          },
-                        ] as const
-                      ).map(({ field, label }) => {
-                        const isActiveSort = sortBy === field;
-                        return (
-                          <th
-                            key={field}
-                            scope="col"
-                            aria-sort={getAriaSortValue(field, sortBy, sortDir)}
-                            className="px-3 py-2"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => handleSortHeaderClick(field)}
-                              className={`inline-flex min-h-6 items-center gap-1 rounded px-1 py-0.5 transition hover:bg-slate-200/60 hover:text-slate-900 ${
-                                isActiveSort ? 'text-slate-900' : 'text-slate-500'
-                              }`}
-                            >
-                              <span>{label}</span>
-                              {isActiveSort ? (
-                                sortDir === 'asc' ? (
-                                  <ArrowUp className="h-3 w-3 text-blue-600" />
-                                ) : (
-                                  <ArrowDown className="h-3 w-3 text-blue-600" />
-                                )
-                              ) : (
-                                <ArrowUpDown className="h-3 w-3 opacity-40" />
-                              )}
-                            </button>
-                          </th>
-                        );
-                      })}
-                      <th scope="col" className="px-3 py-2 text-right">
-                        操作
-                      </th>
-                    </tr>
-                  </thead>
+                  <WorkspaceTableHeader
+                    isTrashView={isTrashView}
+                    selectableRowKeys={selectableRowKeys}
+                    selectedRowCount={selectedRows.length}
+                    sortBy={sortBy}
+                    sortDir={sortDir}
+                    onToggleSelectAll={() => {
+                      if (selectedRows.length === selectableRowKeys.length) {
+                        setSelectedKeys(new Set());
+                      } else {
+                        setSelectedKeys(new Set(selectableRowKeys));
+                      }
+                    }}
+                    onSort={handleSortHeaderClick}
+                  />
                 <tbody className="divide-y divide-[#f0f0f1]">
                   {virtualWindow.topSpacerPx > 0 && (
                     <tr aria-hidden="true">
