@@ -81,7 +81,9 @@ import {
   syncDelta,
   type DirectorySyncContext,
 } from '@/lib/sync-store/directory-sync';
+import * as copyOps from '@/lib/sync-store/optimistic-copy';
 import * as fileOps from '@/lib/sync-store/optimistic-file';
+import * as moveOps from '@/lib/sync-store/optimistic-move';
 import * as folderOps from '@/lib/sync-store/optimistic-folder';
 import * as uploadOps from '@/lib/sync-store/optimistic-upload';
 import { executeOutboxMutation } from '@/lib/sync-store/outbox-execute';
@@ -1115,179 +1117,10 @@ export class WorkspaceSyncStore {
     movedCount: number;
     skippedCount: number;
   } {
-    const targetParentId = input.targetParentId;
-    const conflictPolicy: WorkspaceConflictPolicy = input.conflictPolicy ?? 'fail';
-    const destView = this.getDirectoryView(targetParentId);
-
-    const plan = planOptimisticMove(input, {
-      idAliasMap: this.idAliasMap,
-      foldersById: this.foldersById,
-      filesById: this.filesById,
-      userRole: this.user?.role,
-      isFolderAncestorOf: (ancestorId, descendantId) =>
-        this.isFolderAncestorOf(ancestorId, descendantId),
-      resolveItemEffectiveRole: (type, item) =>
-        this.resolveItemEffectiveRole(type, item),
-      getDestinationNames: (folderId) => this.collectDestNameSets(folderId),
-      destinationRole: destView.effectiveRole,
-      getAncestorClassifications: (folderId) =>
-        this.getAncestorClassifications(folderId),
-      now: this.now,
-    });
-
-    if (!plan.ok) {
-      return {
-        ok: false,
-        error: plan.error,
-        movedCount: 0,
-        skippedCount: 0,
-      };
-    }
-    if (plan.movedCount === 0) {
-      return { ok: true, movedCount: 0, skippedCount: plan.skippedCount };
-    }
-
-    const { nowIso, destFloor, foldersToMove, filesToMove } = plan;
-
-    for (const { prev, targetName } of foldersToMove) {
-      const oldDir = this.directoriesByKey.get(dirKeyForFolder(prev.parent_id));
-      if (oldDir) {
-        oldDir.folderIds = removeFromIdList(oldDir.folderIds, prev.id);
-      }
-      if (prev.parent_id === null && targetParentId !== null) {
-        this.rootFolderIds = removeFromIdList(this.rootFolderIds, prev.id);
-      }
-
-      const nextFolder: FolderSummary = {
-        ...prev,
-        parent_id: targetParentId,
-        name: targetName,
-        classification:
-          targetParentId !== null
-            ? pickStricterClassification(prev.classification, destFloor)
-            : prev.classification,
-        updated_at: nowIso,
-      };
-      this.upsertFolderInCache(nextFolder);
-      this.markCachedSubtreeStale(prev.id);
-    }
-
-    for (const { prev, targetName, targetExt } of filesToMove) {
-      const oldDir = this.directoriesByKey.get(dirKeyForFolder(prev.folder_id));
-      if (oldDir) {
-        oldDir.fileIds = removeFromIdList(oldDir.fileIds, prev.id);
-      }
-
-      const nextFile: FileItem = {
-        ...prev,
-        folder_id: targetParentId,
-        name: targetName,
-        extension: targetExt,
-        classification:
-          targetParentId !== null
-            ? pickStricterClassification(prev.classification, destFloor)
-            : prev.classification,
-        updated_at: nowIso,
-      };
-      this.upsertFileInCache(nextFile);
-    }
-
-    const prevFolders = foldersToMove.map((m) => m.prev);
-    const prevFiles = filesToMove.map((m) => m.prev);
-
-    if (!input.skipUndo) {
-      const undoGroups = new Map<
-        string | null,
-        Array<{ type: 'file' | 'folder'; id: string }>
-      >();
-      for (const f of prevFolders) {
-        const list = undoGroups.get(f.parent_id) ?? [];
-        list.push({ type: 'folder', id: f.id });
-        undoGroups.set(f.parent_id, list);
-      }
-      for (const fl of prevFiles) {
-        const list = undoGroups.get(fl.folder_id) ?? [];
-        list.push({ type: 'file', id: fl.id });
-        undoGroups.set(fl.folder_id, list);
-      }
-
-      const labelText =
-        input.labelOverride ??
-        (plan.movedCount === 1
-          ? `「${foldersToMove[0]?.prev.name ?? filesToMove[0]?.prev.name}」を移動しました`
-          : `${plan.movedCount} 件のアイテムを移動しました`);
-
-      this.pushUndo(
-        {
-          label: '移動を元に戻す',
-          applyUndo: () => {
-            for (const [origParentId, origItems] of undoGroups.entries()) {
-              this.optimisticMoveItems({
-                items: origItems,
-                targetParentId: origParentId,
-                conflictPolicy: 'fail',
-                skipUndo: true,
-              });
-            }
-          },
-        },
-        labelText
-      );
-    }
-
-    // Use `folder.move` for single-folder fail-mode move; `file.move` or `workspace.batch_move` otherwise
-    const useSingleFolderMove =
-      foldersToMove.length === 1 &&
-      filesToMove.length === 0 &&
-      conflictPolicy !== 'rename';
-
-    if (useSingleFolderMove) {
-      const f = foldersToMove[0]!.prev;
-      this.outbox.enqueue({
-        id: makeClientMutationId('mut'),
-        entityType: 'folder',
-        entityId: f.id,
-        kind: 'folder.move',
-        payload: { fromParentId: f.parent_id, targetParentId },
-        expectedVersion: f.version,
-        createdAt: this.now(),
-        retryCount: 0,
-        rollback: {
-          folder: f,
-          folders: [f],
-          files: [],
-          targetParentId,
-          existedBefore: true,
-          parentId: f.parent_id,
-        },
-      });
-    } else {
-      const singleFileOnly =
-        foldersToMove.length === 0 && filesToMove.length === 1;
-      const mutId = makeClientMutationId('mut');
-      this.outbox.enqueue({
-        id: mutId,
-        entityType: singleFileOnly ? 'file' : 'folder',
-        entityId: singleFileOnly ? filesToMove[0]!.prev.id : `batch:${mutId}`,
-        involvedEntityKeys: plan.involvedEntityKeys,
-        kind: singleFileOnly ? 'file.move' : 'workspace.batch_move',
-        payload: {
-          items: plan.batchRefs,
-          targetParentId,
-          conflictPolicy,
-        },
-        createdAt: this.now(),
-        retryCount: 0,
-        rollback: {
-          folders: prevFolders,
-          files: prevFiles,
-          targetParentId,
-          existedBefore: true,
-        },
-      });
-    }
-
-    return { ok: true, movedCount: plan.movedCount, skippedCount: plan.skippedCount };
+    return moveOps.optimisticMoveItems(
+      this.optimisticMoveContext(input.targetParentId),
+      input
+    );
   }
 
   optimisticCopyItems(input: {
@@ -1302,115 +1135,93 @@ export class WorkspaceSyncStore {
     tempIds: string[];
     mutationId?: string;
   } {
-    const targetParentId = input.targetParentId;
-    const destView = this.getDirectoryView(targetParentId);
-    const plan = planOptimisticCopy(input, {
-      idAliasMap: this.idAliasMap,
+    return copyOps.optimisticCopyItems(
+      this.optimisticCopyContext(input.targetParentId),
+      input
+    );
+  }
+
+  private optimisticMoveContext(
+    targetParentId: string | null
+  ): moveOps.OptimisticMoveContext {
+    return {
+      planning: {
+        idAliasMap: this.idAliasMap,
+        foldersById: this.foldersById,
+        filesById: this.filesById,
+        userRole: this.user?.role,
+        isFolderAncestorOf: (ancestorId, descendantId) =>
+          this.isFolderAncestorOf(ancestorId, descendantId),
+        resolveItemEffectiveRole: (type, item) =>
+          this.resolveItemEffectiveRole(type, item),
+        getDestinationNames: (folderId) =>
+          this.collectDestNameSets(folderId),
+        destinationRole: this.getDirectoryView(targetParentId).effectiveRole,
+        getAncestorClassifications: (folderId) =>
+          this.getAncestorClassifications(folderId),
+        now: this.now,
+      },
+      directoriesByKey: this.directoriesByKey,
+      getRootFolderIds: () => this.rootFolderIds,
+      setRootFolderIds: (ids) => {
+        this.rootFolderIds = ids;
+      },
+      upsertFolderInCache: (folder) => this.upsertFolderInCache(folder),
+      upsertFileInCache: (file) => this.upsertFileInCache(file),
+      markCachedSubtreeStale: (folderId) =>
+        this.markCachedSubtreeStale(folderId),
+      outbox: this.outbox,
+      now: this.now,
+      pushUndo: (entry, message) => this.pushUndo(entry, message),
+      makeId: (prefix) => makeClientMutationId(prefix),
+      moveItems: (input) => this.optimisticMoveItems(input),
+    };
+  }
+
+  private optimisticCopyContext(
+    targetParentId: string | null
+  ): copyOps.OptimisticCopyContext {
+    return {
+      planning: {
+        idAliasMap: this.idAliasMap,
+        foldersById: this.foldersById,
+        filesById: this.filesById,
+        userRole: this.user?.role,
+        isFolderAncestorOf: (ancestorId, descendantId) =>
+          this.isFolderAncestorOf(ancestorId, descendantId),
+        resolveItemEffectiveRole: (type, item) =>
+          this.resolveItemEffectiveRole(type, item),
+        getDestinationNames: (folderId) =>
+          this.collectDestNameSets(folderId),
+        destinationRole:
+          this.getDirectoryView(targetParentId).effectiveRole,
+        getAncestorClassifications: (folderId) =>
+          this.getAncestorClassifications(folderId),
+        now: this.now,
+        nextId: (prefix) => makeClientMutationId(prefix),
+      },
       foldersById: this.foldersById,
       filesById: this.filesById,
-      userRole: this.user?.role,
-      isFolderAncestorOf: (ancestorId, descendantId) =>
-        this.isFolderAncestorOf(ancestorId, descendantId),
+      outbox: this.outbox,
+      now: this.now,
+      pushUndo: (entry, message) => this.pushUndo(entry, message),
+      makeId: (prefix) => makeClientMutationId(prefix),
+      copiedRootsByMutationId: this.copiedRootsByMutationId,
+      cancelledCopyMutationIds: this.cancelledCopyMutationIds,
+      removeFolderFromCache: (folder) =>
+        this.removeFolderFromCache(folder),
+      removeFileFromCache: (fileId, folderId) =>
+        this.removeFileFromCache(fileId, folderId),
+      softDeleteFolder: (folder) =>
+        this.optimisticSoftDeleteFolder(folder, { skipUndo: true }),
+      softDeleteFile: (file, role) =>
+        this.optimisticSoftDeleteFile(file, file.folder_id, role, {
+          skipUndo: true,
+        }),
       resolveItemEffectiveRole: (type, item) =>
         this.resolveItemEffectiveRole(type, item),
-      getDestinationNames: (folderId) => this.collectDestNameSets(folderId),
-      destinationRole: destView.effectiveRole,
-      getAncestorClassifications: (folderId) =>
-        this.getAncestorClassifications(folderId),
-      now: this.now,
-      nextId: (prefix) => makeClientMutationId(prefix),
-    });
-
-    if (!plan.ok) {
-      return { ok: false, error: plan.error, tempIds: [] };
-    }
-
-    const {
-      mutationId,
-      tempFolderIds,
-      tempFileIds,
-      totalCount,
-      duplicateInPlace,
-    } = plan;
-
-    for (const folder of plan.tempFolders) {
-      this.upsertFolderInCache(folder);
-    }
-    for (const file of plan.tempFiles) {
-      this.upsertFileInCache(file);
-    }
-
-    if (!input.skipUndo) {
-      this.pushUndo(
-        {
-          label: 'コピーを取り消す',
-          applyUndo: () => {
-            const realRoots = this.copiedRootsByMutationId.get(mutationId);
-            if (realRoots) {
-              this.copiedRootsByMutationId.delete(mutationId);
-              for (const folder of realRoots.folders) {
-                const live = this.foldersById.get(folder.id) ?? folder;
-                this.optimisticSoftDeleteFolder(live, { skipUndo: true });
-              }
-              for (const file of realRoots.files) {
-                const live = this.filesById.get(file.id) ?? file;
-                const role = this.resolveItemEffectiveRole('file', live);
-                this.optimisticSoftDeleteFile(live, live.folder_id, role, {
-                  skipUndo: true,
-                });
-              }
-              return;
-            }
-
-            // Undone before server ACK arrived (or still queued inside 100ms coalesce window)
-            const canceledFromQueue =
-              this.outbox.cancelQueuedMutation(mutationId);
-            if (!canceledFromQueue) {
-              this.cancelledCopyMutationIds.add(mutationId);
-            }
-            for (const tmpId of tempFolderIds) {
-              const tmp = this.foldersById.get(tmpId);
-              if (tmp) this.removeFolderFromCache(tmp);
-            }
-            for (const tmpId of tempFileIds) {
-              const tmp = this.filesById.get(tmpId);
-              if (tmp) this.removeFileFromCache(tmp.id, tmp.folder_id);
-            }
-          },
-        },
-        totalCount === 1
-          ? `1 件のアイテムを${duplicateInPlace ? '複製' : 'コピー'}しました`
-          : `${totalCount} 件のアイテムを${duplicateInPlace ? '複製' : 'コピー'}しました`
-      );
-    }
-
-    this.outbox.enqueue({
-      id: mutationId,
-      entityType: 'folder',
-      entityId: `copy:${mutationId}`,
-      involvedEntityKeys: plan.involvedEntityKeys,
-      kind: 'workspace.copy',
-      payload: {
-        items: plan.apiItems,
-        targetParentId,
-        duplicateInPlace,
-        conflictPolicy: plan.conflictPolicy,
-        tempFolderIds,
-        tempFileIds,
-      },
-      createdAt: this.now(),
-      retryCount: 0,
-      rollback: {
-        tempFolderIds,
-        tempFileIds,
-        targetParentId,
-      },
-    });
-
-    return {
-      ok: true,
-      tempIds: [...tempFolderIds, ...tempFileIds],
-      mutationId,
+      upsertFolderInCache: (folder) => this.upsertFolderInCache(folder),
+      upsertFileInCache: (file) => this.upsertFileInCache(file),
     };
   }
 
