@@ -42,6 +42,18 @@ interface PurgeDraftObjectRow extends FileVersionObjectRow {
 export interface PurgeActor {
   user: AuthUser;
   nowIso: string;
+  /** Extra, non-secret audit fields (admin delegation, target name, version). */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Tenant administrator permanently deleting another user's Trash item. The
+ * caller must have already verified `sys_admin`; this context only widens the
+ * item ACL lookup and records delegation metadata.
+ */
+export interface TrashPurgeAdminContext {
+  adminBypass: true;
+  owner: { id: string; name: string; email: string | null };
 }
 
 export interface TrashPurgeItemResult {
@@ -242,6 +254,7 @@ export async function purgeFileRows(input: {
           metadata: {
             sizeBytes: file.size_bytes,
             uploadState: file.upload_state,
+            ...(actor.metadata ?? {}),
           },
           nowIso,
         }),
@@ -369,12 +382,17 @@ export async function purgeTrashFileItem(
   env: Pick<OidcEnv, 'DB' | 'BUCKET' | 'FILE_LOCK_HUB'>,
   user: AuthUser,
   fileId: string,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
+  adminContext?: TrashPurgeAdminContext
 ): Promise<{
   result: TrashPurgeItemResult;
   syncSeq: number | null;
   scopeFolderIds: Array<string | null>;
 }> {
+  if (adminContext && user.role !== 'sys_admin') {
+    throw new TrashRequestError(403, 'FORBIDDEN', 'Forbidden');
+  }
+
   const [access, file] = await Promise.all([
     resolveTargetAccess(env.DB, user, 'file', fileId),
     env.DB.prepare('SELECT * FROM files WHERE tenant_id = ? AND id = ?')
@@ -382,7 +400,7 @@ export async function purgeTrashFileItem(
       .first<FileRow>(),
   ]);
 
-  if (!access || !file) {
+  if (!file || (!access && !adminContext)) {
     throw new TrashRequestError(404, 'NOT_FOUND', 'File not found');
   }
   if (file.deleted_at === null) {
@@ -400,8 +418,9 @@ export async function purgeTrashFileItem(
     );
   }
   if (
+    !adminContext &&
     user.role !== 'sys_admin' &&
-    !hasAtLeastRole(access.effectiveRole, 'co_owner')
+    !hasAtLeastRole(access?.effectiveRole, 'co_owner')
   ) {
     throw new TrashRequestError(
       403,
@@ -418,7 +437,23 @@ export async function purgeTrashFileItem(
     tenantId: user.tenantId,
     files: [file],
     nowIso,
-    actor: { user, nowIso },
+    actor: {
+      user,
+      nowIso,
+      ...(adminContext
+        ? {
+            metadata: {
+              targetName: file.name,
+              sourceVersion: file.current_version_num,
+              adminBypass: true,
+              onBehalfOfUserId: adminContext.owner.id,
+              ownerId: adminContext.owner.id,
+              ownerName: adminContext.owner.name,
+              ownerEmail: adminContext.owner.email,
+            },
+          }
+        : {}),
+    },
   });
 
   return {
@@ -441,12 +476,17 @@ export async function purgeTrashFolderItem(
   env: Pick<OidcEnv, 'DB' | 'BUCKET' | 'FILE_LOCK_HUB'>,
   user: AuthUser,
   folderId: string,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
+  adminContext?: TrashPurgeAdminContext
 ): Promise<{
   result: TrashPurgeItemResult;
   syncSeq: number | null;
   scopeFolderIds: Array<string | null>;
 }> {
+  if (adminContext && user.role !== 'sys_admin') {
+    throw new TrashRequestError(403, 'FORBIDDEN', 'Forbidden');
+  }
+
   const [access, folder] = await Promise.all([
     resolveTargetAccess(env.DB, user, 'folder', folderId),
     env.DB.prepare('SELECT * FROM folders WHERE tenant_id = ? AND id = ?')
@@ -454,7 +494,7 @@ export async function purgeTrashFolderItem(
       .first<FolderRow>(),
   ]);
 
-  if (!access || !folder) {
+  if (!folder || (!access && !adminContext)) {
     throw new TrashRequestError(404, 'NOT_FOUND', 'Folder not found');
   }
   if (folder.deleted_at === null) {
@@ -465,8 +505,9 @@ export async function purgeTrashFolderItem(
     );
   }
   if (
+    !adminContext &&
     user.role !== 'sys_admin' &&
-    !hasAtLeastRole(access.effectiveRole, 'co_owner')
+    !hasAtLeastRole(access?.effectiveRole, 'co_owner')
   ) {
     throw new TrashRequestError(
       403,
@@ -510,6 +551,17 @@ export async function purgeTrashFolderItem(
       metadata: {
         purgedFileCount: files.length,
         purgedFolderCount: foldersPurged,
+        ...(adminContext
+          ? {
+              targetName: folder.name,
+              sourceVersion: folder.version,
+              adminBypass: true,
+              onBehalfOfUserId: adminContext.owner.id,
+              ownerId: adminContext.owner.id,
+              ownerName: adminContext.owner.name,
+              ownerEmail: adminContext.owner.email,
+            }
+          : {}),
       },
       nowIso,
     }),

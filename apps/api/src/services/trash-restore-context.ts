@@ -30,6 +30,18 @@ export interface RestoreBreadcrumb {
   version: number;
 }
 
+/**
+ * Administrator acting for the item owner. The delegation is only honored when
+ * the authenticated user is a tenant admin; services still record the real
+ * actor and resolve the owner from tenant-scoped data before restoring.
+ */
+export interface AdminRestoreDelegation {
+  onBehalfOfUserId: string;
+  ownerId?: string | null;
+  ownerName?: string | null;
+  ownerEmail?: string | null;
+}
+
 export interface RestoreDestinationContext {
   id: string | null;
   name: string;
@@ -154,7 +166,8 @@ export async function loadDeletedAncestorChain(
 export async function buildRestoreDestinationContext(
   db: D1Database,
   user: Pick<AuthUser, 'id' | 'tenantId' | 'role'>,
-  folderId: string | null
+  folderId: string | null,
+  options: { bypassAccess?: boolean } = {}
 ): Promise<RestoreDestinationContext | null> {
   if (folderId === null) return { ...ROOT_DESTINATION };
 
@@ -164,8 +177,9 @@ export async function buildRestoreDestinationContext(
   const target = chain[chain.length - 1]!;
   const access = await resolveTargetAccess(db, user, 'folder', folderId);
   const accessible =
-    Boolean(access) &&
-    (isPrivilegedAdmin(user) || hasAtLeastRole(access!.effectiveRole, 'previewer'));
+    options.bypassAccess === true ||
+    (Boolean(access) &&
+      (isPrivilegedAdmin(user) || hasAtLeastRole(access!.effectiveRole, 'previewer')));
 
   if (!accessible) {
     return {

@@ -185,6 +185,14 @@ export async function listAuthorizedSyncDeltas(
               sc.entity_type = 'file'
               AND sc.action = 'file.purged'
             )
+            -- Delegated admin restores are pushed to the owner even when the
+            -- item only had an inherited ACL that no longer maps to a folder
+            -- join. The row stays tenant-scoped and contains metadata only.
+            OR (
+              sc.entity_type IN ('folder', 'file')
+              AND sc.action IN ('folder.restore', 'file.restore')
+              AND sc.target_user_id = ?
+            )
             OR (
               sc.entity_type = 'folder'
               AND EXISTS (
@@ -304,6 +312,8 @@ export async function listAuthorizedSyncDeltas(
       // user
       user.id,
       isAdminFlag,
+      // delegated restore owner notification
+      user.id,
       // folder
       user.id,
       user.id,

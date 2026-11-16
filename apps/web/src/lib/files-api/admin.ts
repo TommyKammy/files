@@ -1,11 +1,18 @@
 import type {
   AdminSharedLinkRow,
+  AdminTrashListResponse,
+  AdminTrashRestoreResponse,
   AiClassificationMode,
   AiSuggestionItem,
   AuditLogEntry,
   ClassificationLabel,
   StorageStatsResponse,
   TenantPolicyRow,
+  TrashBulkItemRef,
+  TrashBulkResponse,
+  TrashEmptyResponse,
+  TrashSort,
+  TrashTypeFilter,
 } from '@/types/files';
 import {
   apiFetch,
@@ -77,6 +84,8 @@ export function updateAdminPolicies(payload: {
 
 export function fetchAuditLogs(params?: {
   action?: string;
+  /** Additional exact action filters, combined with `action` using IN (...). */
+  actions?: string[];
   status?: 'allowed' | 'blocked';
   actorEmail?: string;
   cursorCreatedAt?: string;
@@ -88,6 +97,9 @@ export function fetchAuditLogs(params?: {
 }> {
   const qs = new URLSearchParams();
   if (params?.action) qs.set('action', params.action);
+  if (params?.actions && params.actions.length > 0) {
+    qs.set('actions', params.actions.join(','));
+  }
   if (params?.status) qs.set('status', params.status);
   if (params?.actorEmail) qs.set('actorEmail', params.actorEmail);
   if (params?.cursorCreatedAt) qs.set('cursorCreatedAt', params.cursorCreatedAt);
@@ -95,6 +107,70 @@ export function fetchAuditLogs(params?: {
   if (params?.limit) qs.set('limit', String(params.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   return apiFetch(`/api/audit-logs${suffix}`);
+}
+
+/** GET /api/admin/trash — tenant-wide Trash metadata and filter candidates. */
+export function fetchAdminTrash(params?: {
+  query?: string;
+  type?: TrashTypeFilter;
+  ownerId?: string | null;
+  deletedById?: string | null;
+  deletedFrom?: string | null;
+  deletedTo?: string | null;
+  daysRemainingMax?: number | null;
+  sort?: TrashSort;
+  limit?: number;
+  cursor?: string | null;
+}): Promise<AdminTrashListResponse> {
+  const qs = new URLSearchParams();
+  if (params?.limit) qs.set('limit', String(params.limit));
+  if (params?.cursor) qs.set('cursor', params.cursor);
+  if (params?.query?.trim()) qs.set('query', params.query.trim());
+  if (params?.type && params.type !== 'all') qs.set('type', params.type);
+  if (params?.ownerId) qs.set('ownerId', params.ownerId);
+  if (params?.deletedById) qs.set('deletedById', params.deletedById);
+  if (params?.deletedFrom) qs.set('deletedFrom', params.deletedFrom);
+  if (params?.deletedTo) qs.set('deletedTo', params.deletedTo);
+  if (
+    params?.daysRemainingMax !== null &&
+    params?.daysRemainingMax !== undefined
+  ) {
+    qs.set('daysRemainingMax', String(params.daysRemainingMax));
+  }
+  if (params?.sort) qs.set('sort', params.sort);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return apiFetch(`/api/admin/trash${suffix}`);
+}
+
+/** POST /api/admin/trash/restore — delegated restore for sec_admin/sys_admin. */
+export function restoreAdminTrash(payload: {
+  items: TrashBulkItemRef[];
+  targetFolderId?: string | null;
+  conflictPolicy?: 'fail' | 'rename';
+  restoreParentChain?: boolean;
+}): Promise<AdminTrashRestoreResponse> {
+  return apiFetch('/api/admin/trash/restore', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** POST /api/admin/trash/empty — sys_admin tenant-wide permanent deletion. */
+export function emptyAdminTrash(confirm: string): Promise<TrashEmptyResponse> {
+  return apiFetch('/api/admin/trash/empty', {
+    method: 'POST',
+    body: JSON.stringify({ confirm }),
+  });
+}
+
+/** DELETE /api/admin/trash/items — sys_admin selected permanent deletion. */
+export function purgeAdminTrashItems(
+  items: TrashBulkItemRef[]
+): Promise<TrashBulkResponse> {
+  return apiFetch('/api/admin/trash/items', {
+    method: 'DELETE',
+    body: JSON.stringify({ items }),
+  });
 }
 
 /** POST /api/folders/:id/move — single-folder subtree move with optimistic concurrency */

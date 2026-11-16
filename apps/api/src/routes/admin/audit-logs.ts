@@ -10,6 +10,68 @@ import type { AuditLogRow } from './shared';
 export const auditLogsRoutes = new Hono<OidcHonoEnv>();
 auditLogsRoutes.use('*', sessionAuthMiddleware({ required: true }), requireSecOrSysAdmin);
 
+const MAX_AUDIT_ACTION_FILTERS = 20;
+const MAX_AUDIT_ACTION_LENGTH = 120;
+
+type ActionFilterResult =
+  | { ok: true; actions: string[] }
+  | { ok: false; error: string };
+
+/**
+ * Parse the legacy single `action` filter and the additive `actions` filter.
+ * `actions` accepts comma-separated values and repeated query keys; duplicates
+ * collapse in first-seen order and an explicit upper bound prevents unbounded
+ * `IN (...)` SQL.
+ */
+function parseAuditActionFilters(c: {
+  req: {
+    query: (name: string) => string | undefined;
+    queries: (name: string) => string[] | undefined;
+  };
+}): ActionFilterResult {
+  const actions: string[] = [];
+  const seen = new Set<string>();
+  let sawActionsParam = false;
+
+  const single = c.req.query('action')?.trim();
+  if (single) {
+    seen.add(single);
+    actions.push(single);
+  }
+
+  const repeated = c.req.queries('actions');
+  if (repeated && repeated.length > 0) {
+    sawActionsParam = true;
+    for (const raw of repeated) {
+      for (const part of raw.split(',')) {
+        const action = part.trim();
+        if (!action) continue;
+        if (action.length > MAX_AUDIT_ACTION_LENGTH) {
+          return {
+            ok: false,
+            error: `Each action filter must be at most ${MAX_AUDIT_ACTION_LENGTH} characters`,
+          };
+        }
+        if (seen.has(action)) continue;
+        seen.add(action);
+        actions.push(action);
+      }
+    }
+  }
+
+  if (sawActionsParam && actions.length === 0) {
+    return { ok: false, error: 'actions must contain at least one action' };
+  }
+  if (actions.length > MAX_AUDIT_ACTION_FILTERS) {
+    return {
+      ok: false,
+      error: `At most ${MAX_AUDIT_ACTION_FILTERS} action filters are allowed`,
+    };
+  }
+
+  return { ok: true, actions };
+}
+
 auditLogsRoutes.get('/', async (c) => {
   const user = getAuthenticatedUser(c);
   const limitRaw = Number.parseInt(c.req.query('limit') ?? '50', 10);
@@ -18,10 +80,17 @@ auditLogsRoutes.get('/', async (c) => {
   const conditions = ['tenant_id = ?'];
   const binds: unknown[] = [user.tenantId];
 
-  const action = c.req.query('action')?.trim();
-  if (action) {
-    conditions.push('action = ?');
-    binds.push(action);
+  const actionFilters = parseAuditActionFilters(c);
+  if (!actionFilters.ok) {
+    return c.json(
+      { error: actionFilters.error, code: 'INVALID_ACTION_FILTER' },
+      400
+    );
+  }
+  if (actionFilters.actions.length > 0) {
+    const placeholders = actionFilters.actions.map(() => '?').join(', ');
+    conditions.push(`action IN (${placeholders})`);
+    binds.push(...actionFilters.actions);
   }
 
   const status = c.req.query('status')?.trim();

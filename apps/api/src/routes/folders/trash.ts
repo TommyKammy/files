@@ -3,31 +3,24 @@ import {
   ROLE_RANK_SQL,
   getAuthenticatedUser,
 } from '../../services/authorization';
-import { base64UrlToBytes, bytesToBase64Url } from '../../services/crypto-utils';
 import type { ClassificationLabel } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
+import {
+  buildTrashCursorSql,
+  buildTrashOrderBy,
+  clampTrashRetentionDays,
+  decodeTrashCursor,
+  deriveTrashDeadlines,
+  encodeTrashCursor,
+  escapeLikePattern,
+  parseIsoInstant,
+  parseTrashLimit,
+  TRASH_SORTS,
+  type TrashItemType,
+  type TrashSort,
+} from '../../services/trash-query';
 
-const DAY_MS = 86_400_000;
-const DEFAULT_TRASH_LIMIT = 50;
-const MAX_TRASH_LIMIT = 200;
-const DEFAULT_TRASH_RETENTION_DAYS = 30;
-const MAX_TRASH_RETENTION_DAYS = 3650;
 const UNKNOWN_DELETER_VALUE = 'unknown';
-
-export type TrashSort =
-  | 'deletedAt_desc'
-  | 'deletedAt_asc'
-  | 'name_asc'
-  | 'name_desc';
-
-const TRASH_SORTS = new Set<TrashSort>([
-  'deletedAt_desc',
-  'deletedAt_asc',
-  'name_asc',
-  'name_desc',
-]);
-
-type TrashItemType = 'folder' | 'file';
 
 interface TrashDbRow {
   item_type: TrashItemType;
@@ -53,15 +46,6 @@ interface TrashDbRow {
   updated_at: string;
   deleted_by_name: string | null;
   effective_role: 'owner' | 'co_owner' | 'editor' | 'viewer' | 'previewer' | null;
-}
-
-interface TrashCursor {
-  v: 1;
-  sort: TrashSort;
-  deletedAt: string;
-  name: string;
-  itemType: TrashItemType;
-  id: string;
 }
 
 /**
@@ -230,115 +214,16 @@ function trashUnionBindings(user: { tenantId: string; id: string }): string[] {
   ];
 }
 
-function encodeTrashCursor(cursor: TrashCursor): string {
-  return bytesToBase64Url(new TextEncoder().encode(JSON.stringify(cursor)));
-}
-
-function decodeTrashCursor(raw: string, sort: TrashSort): TrashCursor | null {
-  try {
-    const parsed = JSON.parse(
-      new TextDecoder().decode(base64UrlToBytes(raw))
-    ) as Partial<TrashCursor> | null;
-    if (!parsed || typeof parsed !== 'object') return null;
-    if (parsed.v !== 1 || parsed.sort !== sort) return null;
-    if (parsed.itemType !== 'folder' && parsed.itemType !== 'file') return null;
-    if (typeof parsed.id !== 'string' || parsed.id.length === 0) return null;
-    if (typeof parsed.name !== 'string') return null;
-    if (typeof parsed.deletedAt !== 'string') return null;
-    const deletedAtMs = Date.parse(parsed.deletedAt);
-    if (
-      !Number.isFinite(deletedAtMs) ||
-      new Date(deletedAtMs).toISOString() !== parsed.deletedAt
-    ) {
-      return null;
-    }
-    return {
-      v: 1,
-      sort,
-      deletedAt: parsed.deletedAt,
-      name: parsed.name,
-      itemType: parsed.itemType,
-      id: parsed.id,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function parseTrashLimit(raw: string | undefined): number {
-  if (raw === undefined || raw.trim() === '') return DEFAULT_TRASH_LIMIT;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) return DEFAULT_TRASH_LIMIT;
-  return Math.min(Math.max(parsed, 1), MAX_TRASH_LIMIT);
-}
-
-const ISO_INSTANT_RE =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
-
-function parseIsoInstant(
-  raw: string
-): { ok: true; value: string } | { ok: false; error: string } {
-  if (!ISO_INSTANT_RE.test(raw)) {
-    return { ok: false, error: `Invalid ISO-8601 datetime: ${raw}` };
-  }
-  const ms = Date.parse(raw);
-  if (!Number.isFinite(ms)) {
-    return { ok: false, error: `Invalid ISO-8601 datetime: ${raw}` };
-  }
-  return { ok: true, value: new Date(ms).toISOString() };
-}
-
-function escapeLikePattern(value: string): string {
-  // SQLite LIKE with ESCAPE '\' — escape the escape character first.
-  return value.replace(/[%_\\]/g, '\\$&');
-}
-
-function buildTrashOrderBy(sort: TrashSort): string {
-  const dir = sort.endsWith('_desc') ? 'DESC' : 'ASC';
-  const primary = sort.startsWith('name_') ? 't.name' : 't.deleted_at';
-  return `${primary} ${dir}, t.item_type ${dir}, t.id ${dir}`;
-}
-
-function buildTrashCursorSql(
-  sort: TrashSort,
-  cursor: TrashCursor
-): { sql: string; binds: string[] } {
-  const dir = sort.endsWith('_desc') ? 'DESC' : 'ASC';
-  const cmp = dir === 'DESC' ? '<' : '>';
-  const primary = sort.startsWith('name_') ? 'name' : 'deletedAt';
-  const primaryValue = primary === 'name' ? cursor.name : cursor.deletedAt;
-  return {
-    sql: `AND (
-      (t.${primary === 'name' ? 'name' : 'deleted_at'} ${cmp} ?)
-      OR (
-        t.${primary === 'name' ? 'name' : 'deleted_at'} = ?
-        AND (
-          (t.item_type ${cmp} ?)
-          OR (t.item_type = ? AND t.id ${cmp} ?)
-        )
-      )
-    )`,
-    binds: [
-      primaryValue,
-      primaryValue,
-      cursor.itemType,
-      cursor.itemType,
-      cursor.id,
-    ],
-  };
-}
-
 function toTrashItem(
   row: TrashDbRow,
   retentionDays: number,
   nowMs: number
 ): Record<string, unknown> & { type: TrashItemType } {
-  const deletedAtMs = Date.parse(row.deleted_at);
-  const purgeAtMs = Number.isFinite(deletedAtMs)
-    ? deletedAtMs + retentionDays * DAY_MS
-    : nowMs;
-  const purgeAt = new Date(purgeAtMs).toISOString();
-  const daysRemaining = Math.ceil((purgeAtMs - nowMs) / DAY_MS);
+  const { purgeAt, daysRemaining } = deriveTrashDeadlines(
+    row.deleted_at,
+    retentionDays,
+    nowMs
+  );
   const { item_type: itemType, ...rest } = row;
 
   return {
@@ -511,12 +396,8 @@ export function registerFolderTrashRoutes(routes: Hono<OidcHonoEnv>) {
         .all<{ id: string | null; name: string | null }>(),
     ]);
 
-    const retentionDays = Math.min(
-      Math.max(
-        policy?.trash_retention_days ?? DEFAULT_TRASH_RETENTION_DAYS,
-        1
-      ),
-      MAX_TRASH_RETENTION_DAYS
+    const retentionDays = clampTrashRetentionDays(
+      policy?.trash_retention_days
     );
     const nowMs = Date.now();
     const hasMore = pageRows.results.length > limit;

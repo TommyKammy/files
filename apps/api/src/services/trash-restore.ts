@@ -24,6 +24,7 @@ import {
   isPrivilegedAdmin,
   loadDeletedAncestorChain,
   resolveAncestorRestoreName,
+  type AdminRestoreDelegation,
   type RestoreDestinationContext,
 } from './trash-restore-context';
 import {
@@ -40,6 +41,11 @@ export interface RestoreFileOptions {
   targetFolderId?: string | null;
   restoreParentChain?: boolean;
   expectedVersion?: number;
+  /**
+   * Tenant admin restoring for the item owner. Bypasses item/folder ACL checks
+   * while still enforcing tenant boundaries, destination validity and locks.
+   */
+  adminDelegation?: AdminRestoreDelegation;
 }
 
 export interface RestoreTrashFileResult {
@@ -120,6 +126,11 @@ export async function restoreTrashFile(
   const conflictPolicy = options.conflictPolicy ?? 'fail';
   const restoreParentChain = options.restoreParentChain === true;
   const privilegedAdmin = isPrivilegedAdmin(user);
+  const adminDelegation = options.adminDelegation;
+  const adminBypass = Boolean(adminDelegation?.onBehalfOfUserId);
+  if (adminDelegation && (!privilegedAdmin || !adminBypass)) {
+    throw new TrashRequestError(403, 'FORBIDDEN', 'Forbidden');
+  }
 
   const [access, file] = await Promise.all([
     resolveTargetAccess(db, user, 'file', fileId),
@@ -129,13 +140,17 @@ export async function restoreTrashFile(
       .first<FileRow>(),
   ]);
 
-  if (!access || !file) {
+  if (!file || (!access && !adminBypass)) {
     throw new TrashRequestError(404, 'NOT_FOUND', 'File not found');
   }
   if (file.deleted_at === null) {
     throw new TrashRequestError(409, 'NOT_IN_TRASH', 'File is not in trash');
   }
-  if (!privilegedAdmin && !hasAtLeastRole(access.effectiveRole, 'editor')) {
+  if (
+    !adminBypass &&
+    !privilegedAdmin &&
+    !hasAtLeastRole(access?.effectiveRole, 'editor')
+  ) {
     throw new TrashRequestError(403, 'FORBIDDEN', 'Forbidden');
   }
   if (
@@ -160,7 +175,8 @@ export async function restoreTrashFile(
   const destination = await buildRestoreDestinationContext(
     db,
     user,
-    targetFolderId
+    targetFolderId,
+    { bypassAccess: adminBypass }
   );
   if (!destination) {
     trashRestoreError(404, 'TARGET_NOT_FOUND', 'Destination folder not found');
@@ -194,7 +210,7 @@ export async function restoreTrashFile(
         { destination }
       );
     }
-    if (!hasAtLeastRole(destAccess.effectiveRole, 'editor')) {
+    if (!hasAtLeastRole(destAccess.effectiveRole, 'editor') && !adminBypass) {
       trashRestoreError(
         403,
         'FORBIDDEN',
@@ -325,11 +341,25 @@ export async function restoreTrashFile(
         actorId: user.id,
         actorEmail: user.email,
         actorIp: user.ipAddress,
-        action: 'folder.restore',
+        action: adminBypass ? 'admin.folder.restore' : 'folder.restore',
         targetType: 'folder',
         targetId: plan.folder.id,
         classificationSnapshot: plan.folder.classification,
         metadata: {
+          ...(adminBypass && adminDelegation
+            ? {
+                targetName: plan.name,
+                onBehalfOfUserId: adminDelegation.onBehalfOfUserId,
+                ownerId:
+                  adminDelegation.ownerId ?? adminDelegation.onBehalfOfUserId,
+                ownerName: adminDelegation.ownerName ?? null,
+                ownerEmail: adminDelegation.ownerEmail ?? null,
+                sourceVersion: plan.folder.version,
+                targetParentId: plan.folder.parent_id,
+                restoredName: plan.name,
+                adminRestore: true,
+              }
+            : {}),
           restoredBatchDeletedAt: plan.folder.deleted_at,
           restoredFor: 'file',
           restoredTargetId: file.id,
@@ -343,6 +373,9 @@ export async function restoreTrashFile(
         entityType: 'folder',
         entityId: plan.folder.id,
         folderId: plan.folder.parent_id,
+        targetUserId: adminBypass
+          ? adminDelegation?.onBehalfOfUserId ?? null
+          : null,
         action: 'folder.restore',
         payload: {
           folder: {
@@ -417,8 +450,28 @@ export async function restoreTrashFile(
   }
 
   // Moving a file to the workspace root removes inherited folder ACLs. Keep the
-  // restorer's explicit access exactly like `PATCH /api/files/:id`.
-  if (isMoving && targetFolderId === null && access.effectiveRole) {
+  // restorer's explicit access exactly like `PATCH /api/files/:id`. For an
+  // administrator acting on behalf of the owner, grant the owner instead so the
+  // delegated restore does not silently leave the owner without access.
+  if (adminBypass && adminDelegation && isMoving) {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO permissions (
+             id, tenant_id, target_type, target_id, grantee_type, grantee_id, role, granted_by, created_at
+           ) VALUES (?, ?, 'file', ?, 'user', ?, 'owner', ?, ?)
+           ON CONFLICT (target_type, target_id, grantee_type, grantee_id) DO NOTHING`
+        )
+        .bind(
+          crypto.randomUUID(),
+          user.tenantId,
+          file.id,
+          adminDelegation.onBehalfOfUserId,
+          user.id,
+          nowIso
+        )
+    );
+  } else if (isMoving && targetFolderId === null && access?.effectiveRole) {
     statements.push(
       db
         .prepare(
@@ -446,17 +499,37 @@ export async function restoreTrashFile(
       actorId: user.id,
       actorEmail: user.email,
       actorIp: user.ipAddress,
-      action: 'file.restore',
+      action: adminBypass ? 'admin.file.restore' : 'file.restore',
       targetType: 'file',
       targetId: file.id,
       classificationSnapshot: nextClassification,
       metadata: {
+        ...(adminBypass && adminDelegation
+          ? {
+              targetName: file.name,
+              onBehalfOfUserId: adminDelegation.onBehalfOfUserId,
+              ownerId:
+                adminDelegation.ownerId ?? adminDelegation.onBehalfOfUserId,
+              ownerName: adminDelegation.ownerName ?? null,
+              ownerEmail: adminDelegation.ownerEmail ?? null,
+              sourceVersion: file.current_version_num,
+              targetParentId: targetFolderId,
+              restoredTo: {
+                id: destination.id,
+                name: destination.name,
+                path: destination.path,
+              },
+              restoredName,
+              adminRestore: true,
+            }
+          : {}),
         restoredName,
         originalName: restoredName === file.name ? undefined : file.name,
         fromFolderId: file.folder_id,
         toFolderId: targetFolderId,
         restoredAncestorIds,
         restoreParentChain,
+        conflictPolicy,
         classificationFloor: destination.classification,
         fromClassification: file.classification,
         toClassification: nextClassification,
@@ -468,6 +541,9 @@ export async function restoreTrashFile(
       entityType: 'file',
       entityId: file.id,
       folderId: targetFolderId,
+      targetUserId: adminBypass
+        ? adminDelegation?.onBehalfOfUserId ?? null
+        : null,
       action: 'file.restore',
       payload: {
         name: restoredName,
@@ -510,8 +586,9 @@ export async function restoreTrashFile(
     .first<FileRow>();
 
   const finalDestination =
-    (await buildRestoreDestinationContext(db, user, targetFolderId)) ??
-    destination;
+    (await buildRestoreDestinationContext(db, user, targetFolderId, {
+      bypassAccess: adminBypass,
+    })) ?? destination;
 
   const scopeFolderIds = new Set<string | null>([file.folder_id, targetFolderId]);
   const affectedFolderIds = new Set<string | null>([file.folder_id, targetFolderId]);
@@ -546,12 +623,14 @@ export async function restoreTrashFolder(
   options: {
     targetParentId?: string | null;
     restoreParentChain?: boolean;
+    adminDelegation?: AdminRestoreDelegation;
   } = {}
 ): Promise<RestoreTrashFolderResult> {
   const restored = await restoreFolderWithOptions(db, user, folderId, {
     conflictPolicy,
     targetParentId: options.targetParentId,
     restoreParentChain: options.restoreParentChain,
+    adminDelegation: options.adminDelegation,
   });
   return {
     folder: restored.folder,

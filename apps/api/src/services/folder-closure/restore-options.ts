@@ -17,8 +17,10 @@ import {
   classificationStrictnessBelow,
   folderSubtreeMaxDepth,
   isFolderWithinSubtree,
+  isPrivilegedAdmin,
   loadDeletedAncestorChain,
   resolveAncestorRestoreName,
+  type AdminRestoreDelegation,
   type RestoreDestinationContext,
 } from '../trash-restore-context';
 import {
@@ -38,6 +40,8 @@ export interface FolderRestoreOptions {
   targetParentId?: string | null;
   /** Restore deleted ancestors (row-only) before restoring this folder. */
   restoreParentChain?: boolean;
+  /** Tenant admin restoring for the owner; bypasses folder ACL checks. */
+  adminDelegation?: AdminRestoreDelegation;
 }
 
 export interface RestoreFolderWithOptionsResult {
@@ -82,27 +86,29 @@ export async function restoreFolderWithOptions(
   options: FolderRestoreOptions = {}
 ): Promise<RestoreFolderWithOptionsResult> {
   const conflictPolicy = options.conflictPolicy ?? 'fail';
+  const adminDelegation = options.adminDelegation;
+  const adminBypass = Boolean(adminDelegation?.onBehalfOfUserId);
+  if (adminDelegation && (!isPrivilegedAdmin(user) || !adminBypass)) {
+    throw new FolderServiceError(403, 'FORBIDDEN', 'Forbidden');
+  }
+
   const sourceAccess = await resolveTargetAccess(db, user, 'folder', folderId);
-  if (!sourceAccess) {
+  const folder = await db
+    .prepare('SELECT * FROM folders WHERE tenant_id = ? AND id = ?')
+    .bind(user.tenantId, folderId)
+    .first<FolderRow>();
+  if (!folder || (!sourceAccess && !adminBypass)) {
     throw new FolderServiceError(404, 'NOT_FOUND', 'Folder not found');
   }
-  if (sourceAccess.deletedAt === null) {
+  if (folder.deleted_at === null) {
     throw new FolderServiceError(400, 'NOT_IN_TRASH', 'Folder is not in Trash');
   }
-  if (!hasAtLeastRole(sourceAccess.effectiveRole, 'editor')) {
+  if (!adminBypass && !hasAtLeastRole(sourceAccess?.effectiveRole, 'editor')) {
     throw new FolderServiceError(
       403,
       'FORBIDDEN',
       'Editor permission required to restore folder'
     );
-  }
-
-  const folder = await db
-    .prepare('SELECT * FROM folders WHERE tenant_id = ? AND id = ?')
-    .bind(user.tenantId, folderId)
-    .first<FolderRow>();
-  if (!folder || !folder.deleted_at) {
-    throw new FolderServiceError(404, 'NOT_FOUND', 'Folder not found');
   }
 
   const requestedTarget =
@@ -113,10 +119,13 @@ export async function restoreFolderWithOptions(
   const originalDestination = await buildRestoreDestinationContext(
     db,
     user,
-    folder.parent_id
+    folder.parent_id,
+    { bypassAccess: adminBypass }
   );
   const destination = isMoving
-    ? await buildRestoreDestinationContext(db, user, requestedTarget)
+    ? await buildRestoreDestinationContext(db, user, requestedTarget, {
+        bypassAccess: adminBypass,
+      })
     : originalDestination;
   if (!destination) {
     restoreError(404, 'TARGET_NOT_FOUND', 'Destination folder not found');
@@ -162,8 +171,13 @@ export async function restoreFolderWithOptions(
   }
 
   // Moving a folder to the workspace root keeps the existing move rule.
-  if (isMoving && targetParentId === null && folder.parent_id !== null) {
-    if (!hasAtLeastRole(sourceAccess.effectiveRole, 'owner')) {
+  if (
+    !adminBypass &&
+    isMoving &&
+    targetParentId === null &&
+    folder.parent_id !== null
+  ) {
+    if (!hasAtLeastRole(sourceAccess?.effectiveRole, 'owner')) {
       restoreError(
         403,
         'FORBIDDEN',
@@ -186,7 +200,7 @@ export async function restoreFolderWithOptions(
           destination,
         });
       }
-      if (!hasAtLeastRole(destAccess.effectiveRole, 'editor')) {
+      if (!hasAtLeastRole(destAccess.effectiveRole, 'editor') && !adminBypass) {
         restoreError(
           403,
           'FORBIDDEN',
@@ -233,8 +247,9 @@ export async function restoreFolderWithOptions(
         user,
         folder.parent_id,
         destination,
-        sourceAccess.effectiveRole,
-        conflictPolicy
+        sourceAccess?.effectiveRole ?? 'owner',
+        conflictPolicy,
+        adminBypass
       );
     } else if (destination.isDeleted) {
       restoreError(
@@ -370,11 +385,25 @@ export async function restoreFolderWithOptions(
         actorId: user.id,
         actorEmail: user.email,
         actorIp: user.ipAddress,
-        action: 'folder.restore',
+        action: adminBypass ? 'admin.folder.restore' : 'folder.restore',
         targetType: 'folder',
         targetId: plan.folder.id,
         classificationSnapshot: plan.folder.classification,
         metadata: {
+          ...(adminBypass && adminDelegation
+            ? {
+                targetName: plan.name,
+                onBehalfOfUserId: adminDelegation.onBehalfOfUserId,
+                ownerId:
+                  adminDelegation.ownerId ?? adminDelegation.onBehalfOfUserId,
+                ownerName: adminDelegation.ownerName ?? null,
+                ownerEmail: adminDelegation.ownerEmail ?? null,
+                sourceVersion: plan.folder.version,
+                targetParentId: plan.folder.parent_id,
+                restoredName: plan.name,
+                adminRestore: true,
+              }
+            : {}),
           restoredBatchDeletedAt: plan.folder.deleted_at,
           restoredFor: 'folder',
           restoredTargetId: folderId,
@@ -388,6 +417,9 @@ export async function restoreFolderWithOptions(
         entityType: 'folder',
         entityId: plan.folder.id,
         folderId: plan.folder.parent_id,
+        targetUserId: adminBypass
+          ? adminDelegation?.onBehalfOfUserId ?? null
+          : null,
         action: 'folder.restore',
         payload: {
           folder: {
@@ -444,6 +476,28 @@ export async function restoreFolderWithOptions(
           targetParent.id,
           user.tenantId,
           folderId
+        )
+    );
+  }
+
+  // 2b. Delegated restores that change location grant the owner a direct ACL so
+  //     the move cannot strip inherited access from the on-behalf user.
+  if (adminBypass && adminDelegation && isMoving) {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO permissions (
+             id, tenant_id, target_type, target_id, grantee_type, grantee_id, role, granted_by, created_at
+           ) VALUES (?, ?, 'folder', ?, 'user', ?, 'owner', ?, ?)
+           ON CONFLICT (target_type, target_id, grantee_type, grantee_id) DO NOTHING`
+        )
+        .bind(
+          crypto.randomUUID(),
+          user.tenantId,
+          folderId,
+          adminDelegation.onBehalfOfUserId,
+          user.id,
+          nowIso
         )
     );
   }
@@ -699,11 +753,30 @@ export async function restoreFolderWithOptions(
       actorId: user.id,
       actorEmail: user.email,
       actorIp: user.ipAddress,
-      action: 'folder.restore',
+      action: adminBypass ? 'admin.folder.restore' : 'folder.restore',
       targetType: 'folder',
       targetId: folderId,
       classificationSnapshot: nextRootClassification,
       metadata: {
+        ...(adminBypass && adminDelegation
+          ? {
+              targetName: folder.name,
+              onBehalfOfUserId: adminDelegation.onBehalfOfUserId,
+              ownerId:
+                adminDelegation.ownerId ?? adminDelegation.onBehalfOfUserId,
+              ownerName: adminDelegation.ownerName ?? null,
+              ownerEmail: adminDelegation.ownerEmail ?? null,
+              sourceVersion: folder.version,
+              targetParentId,
+              restoredTo: {
+                id: destination.id,
+                name: destination.name,
+                path: destination.path,
+              },
+              restoredName: nextName,
+              adminRestore: true,
+            }
+          : {}),
         restoredBatchDeletedAt: batchDeletedAt,
         renamedTo: nextName !== folder.name ? nextName : null,
         fromParentId: folder.parent_id,
@@ -715,6 +788,7 @@ export async function restoreFolderWithOptions(
         classificationFloor: floor,
         promotedFolderCount,
         promotedFileCount,
+        conflictPolicy,
       },
       nowIso,
     }),
@@ -723,6 +797,9 @@ export async function restoreFolderWithOptions(
       entityType: 'folder',
       entityId: folderId,
       folderId: targetParentId,
+      targetUserId: adminBypass
+        ? adminDelegation?.onBehalfOfUserId ?? null
+        : null,
       action: 'folder.restore',
       payload: {
         folder: {
@@ -771,8 +848,9 @@ export async function restoreFolderWithOptions(
   }
 
   const finalDestination =
-    (await buildRestoreDestinationContext(db, user, targetParentId)) ??
-    destination;
+    (await buildRestoreDestinationContext(db, user, targetParentId, {
+      bypassAccess: adminBypass,
+    })) ?? destination;
 
   const scopeFolderIds = new Set<string | null>([folder.parent_id, targetParentId, folderId]);
   for (const plan of restoredChain) {
@@ -806,7 +884,8 @@ async function planAncestorChain(
   parentId: string,
   destination: RestoreDestinationContext,
   sourceRole: Parameters<typeof hasAtLeastRole>[0],
-  conflictPolicy: 'fail' | 'rename'
+  conflictPolicy: 'fail' | 'rename',
+  adminBypass = false
 ): Promise<AncestorRestorePlan[]> {
   const chain = await loadDeletedAncestorChain(db, user.tenantId, parentId);
   const plans: AncestorRestorePlan[] = [];
@@ -814,9 +893,10 @@ async function planAncestorChain(
   for (const ancestor of chain) {
     const access = await resolveTargetAccess(db, user, 'folder', ancestor.id);
     if (
-      !access ||
-      access.deletedAt === null ||
-      !hasAtLeastRole(access.effectiveRole, 'editor')
+      !adminBypass &&
+      (!access ||
+        access.deletedAt === null ||
+        !hasAtLeastRole(access.effectiveRole, 'editor'))
     ) {
       throw new FolderServiceError(
         403,

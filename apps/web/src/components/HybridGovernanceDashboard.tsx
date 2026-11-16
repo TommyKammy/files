@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
+import { AdminTrashSection } from '@/components/admin/AdminTrashSection';
 import { AuditLogSection } from '@/components/admin/AuditLogSection';
 import { SharedLinksPolicySection } from '@/components/admin/SharedLinksPolicySection';
 import { StorageStatsSection } from '@/components/admin/StorageStatsSection';
@@ -189,6 +190,8 @@ export function HybridGovernanceDashboard() {
           onPolicySubmit={handlePolicySubmit}
           onPolicyChange={setPolicy}
         />
+
+        <AdminTrashSection user={user} />
 
         <AuditLogSection
           auditLogs={auditLogs}

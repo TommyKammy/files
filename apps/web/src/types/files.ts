@@ -223,6 +223,66 @@ export interface TrashEmptyResponse {
   results: TrashBulkItemResult[];
 }
 
+export interface AdminTrashPerson {
+  id: string;
+  name: string;
+  email: string | null;
+}
+
+export interface AdminTrashPermissionSummary {
+  total: number;
+  direct: number;
+  inherited: number;
+  userCount: number;
+  groupCount: number;
+  roles: Record<ResourceRole, number>;
+  sharedLinkCount: number;
+}
+
+export interface AdminTrashItem {
+  type: TrashItemType;
+  id: string;
+  name: string;
+  classification: ClassificationLabel;
+  sizeBytes: number | null;
+  currentVersionNum: number;
+  parentFolder: { id: string; name: string } | null;
+  owner: AdminTrashPerson | null;
+  deletedBy: AdminTrashPerson | null;
+  deletedAt: string;
+  purgeAt: string;
+  daysRemaining: number;
+  permissionSummary: AdminTrashPermissionSummary;
+}
+
+export type AdminTrashRetentionFilter = 'all' | '7' | '1';
+
+export interface AdminTrashFiltersState {
+  query: string;
+  type: TrashTypeFilter;
+  ownerId: string | null;
+  deletedById: string | null;
+  retention: AdminTrashRetentionFilter;
+  sort: TrashSort;
+}
+
+export interface AdminTrashListResponse {
+  type: 'admin_trash';
+  items: AdminTrashItem[];
+  owners: AdminTrashPerson[];
+  deleters: AdminTrashPerson[];
+  hasUnknownDeleter: boolean;
+  nextCursor: string | null;
+  hasMore: boolean;
+  trashRetentionDays: number;
+  limit: number;
+  sort: TrashSort;
+}
+
+export interface AdminTrashRestoreResponse extends TrashBulkResponse {
+  syncSeq: number | null;
+}
+
 export interface RestoreBreadcrumb {
   id: string;
   name: string;
