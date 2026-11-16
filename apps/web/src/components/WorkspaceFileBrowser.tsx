@@ -114,6 +114,7 @@ import { useTableVirtualWindow } from '@/lib/use-virtual-window';
 import { useWorkspaceDialogs } from '@/lib/use-workspace-dialogs';
 import { useWorkspaceKeyboard } from '@/lib/use-workspace-keyboard';
 import { useWorkspaceSelection } from '@/lib/use-workspace-selection';
+import { useWorkspaceUploads } from '@/lib/use-workspace-uploads';
 import {
   getWorkspaceRowKey,
   isRowControlTarget,
@@ -321,8 +322,6 @@ export function WorkspaceFileBrowser() {
     y: number;
     trigger: HTMLElement | null;
   } | null>(null);
-  const backgroundFileInputRef = useRef<HTMLInputElement>(null);
-  const backgroundFolderInputRef = useRef<HTMLInputElement>(null);
   const marqueeSurfaceRef = useRef<HTMLDivElement>(null);
   const [moveCopyModal, setMoveCopyModal] = useState<{
     items: DragWorkspaceItem[];
@@ -339,11 +338,6 @@ export function WorkspaceFileBrowser() {
     handleToggleViewMode,
   } = useWorkspaceViewPrefs(user);
   const sortDrainErrorKeyRef = useRef<string | null>(null);
-  const pasteEnqueueFilesRef = useRef<((files: FileList | File[]) => void) | null>(
-    null
-  );
-  const lastOsPasteAtRef = useRef(0);
-  const lastVirtualPasteAtRef = useRef(0);
 
   useEffect(() => {
     clipboardStore.setScope(
@@ -1235,28 +1229,6 @@ export function WorkspaceFileBrowser() {
     setActiveModal({ kind: 'createFolder', parentId: folderId ?? null });
   }, [currentFolder?.classification, folderId]);
 
-  const enqueueBackgroundUpload = useCallback(
-    (files: FileList | null, source: 'files' | 'folder') => {
-      if (!files || files.length === 0) return;
-      if (!currentFolder || !canEditCurrentFolder || !pasteEnqueueFilesRef.current) {
-        syncStore.pushToast({
-          kind: 'warning',
-          message: 'アップロードは編集可能なフォルダ内で行えます',
-        });
-        return;
-      }
-      pasteEnqueueFilesRef.current(files);
-      if (source === 'folder') {
-        syncStore.pushToast({
-          kind: 'info',
-          message:
-            'フォルダ内のファイルを現在のフォルダへ追加します（階層は保持されません）',
-        });
-      }
-    },
-    [currentFolder, canEditCurrentFolder, syncStore]
-  );
-
   const handleBackgroundMenuAction = useCallback(
     (action: string) => {
       switch (action) {
@@ -1337,13 +1309,6 @@ export function WorkspaceFileBrowser() {
     [isTrashView, clearSelection]
   );
 
-  useEffect(() => {
-    const input = backgroundFolderInputRef.current;
-    if (!input) return;
-    input.setAttribute('webkitdirectory', '');
-    input.setAttribute('directory', '');
-  }, []);
-
   const marquee = useMarqueeSelection({
     containerRef: virtualWindow.containerRef,
     surfaceRef: marqueeSurfaceRef,
@@ -1355,51 +1320,14 @@ export function WorkspaceFileBrowser() {
     onBackgroundClick: clearSelection,
   });
 
-  // OS Paste upload (screenshots / copied local files) + virtual clipboard Cmd+V resolution
-  useEffect(() => {
-    if (!authChecked || !user || isTrashView) return;
-
-    function handleWindowPaste(e: ClipboardEvent) {
-      if (isEditableTarget(e.target)) return;
-      if (keyboardScopes.getTopScope() !== 'workspace') return;
-
-      const clipFiles = e.clipboardData?.files;
-      if (clipFiles && clipFiles.length > 0) {
-        e.preventDefault();
-        lastOsPasteAtRef.current = performance.now();
-        if (!currentFolder || !canEditCurrentFolder || !pasteEnqueueFilesRef.current) {
-          syncStore.pushToast({
-            kind: 'warning',
-            message:
-              'ファイルや画像のペーストアップロードは編集可能なフォルダ内で行えます',
-          });
-          return;
-        }
-        const normalized = Array.from(clipFiles).map((file, idx) => {
-          if (file.name && file.name.trim().length > 0) return file;
-          const ext = file.type.split('/')[1] || 'png';
-          return new File([file], `pasted-${Date.now()}-${idx + 1}.${ext}`, {
-            type: file.type || 'image/png',
-          });
-        });
-        pasteEnqueueFilesRef.current(normalized);
-        syncStore.pushToast({
-          kind: 'info',
-          message: `${normalized.length} 件をクリップボードからアップロードキューに追加しました`,
-        });
-        return;
-      }
-
-      if (clipboardStore.getItemCount() > 0) {
-        e.preventDefault();
-        lastVirtualPasteAtRef.current = performance.now();
-        handlePasteClipboard();
-      }
-    }
-
-    window.addEventListener('paste', handleWindowPaste);
-    return () => window.removeEventListener('paste', handleWindowPaste);
-  }, [
+  const {
+    backgroundFileInputRef,
+    backgroundFolderInputRef,
+    pasteEnqueueFilesRef,
+    lastOsPasteAtRef,
+    lastVirtualPasteAtRef,
+    enqueueBackgroundUpload,
+  } = useWorkspaceUploads({
     authChecked,
     user,
     isTrashView,
@@ -1408,7 +1336,7 @@ export function WorkspaceFileBrowser() {
     clipboardStore,
     syncStore,
     handlePasteClipboard,
-  ]);
+  });
 
   useWorkspaceKeyboard({
     authChecked,
