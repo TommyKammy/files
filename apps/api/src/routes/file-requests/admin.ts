@@ -3,9 +3,9 @@ import { sessionAuthMiddleware } from '../../middleware/session-auth';
 import { buildAuditLogStmt } from '../../services/audit';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../../services/authorization';
+import { can } from '../../services/capabilities';
 import { generateRandomToken, sha256Hex } from '../../services/crypto-utils';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -28,7 +28,7 @@ fileRequestsRoutes.get('/', async (c) => {
     if (!access || access.deletedAt !== null) {
       return c.json({ error: 'Folder not found' }, 404);
     }
-    if (!hasAtLeastRole(access.effectiveRole, 'viewer') && user.role === 'member') {
+    if (!can(access.capabilities, 'permission.view') && user.role === 'member') {
       return c.json({ error: 'Forbidden' }, 403);
     }
 
@@ -77,8 +77,11 @@ fileRequestsRoutes.post('/', async (c) => {
   if (!folderAccess || folderAccess.deletedAt !== null) {
     return c.json({ error: 'Destination folder not found' }, 404);
   }
-  if (!hasAtLeastRole(folderAccess.effectiveRole, 'editor')) {
-    return c.json({ error: 'Forbidden: editor role or higher required on target folder' }, 403);
+  if (!can(folderAccess.capabilities, 'folder.create')) {
+    return c.json(
+      { error: 'Forbidden: folder create permission required on target folder' },
+      403
+    );
   }
 
   let maxFileSizeBytes = DEFAULT_MAX_FILE_SIZE_BYTES;
@@ -225,7 +228,7 @@ fileRequestsRoutes.delete('/:id', async (c) => {
     user.role !== 'sec_admin'
   ) {
     const access = await resolveTargetAccess(c.env.DB, user, 'folder', reqRow.folder_id);
-    if (!hasAtLeastRole(access?.effectiveRole, 'editor')) {
+    if (!can(access?.capabilities, 'folder.create')) {
       return c.json({ error: 'Forbidden' }, 403);
     }
   }

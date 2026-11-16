@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
-import { getAuthenticatedUser } from '../services/authorization';
+import { getAuthenticatedUser, FILE_PREVIEW_ROLE_SQL } from '../services/authorization';
 import type { ClassificationLabel } from '../types/api';
 import type { OidcHonoEnv } from '../types/oidc';
 import { VALID_CLASSIFICATIONS } from '../utils/classification';
@@ -79,6 +79,9 @@ const RBAC_FILE_EXISTS_SQL = `EXISTS (
   SELECT 1
     FROM permissions p
    WHERE p.tenant_id = fl.tenant_id
+     -- Only roles holding item.preview may surface file hits. Uploader roles
+     -- (and any future preview-less role) must not learn file names.
+     AND p.role IN (${FILE_PREVIEW_ROLE_SQL})
      AND (
        (p.grantee_type = 'user' AND p.grantee_id = ?)
        OR (

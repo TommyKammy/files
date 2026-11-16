@@ -1,8 +1,6 @@
 import { Hono } from 'hono';
-import {
-  getAuthenticatedUser,
-  hasAtLeastRole,
-} from '../../services/authorization';
+import { getAuthenticatedUser } from '../../services/authorization';
+import { can } from '../../services/capabilities';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
   type FileVersionListRow,
@@ -29,7 +27,7 @@ export function registerFileVersionListRoute(routes: Hono<OidcHonoEnv>) {
     if (!loaded) {
       return c.json({ error: 'File not found' }, 404);
     }
-    if (!hasAtLeastRole(loaded.access.effectiveRole, 'previewer')) {
+    if (!can(loaded.access.capabilities, 'item.preview')) {
       return c.json({ error: 'Forbidden' }, 403);
     }
 

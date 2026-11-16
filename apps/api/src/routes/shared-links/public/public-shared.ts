@@ -1,6 +1,7 @@
 import { type Context } from 'hono';
 import { getCookie } from 'hono/cookie';
-import { hasAtLeastRole, resolveTargetAccess } from '../../../services/authorization';
+import { resolveTargetAccess } from '../../../services/authorization';
+import { can } from '../../../services/capabilities';
 import { sha256Hex } from '../../../services/crypto-utils';
 import { getShareUnlockCookieName } from '../../../services/shared-link-security';
 import type { AuthUser } from '../../../types/api';
@@ -73,7 +74,10 @@ export async function loadAndAuthorizeShareLink(
         link.target_type,
         link.target_id
       );
-      if (!hasAtLeastRole(targetAccess?.effectiveRole, 'previewer')) {
+      if (
+        !can(targetAccess?.capabilities, 'item.preview') ||
+        !can(targetAccess?.capabilities, 'folder.list')
+      ) {
         return {
           ok: false,
           status: 403,

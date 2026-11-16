@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../../../services/authorization';
+import { can } from '../../../services/capabilities';
 import type { OidcHonoEnv } from '../../../types/oidc';
 import { SharedLinkRow, formatLinkSummary } from '../shared';
 
@@ -21,7 +21,8 @@ export function registerSharedLinkListRoute(routes: Hono<OidcHonoEnv>) {
     if (!access || access.deletedAt !== null) {
       return c.json({ error: 'Target not found' }, 404);
     }
-    if (!hasAtLeastRole(access.effectiveRole, 'viewer') && user.role === 'member') {
+    // Link inventory/management requires `share_link.manage` (editor+).
+    if (!can(access.capabilities, 'share_link.manage') && user.role === 'member') {
       return c.json({ error: 'Forbidden' }, 403);
     }
 

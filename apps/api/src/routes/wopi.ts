@@ -2,9 +2,9 @@ import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../services/authorization';
+import { can } from '../services/capabilities';
 import type { FileRow } from '../services/file-upload-common';
 import { getFileLockState } from '../services/file-lock';
 import { getActiveWopiDraft } from '../services/wopi-drafts';
@@ -42,15 +42,20 @@ wopiSessionRoutes.post('/:id/wopi-session', async (c) => {
   ) {
     return c.json({ error: 'File not found' }, 404);
   }
-  if (!hasAtLeastRole(access.effectiveRole, 'previewer')) {
+  if (!can(access.capabilities, 'item.preview')) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
   const role = access.effectiveRole!;
   const lock = await getFileLockState(c.env, fileId);
   const desktopLocked = lock?.mode === 'desktop_exclusive';
-  const canWrite = hasAtLeastRole(role, 'editor') && !desktopLocked;
-  const dlp = file.classification === 'confidential' || role === 'previewer';
+  const canWrite = can(access.capabilities, 'item.edit_content') && !desktopLocked;
+  // Preview-only roles (no download) always get DLP restrictions, matching the
+  // confidential-content policy even when the file is not confidential.
+  const previewOnly =
+    can(access.capabilities, 'item.preview') &&
+    !can(access.capabilities, 'item.download');
+  const dlp = file.classification === 'confidential' || previewOnly;
   const readOnlyReason = canWrite
     ? null
     : desktopLocked
@@ -140,6 +145,7 @@ wopiSessionRoutes.post('/:id/wopi-session', async (c) => {
       mimeType: file.mime_type,
       classification: file.classification,
       role,
+      capabilities: access.capabilities,
       canWrite,
       readOnly: !canWrite,
       readOnlyReason,

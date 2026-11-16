@@ -9,6 +9,7 @@ import {
   pickStricterClassification,
 } from '../utils/classification';
 import { hasAtLeastRole, resolveTargetAccess } from './authorization';
+import { canRole } from './capabilities';
 import {
   findActiveFileNameConflict,
   resolveUniqueRestoredFileName,
@@ -109,7 +110,7 @@ export function canRestoreTargetItem(
   effectiveRole: ResourceRole | null
 ): boolean {
   if (targetType === 'file' && isPrivilegedAdmin(user)) return true;
-  return hasAtLeastRole(effectiveRole, 'editor');
+  return canRole(effectiveRole, 'trash.restore');
 }
 
 const ROOT_DESTINATION: RestoreDestinationContext = {
@@ -179,7 +180,7 @@ export async function buildRestoreDestinationContext(
   const accessible =
     options.bypassAccess === true ||
     (Boolean(access) &&
-      (isPrivilegedAdmin(user) || hasAtLeastRole(access!.effectiveRole, 'previewer')));
+      (isPrivilegedAdmin(user) || canRole(access!.effectiveRole, 'folder.list')));
 
   if (!accessible) {
     return {

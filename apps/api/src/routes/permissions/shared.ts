@@ -6,8 +6,11 @@ export const VALID_RESOURCE_ROLES = new Set<ResourceRole>([
   'owner',
   'co_owner',
   'editor',
+  'viewer_uploader',
+  'previewer_uploader',
   'viewer',
   'previewer',
+  'uploader',
 ]);
 
 export interface PermissionListRow {
@@ -24,4 +27,3 @@ export interface PermissionListRow {
   source_name: string | null;
   is_inherited: number;
 }
-

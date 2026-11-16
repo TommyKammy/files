@@ -2,9 +2,9 @@ import { Hono } from 'hono';
 import { buildAuditLogStmt } from '../../services/audit';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../../services/authorization';
+import { can } from '../../services/capabilities';
 import {
   createFolderWithClosures,
   type FolderRow,
@@ -78,7 +78,9 @@ export function registerFolderMutationRoutes(routes: Hono<OidcHonoEnv>) {
     if (!access || access.deletedAt !== null) {
       return c.json({ error: 'Folder not found' }, 404);
     }
-    if (!hasAtLeastRole(access.effectiveRole, 'editor')) {
+    // Rename and pinning both mutate the folder itself; `folder.rename` is the
+    // editor-tier capability (`uploader`-family roles can only create).
+    if (!can(access.capabilities, 'folder.rename')) {
       return c.json({ error: 'Forbidden' }, 403);
     }
 

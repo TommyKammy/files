@@ -1,7 +1,8 @@
 import type { AuthUser, ClassificationLabel } from '../../types/api';
 import { pickStricterClassification } from '../../utils/classification';
 import { buildAuditLogStmt } from '../audit';
-import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
+import { can } from '../capabilities';
+import { resolveTargetAccess } from '../authorization';
 import { buildSyncChangeStmt } from '../sync-changes';
 import {
   FolderRow,
@@ -30,8 +31,8 @@ export async function createFolderWithClosures(
     if (!access || access.deletedAt !== null) {
       throw new FolderServiceError(404, 'PARENT_NOT_FOUND', 'Parent folder not found');
     }
-    if (!hasAtLeastRole(access.effectiveRole, 'editor')) {
-      throw new FolderServiceError(403, 'FORBIDDEN', 'Editor permission required on parent folder');
+    if (!can(access.capabilities, 'folder.create')) {
+      throw new FolderServiceError(403, 'FORBIDDEN', 'Folder creation permission required on parent folder');
     }
     parentFolder = await db
       .prepare('SELECT * FROM folders WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL')

@@ -4,7 +4,24 @@ import type { ScimContext } from './scim';
 
 export type ClassificationLabel = 'unset' | 'confidential' | 'internal' | 'public';
 export type UserRole = 'sys_admin' | 'sec_admin' | 'member';
-export type ResourceRole = 'owner' | 'co_owner' | 'editor' | 'viewer' | 'previewer';
+/**
+ * Eight-role capability model (P9-1 / TOM-52).
+ *
+ * `owner`, `co_owner`, `editor`, `viewer` and `previewer` are the legacy roles.
+ * `viewer_uploader`, `previewer_uploader` and `uploader` are folder-only
+ * advanced roles gated by `tenant_policies.advanced_roles_enabled`.
+ *
+ * Capability definitions live in `services/capabilities.ts`.
+ */
+export type ResourceRole =
+  | 'owner'
+  | 'co_owner'
+  | 'editor'
+  | 'viewer_uploader'
+  | 'previewer_uploader'
+  | 'viewer'
+  | 'previewer'
+  | 'uploader';
 export type ShareAccessScope = 'public' | 'company_only' | 'collaborators_only';
 
 export interface Env {

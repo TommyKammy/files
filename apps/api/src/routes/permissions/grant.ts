@@ -1,18 +1,22 @@
 import { Hono } from 'hono';
 import { buildAuditLogStmt } from '../../services/audit';
 import {
+  areAdvancedRolesEnabled,
   countEffectiveOwners,
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../../services/authorization';
+import {
+  can,
+  isAdvancedResourceRole,
+  isResourceRole,
+} from '../../services/capabilities';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
 import type { ResourceRole } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
   VALID_GRANTEE_TYPES,
-  VALID_RESOURCE_ROLES,
   VALID_TARGET_TYPES,
 } from './shared';
 
@@ -37,7 +41,7 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
       !VALID_GRANTEE_TYPES.has(body.granteeType) ||
       !body.granteeId ||
       !body.role ||
-      !VALID_RESOURCE_ROLES.has(body.role as ResourceRole)
+      !isResourceRole(body.role)
     ) {
       return c.json({ error: 'Invalid permission payload' }, 400);
     }
@@ -52,8 +56,33 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
     if (!access || access.deletedAt !== null) {
       return c.json({ error: 'Target resource not found' }, 404);
     }
-    if (!hasAtLeastRole(access.effectiveRole, 'co_owner')) {
+    if (!can(access.capabilities, 'permission.manage')) {
       return c.json({ error: 'Forbidden: co_owner or owner required to manage permissions' }, 403);
+    }
+
+    // Guardrail 0a: advanced roles are folder-only, independent of tenant policy.
+    if (isAdvancedResourceRole(requestedRole) && targetType !== 'folder') {
+      return c.json(
+        {
+          error: 'Advanced roles can only be granted on folders',
+          code: 'ROLE_FOLDER_ONLY',
+        },
+        400
+      );
+    }
+
+    // Guardrail 0b: advanced roles are opt-in per tenant (default disabled).
+    if (
+      isAdvancedResourceRole(requestedRole) &&
+      !(await areAdvancedRolesEnabled(c.env.DB, user.tenantId))
+    ) {
+      return c.json(
+        {
+          error: 'Advanced roles are disabled for this tenant',
+          code: 'ADVANCED_ROLES_DISABLED',
+        },
+        403
+      );
     }
 
     // Guardrail 1: co_owner cannot grant owner role

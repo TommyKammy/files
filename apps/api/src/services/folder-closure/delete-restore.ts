@@ -1,6 +1,7 @@
 import type { AuthUser } from '../../types/api';
 import { buildAuditLogStmt } from '../audit';
-import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
+import { can } from '../capabilities';
+import { resolveTargetAccess } from '../authorization';
 import { buildSyncChangeStmt } from '../sync-changes';
 import { restoreFolderWithOptions } from './restore-options';
 import { FolderRow, FolderServiceError } from './shared';
@@ -15,8 +16,8 @@ export async function softDeleteFolderSubtree(
   if (!access || access.deletedAt !== null) {
     throw new FolderServiceError(404, 'NOT_FOUND', 'Folder not found');
   }
-  if (!hasAtLeastRole(access.effectiveRole, 'editor')) {
-    throw new FolderServiceError(403, 'FORBIDDEN', 'Editor permission required to delete folder');
+  if (!can(access.capabilities, 'folder.delete')) {
+    throw new FolderServiceError(403, 'FORBIDDEN', 'Folder delete permission required');
   }
 
   const existing = await db
@@ -25,6 +26,15 @@ export async function softDeleteFolderSubtree(
     .first<FolderRow>();
   if (!existing) {
     throw new FolderServiceError(404, 'NOT_FOUND', 'Folder not found');
+  }
+  // Deleting a workspace-root folder removes the whole tree from the root and
+  // is reserved for `owner` via the owner-exclusive `folder.delete_root`.
+  if (existing.parent_id === null && !can(access.capabilities, 'folder.delete_root')) {
+    throw new FolderServiceError(
+      403,
+      'FORBIDDEN',
+      'Owner permission required to delete a workspace root folder'
+    );
   }
   if (
     options?.expectedVersion !== undefined &&

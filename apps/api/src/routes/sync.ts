@@ -2,9 +2,11 @@ import { Hono } from 'hono';
 import {
   getAuthenticatedUser,
   GRANTEE_MATCH_SQL,
-  rankToResourceRole,
-  ROLE_RANK_SQL,
 } from '../services/authorization';
+import {
+  parseRoleList,
+  synthesizeEffectiveAccess,
+} from '../services/capabilities';
 import {
   isLocalDevBypassAllowed,
   isOriginAllowed,
@@ -45,7 +47,7 @@ syncRoutes.get('/bootstrap', async (c) => {
     c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?').bind(user.tenantId),
     c.env.DB.prepare(
       `SELECT ${FOLDER_ALIAS_COLS},
-              MAX(${ROLE_RANK_SQL}) AS max_rank
+              GROUP_CONCAT(DISTINCT p.role) AS role_list
          FROM folders f
          JOIN permissions p
            ON p.tenant_id = f.tenant_id
@@ -61,7 +63,7 @@ syncRoutes.get('/bootstrap', async (c) => {
     ).bind(user.tenantId, user.id, user.id, BOOTSTRAP_ROOT_LIMIT),
     c.env.DB.prepare(
       `SELECT ${FOLDER_ALIAS_COLS},
-              MAX(${ROLE_RANK_SQL}) AS max_rank
+              GROUP_CONCAT(DISTINCT p.role) AS role_list
          FROM folders f
          JOIN folder_closures fc
            ON fc.tenant_id = f.tenant_id
@@ -87,20 +89,24 @@ syncRoutes.get('/bootstrap', async (c) => {
   ]);
 
   const policy = (policyRes.results[0] as Record<string, unknown> | undefined) ?? null;
-  const mapFolder = (row: FolderRow & { max_rank: number | null }) => {
-    const { max_rank, ...folder } = row;
+  // Non-linear composition: a folder carrying both `viewer` and `uploader`
+  // grants must bootstrap as `viewer_uploader`, not `viewer` (MAX rank loss).
+  const mapFolder = (row: FolderRow & { role_list: string | null }) => {
+    const { role_list, ...folder } = row;
+    const access = synthesizeEffectiveAccess(parseRoleList(role_list));
     return {
       ...folder,
-      effectiveRole: rankToResourceRole(max_rank),
+      effectiveRole: access.effectiveRole,
+      capabilities: access.capabilities,
     };
   };
 
-  const rootFolders = (rootsRes.results as Array<FolderRow & { max_rank: number | null }>).map(
-    mapFolder
-  );
-  const pinnedFolders = (pinnedRes.results as Array<FolderRow & { max_rank: number | null }>).map(
-    mapFolder
-  );
+  const rootFolders = (
+    rootsRes.results as Array<FolderRow & { role_list: string | null }>
+  ).map(mapFolder);
+  const pinnedFolders = (
+    pinnedRes.results as Array<FolderRow & { role_list: string | null }>
+  ).map(mapFolder);
 
   const horizonRow = horizonRes.results[0] as { purged_before_seq?: number } | undefined;
   const maxRow = maxSeqRes.results[0] as { max_seq?: number | null } | undefined;

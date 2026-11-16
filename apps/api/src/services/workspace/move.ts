@@ -1,5 +1,6 @@
 import type { AuthUser } from '../../types/api';
 import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
+import { can } from '../capabilities';
 import { type FileRow, validateFileNameAndExt } from '../file-upload-common';
 import { type FolderRow, MAX_FOLDER_DEPTH, moveFolderSubtree } from '../folder-closure-service';
 import { moveFilesToDestination } from './move-files';
@@ -47,8 +48,8 @@ export async function batchMoveWorkspaceItems(
       if (!access || access.deletedAt !== null || !row) {
         throw new WorkspaceOpError(404, 'NOT_FOUND', `Folder not found: ${ref.id}`);
       }
-      if (!hasAtLeastRole(access.effectiveRole, 'editor')) {
-        throw new WorkspaceOpError(403, 'FORBIDDEN', 'Editor permission required to move folder');
+      if (!can(access.capabilities, 'folder.move')) {
+        throw new WorkspaceOpError(403, 'FORBIDDEN', 'Folder move permission required');
       }
       if (ref.expectedVersion !== undefined && row.version !== ref.expectedVersion) {
         throw new WorkspaceOpError(
@@ -74,8 +75,8 @@ export async function batchMoveWorkspaceItems(
       if (!access || !row || row.upload_state !== 'active') {
         throw new WorkspaceOpError(404, 'NOT_FOUND', `File not found: ${ref.id}`);
       }
-      if (!hasAtLeastRole(access.effectiveRole, 'editor')) {
-        throw new WorkspaceOpError(403, 'FORBIDDEN', 'Editor permission required to move file');
+      if (!can(access.capabilities, 'item.move')) {
+        throw new WorkspaceOpError(403, 'FORBIDDEN', 'Item move permission required');
       }
       if (ref.expectedVersion !== undefined && row.meta_version !== ref.expectedVersion) {
         throw new WorkspaceOpError(

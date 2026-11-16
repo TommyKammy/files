@@ -1,11 +1,8 @@
-import type { AuthUser, ClassificationLabel, ResourceRole } from '../types/api';
+import type { AuthUser, ClassificationLabel } from '../types/api';
 import type { OidcEnv } from '../types/oidc';
 import { buildAuditLogStmt } from './audit';
-import {
-  hasAtLeastRole,
-  resolveTargetAccess,
-  type TargetMetadata,
-} from './authorization';
+import { resolveTargetAccess, type TargetMetadata } from './authorization';
+import { can } from './capabilities';
 import { issueSignedStorageUrl, resolveSafeDisposition } from './storage-url-provider';
 
 export type ContentIntent = 'preview' | 'download';
@@ -39,8 +36,8 @@ export async function authorizeFileContentAccess(
     return { ok: false, status: 404, body: { error: 'File not found' } };
   }
 
-  const requiredRole: ResourceRole = intent === 'download' ? 'viewer' : 'previewer';
-  if (!hasAtLeastRole(access.effectiveRole, requiredRole)) {
+  const requiredCapability = intent === 'download' ? 'item.download' : 'item.preview';
+  if (!can(access.capabilities, requiredCapability)) {
     const nowIso = new Date().toISOString();
     await buildAuditLogStmt(db, {
       tenantId: user.tenantId,

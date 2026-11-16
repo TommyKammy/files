@@ -193,8 +193,11 @@ export function formatAdminTrashPermissionSummary(
       ['owner', 'Owner'],
       ['co_owner', 'Co-Owner'],
       ['editor', 'Editor'],
+      ['viewer_uploader', 'Viewer + Uploader'],
+      ['previewer_uploader', 'Previewer + Uploader'],
       ['viewer', 'Viewer'],
       ['previewer', 'Previewer'],
+      ['uploader', 'Uploader'],
     ] as const
   )
     .filter(([role]) => (summary.roles?.[role] ?? 0) > 0)

@@ -1,4 +1,5 @@
 import type { AuthUser } from '../../types/api';
+import { can } from '../capabilities';
 import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
 import {
   type FolderRow,
@@ -34,8 +35,8 @@ export async function resolveMovePlan(
   if (!sourceAccess || sourceAccess.deletedAt !== null) {
     throw new FolderServiceError(404, 'NOT_FOUND', 'Folder not found');
   }
-  if (!hasAtLeastRole(sourceAccess.effectiveRole, 'editor')) {
-    throw new FolderServiceError(403, 'FORBIDDEN', 'Editor permission required to move folder');
+  if (!can(sourceAccess.capabilities, 'folder.move')) {
+    throw new FolderServiceError(403, 'FORBIDDEN', 'Folder move permission required');
   }
 
   const source = await db
@@ -66,11 +67,11 @@ export async function resolveMovePlan(
     if (!destAccess || destAccess.deletedAt !== null) {
       throw new FolderServiceError(404, 'TARGET_NOT_FOUND', 'Destination folder not found');
     }
-    if (!hasAtLeastRole(destAccess.effectiveRole, 'editor')) {
+    if (!can(destAccess.capabilities, 'folder.create')) {
       throw new FolderServiceError(
         403,
         'FORBIDDEN',
-        'Editor permission required on destination folder'
+        'Folder creation permission required on destination folder'
       );
     }
 

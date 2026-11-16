@@ -31,6 +31,9 @@ const BENCH_CASES: Record<number, BenchQuerySpec> = {
     id: 2,
     name: 'Case 2: Closure Table RBAC (Depth 6 x 5 Groups)',
     targetDescription: 'folder_closures PK, p95 < 2ms, rows_read < 30',
+    // Legacy linear-rank fixture kept for benchmark continuity. Authorization
+    // no longer uses MAX(rank); the API aggregates GROUP_CONCAT(DISTINCT role)
+    // and composes roles non-linearly (see services/capabilities.ts).
     sql: `SELECT COALESCE(MAX(
             CASE p.role
               WHEN 'owner' THEN 5

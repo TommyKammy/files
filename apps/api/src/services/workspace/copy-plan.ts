@@ -1,6 +1,7 @@
 import type { AuthUser, ResourceRole } from '../../types/api';
 import { chunkArray } from '../../utils/batch';
-import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
+import { resolveTargetAccess } from '../authorization';
+import { can } from '../capabilities';
 import {
   getTenantQuotaStatus,
   validateFileNameAndExt,
@@ -90,7 +91,7 @@ export async function resolveCopyPlan(
       if (!access || access.deletedAt !== null || !row) {
         throw new WorkspaceOpError(404, 'NOT_FOUND', `Folder not found: ${ref.id}`);
       }
-      if (!hasAtLeastRole(access.effectiveRole, 'viewer')) {
+      if (!can(access.capabilities, 'item.download')) {
         await auditCopyDenied(
           db,
           user,
@@ -103,7 +104,7 @@ export async function resolveCopyPlan(
         throw new WorkspaceOpError(
           403,
           'DLP_COPY_FORBIDDEN',
-          'Viewer permission required to copy folder (previewer cannot export or copy)'
+          'Download permission required to copy folder (preview-only roles cannot export)'
         );
       }
       return { row, effectiveRole: access.effectiveRole! };
@@ -127,7 +128,7 @@ export async function resolveCopyPlan(
       if (!access || !row || row.upload_state !== 'active') {
         throw new WorkspaceOpError(404, 'NOT_FOUND', `File not found: ${ref.id}`);
       }
-      if (!hasAtLeastRole(access.effectiveRole, 'viewer')) {
+      if (!can(access.capabilities, 'item.download')) {
         await auditCopyDenied(
           db,
           user,
@@ -140,7 +141,7 @@ export async function resolveCopyPlan(
         throw new WorkspaceOpError(
           403,
           'DLP_COPY_FORBIDDEN',
-          'Viewer permission required to copy file (previewer cannot export or copy)'
+          'Download permission required to copy file (preview-only roles cannot export)'
         );
       }
       return { row, effectiveRole: access.effectiveRole! };

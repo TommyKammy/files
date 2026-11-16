@@ -1,5 +1,6 @@
 import type { AuthUser, ClassificationLabel } from '../../types/api';
-import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
+import { can } from '../capabilities';
+import { resolveTargetAccess, type TargetMetadata } from '../authorization';
 
 export const MAX_FOLDER_DEPTH = 20;
 export const INLINE_CLASSIFICATION_PROPAGATION_LIMIT = 100;
@@ -125,19 +126,40 @@ export async function fetchFolderBreadcrumbsRows(
   return rows.results;
 }
 
+export interface FolderBreadcrumbsResult {
+  breadcrumbs: BreadcrumbItem[];
+  access: TargetMetadata;
+}
+
+/**
+ * Resolve breadcrumbs together with the composed access used for the
+ * `folder.list` check, so the endpoint can return `effectiveRole` and
+ * `capabilities` consistently with the roots/children APIs.
+ */
+export async function resolveFolderBreadcrumbs(
+  db: D1Database,
+  user: Pick<AuthUser, 'id' | 'tenantId'>,
+  folderId: string
+): Promise<FolderBreadcrumbsResult> {
+  const access = await resolveTargetAccess(db, user, 'folder', folderId);
+  if (!access || access.deletedAt !== null) {
+    throw new FolderServiceError(404, 'NOT_FOUND', 'Folder not found');
+  }
+  if (!can(access.capabilities, 'folder.list')) {
+    throw new FolderServiceError(403, 'FORBIDDEN', 'Forbidden');
+  }
+
+  return {
+    breadcrumbs: await fetchFolderBreadcrumbsRows(db, user.tenantId, folderId),
+    access,
+  };
+}
+
 export async function getFolderBreadcrumbs(
   db: D1Database,
   user: Pick<AuthUser, 'id' | 'tenantId'>,
   folderId: string
 ): Promise<BreadcrumbItem[]> {
-  const access = await resolveTargetAccess(db, user, 'folder', folderId);
-  if (!access || access.deletedAt !== null) {
-    throw new FolderServiceError(404, 'NOT_FOUND', 'Folder not found');
-  }
-  if (!hasAtLeastRole(access.effectiveRole, 'previewer')) {
-    throw new FolderServiceError(403, 'FORBIDDEN', 'Forbidden');
-  }
-
-  return fetchFolderBreadcrumbsRows(db, user.tenantId, folderId);
+  return (await resolveFolderBreadcrumbs(db, user, folderId)).breadcrumbs;
 }
 

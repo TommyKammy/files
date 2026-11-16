@@ -5,6 +5,7 @@ import {
   pickStricterClassification,
 } from '../../utils/classification';
 import { buildAuditLogStmt } from '../audit';
+import { can } from '../capabilities';
 import {
   hasAtLeastRole,
   resolveTargetAccess,
@@ -103,11 +104,11 @@ export async function restoreFolderWithOptions(
   if (folder.deleted_at === null) {
     throw new FolderServiceError(400, 'NOT_IN_TRASH', 'Folder is not in Trash');
   }
-  if (!adminBypass && !hasAtLeastRole(sourceAccess?.effectiveRole, 'editor')) {
+  if (!adminBypass && !can(sourceAccess?.capabilities, 'trash.restore')) {
     throw new FolderServiceError(
       403,
       'FORBIDDEN',
-      'Editor permission required to restore folder'
+      'Trash restore permission required to restore folder'
     );
   }
 
@@ -200,11 +201,11 @@ export async function restoreFolderWithOptions(
           destination,
         });
       }
-      if (!hasAtLeastRole(destAccess.effectiveRole, 'editor') && !adminBypass) {
+      if (!can(destAccess.capabilities, 'folder.create') && !adminBypass) {
         restoreError(
           403,
           'FORBIDDEN',
-          'Editor permission required on destination folder',
+          'Folder creation permission required on destination folder',
           { destination }
         );
       }
@@ -896,12 +897,12 @@ async function planAncestorChain(
       !adminBypass &&
       (!access ||
         access.deletedAt === null ||
-        !hasAtLeastRole(access.effectiveRole, 'editor'))
+        !can(access.capabilities, 'trash.restore'))
     ) {
       throw new FolderServiceError(
         403,
         'FORBIDDEN',
-        'Editor permission required on every deleted ancestor folder',
+        'Trash restore permission required on every deleted ancestor folder',
         undefined,
         {
           destination,

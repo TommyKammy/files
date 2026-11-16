@@ -1,7 +1,8 @@
 import type { AuthUser } from '../types/api';
 import { pickStricterClassification } from '../utils/classification';
 import { buildAuditLogStmt } from './audit';
-import { hasAtLeastRole, resolveTargetAccess } from './authorization';
+import { resolveTargetAccess } from './authorization';
+import { can } from './capabilities';
 import { buildClassificationPolicyStatements } from './classification-updater';
 import {
   type FileRow,
@@ -149,7 +150,7 @@ export async function restoreTrashFile(
   if (
     !adminBypass &&
     !privilegedAdmin &&
-    !hasAtLeastRole(access?.effectiveRole, 'editor')
+    !can(access?.capabilities, 'trash.restore')
   ) {
     throw new TrashRequestError(403, 'FORBIDDEN', 'Forbidden');
   }
@@ -210,7 +211,7 @@ export async function restoreTrashFile(
         { destination }
       );
     }
-    if (!hasAtLeastRole(destAccess.effectiveRole, 'editor') && !adminBypass) {
+    if (!can(destAccess.capabilities, 'folder.create') && !adminBypass) {
       trashRestoreError(
         403,
         'FORBIDDEN',
@@ -233,7 +234,7 @@ export async function restoreTrashFile(
       if (
         !privilegedAdmin &&
         (!ancestorAccess ||
-          !hasAtLeastRole(ancestorAccess.effectiveRole, 'editor'))
+          !can(ancestorAccess.capabilities, 'trash.restore'))
       ) {
         trashRestoreError(
           403,

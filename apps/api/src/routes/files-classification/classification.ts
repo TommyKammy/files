@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../../services/authorization';
+import { can } from '../../services/capabilities';
 import { buildClassificationChangeStatements, resolveFolderClassificationFloor } from '../../services/classification-updater';
 import { type FileRow } from '../../services/file-upload-common';
 import { parseExpectedVersionInput } from '../../services/sync-changes';
@@ -40,8 +40,8 @@ export function registerFileClassificationRoute(routes: Hono<OidcHonoEnv>) {
     }
 
     const isPrivilegedAdmin = user.role === 'sec_admin' || user.role === 'sys_admin';
-    if (!isPrivilegedAdmin && !hasAtLeastRole(access.effectiveRole, 'editor')) {
-      return c.json({ error: 'Forbidden: editor or admin role required' }, 403);
+    if (!isPrivilegedAdmin && !can(access.capabilities, 'classification.edit')) {
+      return c.json({ error: 'Forbidden: classification edit permission required' }, 403);
     }
 
     const expectedVersion = parseExpectedVersionInput(undefined, body);

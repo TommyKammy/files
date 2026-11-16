@@ -2,9 +2,9 @@ import { Hono } from 'hono';
 import { buildAuditLogStmt } from '../../services/audit';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../../services/authorization';
+import { can } from '../../services/capabilities';
 import { buildClassificationPolicyStatements, resolveFolderClassificationFloor } from '../../services/classification-updater';
 import {
   type FileRow,
@@ -55,7 +55,11 @@ export function registerFileUpdateRoute(routes: Hono<OidcHonoEnv>) {
     if (!access || !file || file.upload_state !== 'active') {
       return c.json({ error: 'File not found' }, 404);
     }
-    if (!hasAtLeastRole(access.effectiveRole, 'editor')) {
+    const canRename = can(access.capabilities, 'item.rename');
+    const canMove = can(access.capabilities, 'item.move');
+    const needsRename = body.name !== undefined || body.folderId === undefined;
+    const needsMove = body.folderId !== undefined;
+    if ((needsRename && !canRename) || (needsMove && !canMove)) {
       return c.json({ error: 'Forbidden' }, 403);
     }
 
@@ -88,8 +92,11 @@ export function registerFileUpdateRoute(routes: Hono<OidcHonoEnv>) {
       if (!destAccess || destAccess.deletedAt !== null) {
         return c.json({ error: 'Destination folder not found' }, 404);
       }
-      if (!hasAtLeastRole(destAccess.effectiveRole, 'editor')) {
-        return c.json({ error: 'Forbidden: editor role required on destination folder' }, 403);
+      if (!can(destAccess.capabilities, 'item.upload_new')) {
+        return c.json(
+          { error: 'Forbidden: upload permission required on destination folder' },
+          403
+        );
       }
 
       const destFloor = await resolveFolderClassificationFloor(

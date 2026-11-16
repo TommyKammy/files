@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
+import { getAuthenticatedUser } from '../../services/authorization';
 import {
-  ROLE_RANK_SQL,
-  getAuthenticatedUser,
-} from '../../services/authorization';
+  parseRoleList,
+  synthesizeEffectiveAccess,
+} from '../../services/capabilities';
 import type { ClassificationLabel } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -45,7 +46,7 @@ interface TrashDbRow {
   created_at: string;
   updated_at: string;
   deleted_by_name: string | null;
-  effective_role: 'owner' | 'co_owner' | 'editor' | 'viewer' | 'previewer' | null;
+  role_list: string | null;
 }
 
 /**
@@ -98,8 +99,8 @@ const TRASH_FOLDER_UNION_SQL = `
          f.created_at AS created_at,
          f.updated_at AS updated_at,
          u.display_name AS deleted_by_name,
-         CASE (
-           SELECT MAX(${ROLE_RANK_SQL})
+         (
+           SELECT GROUP_CONCAT(DISTINCT p.role)
              FROM folder_closures fc
              JOIN permissions p
                ON p.tenant_id = f.tenant_id
@@ -108,14 +109,7 @@ const TRASH_FOLDER_UNION_SQL = `
             WHERE fc.tenant_id = f.tenant_id
               AND fc.descendant_id = f.id
               AND ${TRASH_GRANTEE_MATCH_SQL}
-         )
-           WHEN 5 THEN 'owner'
-           WHEN 4 THEN 'co_owner'
-           WHEN 3 THEN 'editor'
-           WHEN 2 THEN 'viewer'
-           WHEN 1 THEN 'previewer'
-           ELSE NULL
-         END AS effective_role
+         ) AS role_list
     FROM folders f
     LEFT JOIN users u
       ON u.id = f.deleted_by AND u.tenant_id = f.tenant_id
@@ -159,8 +153,8 @@ const TRASH_FILE_UNION_SQL = `
          fl.created_at AS created_at,
          fl.updated_at AS updated_at,
          u.display_name AS deleted_by_name,
-         CASE (
-           SELECT MAX(${ROLE_RANK_SQL})
+         (
+           SELECT GROUP_CONCAT(DISTINCT p.role)
              FROM permissions p
             WHERE p.tenant_id = fl.tenant_id
               AND (
@@ -177,14 +171,7 @@ const TRASH_FILE_UNION_SQL = `
                 )
               )
               AND ${TRASH_GRANTEE_MATCH_SQL}
-         )
-           WHEN 5 THEN 'owner'
-           WHEN 4 THEN 'co_owner'
-           WHEN 3 THEN 'editor'
-           WHEN 2 THEN 'viewer'
-           WHEN 1 THEN 'previewer'
-           ELSE NULL
-         END AS effective_role
+         ) AS role_list
     FROM files fl
     LEFT JOIN users u
       ON u.id = fl.deleted_by AND u.tenant_id = fl.tenant_id
@@ -224,13 +211,15 @@ function toTrashItem(
     retentionDays,
     nowMs
   );
-  const { item_type: itemType, ...rest } = row;
+  const { item_type: itemType, role_list, ...rest } = row;
+  const access = synthesizeEffectiveAccess(parseRoleList(role_list));
 
   return {
     ...rest,
     type: itemType,
-    effectiveRole: row.effective_role,
-    effective_role: row.effective_role,
+    effectiveRole: access.effectiveRole,
+    effective_role: access.effectiveRole,
+    capabilities: access.capabilities,
     // snake_case stays for existing consumers, camelCase is the documented
     // Trash UI contract.
     deleted_at: row.deleted_at,
@@ -372,7 +361,7 @@ export function registerFolderTrashRoutes(routes: Hono<OidcHonoEnv>) {
       SELECT *
         FROM (${TRASH_UNION_SQL}) t
        WHERE 1 = 1
-         AND t.effective_role IS NOT NULL
+         AND t.role_list IS NOT NULL AND t.role_list != ''
          ${whereSql.join('\n         ')}
        ORDER BY ${buildTrashOrderBy(sort)}
        LIMIT ?`;
@@ -389,7 +378,7 @@ export function registerFolderTrashRoutes(routes: Hono<OidcHonoEnv>) {
       c.env.DB.prepare(
         `SELECT DISTINCT t.deleted_by AS id, t.deleted_by_name AS name
            FROM (${TRASH_UNION_SQL}) t
-          WHERE t.effective_role IS NOT NULL
+          WHERE t.role_list IS NOT NULL AND t.role_list != ''
           ORDER BY t.deleted_by_name ASC, t.deleted_by ASC`
       )
         .bind(...rbacBindings)

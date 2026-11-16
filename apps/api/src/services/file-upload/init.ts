@@ -1,6 +1,7 @@
 import type { AuthUser, ClassificationLabel } from '../../types/api';
 import { pickStricterClassification } from '../../utils/classification';
-import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
+import { resolveTargetAccess } from '../authorization';
+import { can } from '../capabilities';
 import {
   FileUploadError,
   MULTIPART_MAX_BYTES,
@@ -51,13 +52,11 @@ export async function initializePendingUpload(
   }
 
   let inheritedClassification: ClassificationLabel = 'unset';
+  let folderAccess: Awaited<ReturnType<typeof resolveTargetAccess>> = null;
   if (input.folderId !== null) {
-    const folderAccess = await resolveTargetAccess(db, user, 'folder', input.folderId);
+    folderAccess = await resolveTargetAccess(db, user, 'folder', input.folderId);
     if (!folderAccess || folderAccess.deletedAt !== null) {
       throw new FileUploadError(404, 'FOLDER_NOT_FOUND', 'Target folder not found');
-    }
-    if (!hasAtLeastRole(folderAccess.effectiveRole, 'editor')) {
-      throw new FileUploadError(403, 'FORBIDDEN', 'Editor permission required to upload to folder');
     }
     inheritedClassification = folderAccess.classification;
 
@@ -114,9 +113,21 @@ export async function initializePendingUpload(
 
   if (existing) {
     const fileAccess = await resolveTargetAccess(db, user, 'file', existing.id);
-    if (!hasAtLeastRole(fileAccess?.effectiveRole, 'editor')) {
-      throw new FileUploadError(403, 'FORBIDDEN', 'Editor permission required to upload new version');
+    // Overwriting an existing active file creates a new version; the
+    // new-upload-only roles (`uploader`, `previewer_uploader`) must be denied.
+    if (!can(fileAccess?.capabilities, 'item.upload_version')) {
+      throw new FileUploadError(
+        403,
+        'FORBIDDEN',
+        'Permission required to upload a new version of an existing file'
+      );
     }
+  } else if (folderAccess && !can(folderAccess.capabilities, 'item.upload_new')) {
+    throw new FileUploadError(
+      403,
+      'FORBIDDEN',
+      'Permission required to upload new files to folder'
+    );
   }
 
   const quota = await getTenantQuotaStatus(db, user.tenantId);

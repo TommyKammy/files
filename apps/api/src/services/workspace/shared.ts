@@ -1,6 +1,7 @@
 import type { AuthUser, ClassificationLabel } from '../../types/api';
 import { chunkArray } from '../../utils/batch';
-import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
+import { resolveTargetAccess } from '../authorization';
+import { can } from '../capabilities';
 import { resolveFolderClassificationFloor } from '../classification-updater';
 import { type FileRow, FileUploadError } from '../file-upload-common';
 import { type FolderRow, FolderServiceError } from '../folder-closure-service';
@@ -190,8 +191,15 @@ export async function resolveDestinationContext(
   if (!destAccess || destAccess.deletedAt !== null || !destFolder) {
     throw new WorkspaceOpError(404, 'TARGET_NOT_FOUND', 'Destination folder not found');
   }
-  if (!hasAtLeastRole(destAccess.effectiveRole, 'editor')) {
-    throw new WorkspaceOpError(403, 'FORBIDDEN', 'Editor permission required on destination folder');
+  if (
+    !can(destAccess.capabilities, 'folder.create') ||
+    !can(destAccess.capabilities, 'item.upload_new')
+  ) {
+    throw new WorkspaceOpError(
+      403,
+      'FORBIDDEN',
+      'Write permission required on destination folder'
+    );
   }
 
   const floorClassification = await resolveFolderClassificationFloor(

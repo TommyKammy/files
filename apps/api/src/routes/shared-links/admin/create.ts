@@ -2,9 +2,9 @@ import { Hono } from 'hono';
 import { buildAuditLogStmt } from '../../../services/audit';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../../../services/authorization';
+import { can } from '../../../services/capabilities';
 import { generateRandomToken, sha256Hex } from '../../../services/crypto-utils';
 import { hashSharePassword } from '../../../services/shared-link-security';
 import { buildSyncChangeStmt } from '../../../services/sync-changes';
@@ -67,9 +67,13 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
       return c.json({ error: 'Target resource not found' }, 404);
     }
 
-    if (!hasAtLeastRole(access.effectiveRole, 'editor')) {
-      return c.json({ error: 'Forbidden: editor role or higher required to share' }, 403);
+    if (!can(access.capabilities, 'share_link.create')) {
+      return c.json({ error: 'Forbidden: share permission required' }, 403);
     }
+
+    // `viewer_uploader` can create links but cannot manage them, so its links
+    // must be display-only (no download) to stay inside its capability set.
+    const canManageLinks = can(access.capabilities, 'share_link.manage');
 
     const folderToCheck = body.targetType === 'folder' ? targetId : access.folderId;
     const [policy, ancestorConf] = await Promise.all([
@@ -146,8 +150,10 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
     }
 
     // Server-side governance enforcement for confidential items
-    const canDownload = isConfidential ? false : body.canDownload !== false;
-    const requireWatermark = isConfidential
+    const canDownload = isConfidential
+      ? false
+      : canManageLinks && body.canDownload !== false;
+    const requireWatermark = isConfidential || !canManageLinks
       ? true
       : Boolean(body.requireWatermark);
 

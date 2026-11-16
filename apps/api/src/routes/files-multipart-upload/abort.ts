@@ -2,9 +2,9 @@ import { Hono } from 'hono';
 import { buildAuditLogStmt } from '../../services/audit';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../../services/authorization';
+import { can } from '../../services/capabilities';
 import { type FileRow, type FileVersionRow } from '../../services/file-upload-common';
 import { abortMultipartUpload } from '../../services/multipart-storage-provider';
 import type { OidcHonoEnv } from '../../types/oidc';
@@ -41,7 +41,7 @@ export function registerMultipartAbortRoute(routes: Hono<OidcHonoEnv>) {
     }
     if (version.uploaded_by !== user.id) {
       const access = await resolveTargetAccess(c.env.DB, user, 'file', file.id);
-      if (!hasAtLeastRole(access?.effectiveRole, 'editor')) {
+      if (!can(access?.capabilities, 'item.upload_version')) {
         return c.json({ error: 'Forbidden' }, 403);
       }
     }

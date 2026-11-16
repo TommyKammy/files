@@ -1,10 +1,18 @@
 import { Hono } from 'hono';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../../services/authorization';
-import { fetchFolderBreadcrumbsRows, type FolderRow, getFolderBreadcrumbs } from '../../services/folder-closure-service';
+import {
+  can,
+  parseRoleList,
+  synthesizeEffectiveAccess,
+} from '../../services/capabilities';
+import {
+  fetchFolderBreadcrumbsRows,
+  type FolderRow,
+  resolveFolderBreadcrumbs,
+} from '../../services/folder-closure-service';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
   ChildFileRow,
@@ -38,14 +46,7 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
 
     const rows = await c.env.DB.prepare(
       `SELECT f.${FOLDER_CHILD_COLS.split(', ').join(', f.')},
-              MAX(CASE p.role
-                WHEN 'owner' THEN 5
-                WHEN 'co_owner' THEN 4
-                WHEN 'editor' THEN 3
-                WHEN 'viewer' THEN 2
-                WHEN 'previewer' THEN 1
-                ELSE 0
-              END) AS max_rank
+              GROUP_CONCAT(DISTINCT p.role) AS role_list
          FROM folders f
          JOIN permissions p
            ON p.tenant_id = f.tenant_id
@@ -70,14 +71,23 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
         LIMIT ?`
     )
       .bind(user.tenantId, user.id, user.id, ...cursorBindings, limit + 1)
-      .all<FolderRow & { max_rank: number }>();
+      .all<FolderRow & { role_list: string | null }>();
 
     const hasMore = rows.results.length > limit;
     const pageItems = rows.results.slice(0, limit);
     const last = pageItems[pageItems.length - 1];
 
     return c.json({
-      folders: pageItems.map(({ max_rank: _rank, ...folder }) => folder),
+      // Non-linear composition is required here: a root folder can carry both
+      // `viewer` and `uploader` grants which must surface as `viewer_uploader`.
+      folders: pageItems.map(({ role_list, ...folder }) => {
+        const access = synthesizeEffectiveAccess(parseRoleList(role_list));
+        return {
+          ...folder,
+          effectiveRole: access.effectiveRole,
+          capabilities: access.capabilities,
+        };
+      }),
       nextCursor:
         hasMore && last
           ? encodeCursor({ phase: 'folders', name: last.name, id: last.id })
@@ -103,11 +113,18 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
     if (!access || access.deletedAt !== null) {
       return c.json({ error: 'Folder not found' }, 404);
     }
-    if (!hasAtLeastRole(access.effectiveRole, 'previewer')) {
+    // `uploader`/`previewer_uploader` may browse the tree without preview rights.
+    if (
+      !can(access.capabilities, 'folder.list') ||
+      !can(access.capabilities, 'folder.traverse')
+    ) {
       return c.json({ error: 'Forbidden' }, 403);
     }
 
     const includeBreadcrumbs = c.req.query('include') === 'breadcrumbs' && !cursor;
+    // Roles without `item.preview` (uploader) may navigate folders but must not
+    // receive a file listing; `search` applies the same rule.
+    const canSeeFiles = can(access.capabilities, 'item.preview');
     const [folder, breadcrumbs] = await Promise.all([
       c.env.DB.prepare(
         `SELECT ${FOLDER_CHILD_COLS} FROM folders WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL`
@@ -151,6 +168,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
         return c.json({
           folder,
           effectiveRole: access.effectiveRole,
+          capabilities: access.capabilities,
           folders,
           files,
           nextCursor,
@@ -160,6 +178,18 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
 
       folders = folderRows.results;
       const remaining = limit - folders.length;
+
+      if (!canSeeFiles) {
+        return c.json({
+          folder,
+          effectiveRole: access.effectiveRole,
+          capabilities: access.capabilities,
+          folders,
+          files: [],
+          nextCursor: null,
+          ...breadcrumbsField,
+        });
+      }
 
       if (remaining === 0) {
         const hasAnyFile = await c.env.DB.prepare(
@@ -175,6 +205,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
         return c.json({
           folder,
           effectiveRole: access.effectiveRole,
+          capabilities: access.capabilities,
           folders,
           files,
           nextCursor,
@@ -201,7 +232,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
         const lastFile = files[files.length - 1];
         nextCursor = encodeCursor({ phase: 'files', name: lastFile.name, id: lastFile.id });
       }
-    } else {
+    } else if (canSeeFiles) {
       const hasKeyset = cursor.name !== undefined && cursor.id !== undefined;
       const fileRows = await c.env.DB.prepare(
         `SELECT ${FILE_CHILD_COLS}
@@ -233,6 +264,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
     return c.json({
       folder,
       effectiveRole: access.effectiveRole,
+      capabilities: access.capabilities,
       folders,
       files,
       nextCursor,
@@ -247,12 +279,19 @@ export function registerFolderBreadcrumbRoutes(routes: Hono<OidcHonoEnv>) {
   routes.get('/:id/breadcrumbs', async (c) => {
     const user = getAuthenticatedUser(c);
     try {
-      const breadcrumbs = await getFolderBreadcrumbs(c.env.DB, user, c.req.param('id'));
-      return c.json({ breadcrumbs });
+      const { breadcrumbs, access } = await resolveFolderBreadcrumbs(
+        c.env.DB,
+        user,
+        c.req.param('id')
+      );
+      return c.json({
+        breadcrumbs,
+        effectiveRole: access.effectiveRole,
+        capabilities: access.capabilities,
+      });
     } catch (err) {
       return handleFolderError(c, err);
     }
   });
 
 }
-

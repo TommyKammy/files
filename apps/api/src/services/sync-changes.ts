@@ -1,5 +1,5 @@
 import type { AuthUser } from '../types/api';
-import { GRANTEE_MATCH_SQL } from './authorization';
+import { FILE_PREVIEW_ROLE_SQL, GRANTEE_MATCH_SQL } from './authorization';
 import type { ConditionalWriteGuard } from './statement-guard';
 
 export type SyncEntityType =
@@ -216,6 +216,8 @@ export async function listAuthorizedSyncDeltas(
                 SELECT 1
                   FROM permissions p
                  WHERE p.tenant_id = sc.tenant_id
+                   -- uploader has no item.preview: never leak file deltas.
+                   AND p.role IN (${FILE_PREVIEW_ROLE_SQL})
                    AND ${GRANTEE_MATCH_SQL}
                    AND (
                      (p.target_type = 'file' AND p.target_id = sc.entity_id)
@@ -281,6 +283,7 @@ export async function listAuthorizedSyncDeltas(
                   SELECT 1
                     FROM permissions p
                    WHERE p.tenant_id = sc.tenant_id
+                     AND p.role IN (${FILE_PREVIEW_ROLE_SQL})
                      AND ${GRANTEE_MATCH_SQL}
                      AND (
                        (

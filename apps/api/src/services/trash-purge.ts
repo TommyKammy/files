@@ -8,12 +8,12 @@ import {
 } from './r2-gc';
 import { chunkArray, executeBatchChunks } from '../utils/batch';
 import { buildAuditLogStmt } from './audit';
+import { GRANTEE_MATCH_SQL, resolveTargetAccess } from './authorization';
 import {
-  GRANTEE_MATCH_SQL,
-  ROLE_RANK_SQL,
-  hasAtLeastRole,
-  resolveTargetAccess,
-} from './authorization';
+  can,
+  parseRoleList,
+  synthesizeEffectiveAccess,
+} from './capabilities';
 import { FileLockedError, assertFileNotLocked } from './file-lock';
 import type { FileRow } from './file-upload-common';
 import type { FolderRow } from './folder-closure-service';
@@ -25,7 +25,6 @@ import {
 } from './trash-items';
 
 const PURGE_STATEMENT_CHUNK = 30;
-const MIN_PURGE_RANK = 4; // co_owner
 
 export interface PurgeFileRow {
   id: string;
@@ -90,7 +89,7 @@ interface PurgeableTopLevelItem {
   type: 'file' | 'folder';
   id: string;
   name: string;
-  max_rank: number | null;
+  role_list: string | null;
 }
 
 async function fetchDraftObjectsForFiles(
@@ -420,7 +419,7 @@ export async function purgeTrashFileItem(
   if (
     !adminContext &&
     user.role !== 'sys_admin' &&
-    !hasAtLeastRole(access?.effectiveRole, 'co_owner')
+    !can(access?.capabilities, 'trash.purge')
   ) {
     throw new TrashRequestError(
       403,
@@ -507,7 +506,7 @@ export async function purgeTrashFolderItem(
   if (
     !adminContext &&
     user.role !== 'sys_admin' &&
-    !hasAtLeastRole(access?.effectiveRole, 'co_owner')
+    !can(access?.capabilities, 'trash.purge')
   ) {
     throw new TrashRequestError(
       403,
@@ -688,7 +687,7 @@ async function listPurgeableTopLevelTrashItems(
               f.id AS id,
               f.name AS name,
               (
-                SELECT MAX(${ROLE_RANK_SQL})
+                SELECT GROUP_CONCAT(DISTINCT p.role)
                   FROM folder_closures fc
                   JOIN permissions p
                     ON p.tenant_id = f.tenant_id
@@ -697,7 +696,7 @@ async function listPurgeableTopLevelTrashItems(
                  WHERE fc.tenant_id = f.tenant_id
                    AND fc.descendant_id = f.id
                    AND ${GRANTEE_MATCH_SQL}
-              ) AS max_rank
+              ) AS role_list
          FROM folders f
          LEFT JOIN folders pf ON pf.id = f.parent_id
         WHERE f.tenant_id = ?
@@ -713,7 +712,7 @@ async function listPurgeableTopLevelTrashItems(
               fl.id AS id,
               fl.name AS name,
               (
-                SELECT MAX(${ROLE_RANK_SQL})
+                SELECT GROUP_CONCAT(DISTINCT p.role)
                   FROM permissions p
                  WHERE p.tenant_id = fl.tenant_id
                    AND ${GRANTEE_MATCH_SQL}
@@ -730,7 +729,7 @@ async function listPurgeableTopLevelTrashItems(
                        )
                      )
                    )
-              ) AS max_rank
+              ) AS role_list
          FROM files fl
          LEFT JOIN folders pf ON pf.id = fl.folder_id
         WHERE fl.tenant_id = ?
@@ -742,11 +741,15 @@ async function listPurgeableTopLevelTrashItems(
     .all<PurgeableTopLevelItem>();
 
   const isSysAdmin = user.role === 'sys_admin';
-  return [...folderRows.results, ...fileRows.results].filter(
-    (item) =>
-      item.max_rank !== null &&
-      (isSysAdmin || (item.max_rank ?? 0) >= MIN_PURGE_RANK)
-  );
+  return [...folderRows.results, ...fileRows.results].filter((item) => {
+    // No grant at all means the item is outside the caller's Trash range, even
+    // for sys_admin (tenant-wide admin bypass lives in the admin endpoints).
+    if (!item.role_list) return false;
+    if (isSysAdmin) return true;
+    // Purge requires the `trash.purge` capability (co_owner/owner) after
+    // non-linear composition; an `editor + uploader` grant stays editor.
+    return can(synthesizeEffectiveAccess(parseRoleList(item.role_list)).capabilities, 'trash.purge');
+  });
 }
 
 /**

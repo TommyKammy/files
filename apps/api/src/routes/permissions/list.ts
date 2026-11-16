@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
-import { getAuthenticatedUser, hasAtLeastRole, resolveTargetAccess } from '../../services/authorization';
+import { getAuthenticatedUser, resolveTargetAccess } from '../../services/authorization';
+import { can } from '../../services/capabilities';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
   PermissionListRow,
@@ -21,7 +22,7 @@ export function registerPermissionListRoute(routes: Hono<OidcHonoEnv>) {
     if (!access || access.deletedAt !== null) {
       return c.json({ error: 'Target resource not found' }, 404);
     }
-    if (!hasAtLeastRole(access.effectiveRole, 'viewer')) {
+    if (!can(access.capabilities, 'permission.view')) {
       return c.json({ error: 'Forbidden' }, 403);
     }
 
@@ -102,6 +103,8 @@ export function registerPermissionListRoute(routes: Hono<OidcHonoEnv>) {
       targetType,
       targetId,
       effectiveRole: access.effectiveRole,
+      capabilities: access.capabilities,
+      grantedRoles: access.grantedRoles,
       permissions: rows.results.map((r) => ({
         id: r.id,
         targetType: r.target_type,

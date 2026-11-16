@@ -1,9 +1,7 @@
 import { Hono } from 'hono';
 import { buildAuditLogStmt } from '../services/audit';
-import {
-  hasAtLeastRole,
-  resolveTargetAccess,
-} from '../services/authorization';
+import { resolveTargetAccess } from '../services/authorization';
+import { can, type Capability } from '../services/capabilities';
 import type { FileRow } from '../services/file-upload-common';
 import {
   finalizeWopiDraft,
@@ -34,6 +32,7 @@ interface WopiRequestContext {
   file: FileRow;
   user: WopiUserRow;
   canWrite: boolean;
+  capabilities: Capability[];
 }
 
 function wopiError(
@@ -142,9 +141,11 @@ async function authenticateWopi(
   if (!user) {
     return wopiError(401, 'WOPI_USER_INACTIVE', 'User is not active');
   }
-  if (!hasAtLeastRole(access.effectiveRole, 'previewer')) {
+  if (!can(access.capabilities, 'item.preview')) {
     return wopiError(403, 'WOPI_FORBIDDEN', 'File access denied');
   }
+
+  const canEditContent = can(access.capabilities, 'item.edit_content');
 
   return {
     payload: verified.payload,
@@ -152,16 +153,12 @@ async function authenticateWopi(
       ...verified.session,
       role: access.effectiveRole!,
       can_write:
-        verified.session.can_write === 1 &&
-        hasAtLeastRole(access.effectiveRole, 'editor')
-          ? 1
-          : 0,
+        verified.session.can_write === 1 && canEditContent ? 1 : 0,
     },
     file,
     user,
-    canWrite:
-      verified.session.can_write === 1 &&
-      hasAtLeastRole(access.effectiveRole, 'editor'),
+    canWrite: verified.session.can_write === 1 && canEditContent,
+    capabilities: access.capabilities,
   };
 }
 
@@ -205,9 +202,11 @@ wopiHostRoutes.get('/files/:fileId', async (c) => {
   const lock = await getFileLockState(c.env, fileId);
   const desktopLocked = lock?.mode === 'desktop_exclusive';
   const canWrite = context.canWrite && !desktopLocked;
-  const dlp =
-    context.file.classification === 'confidential' ||
-    context.session.role === 'previewer';
+  // Preview-only roles (no download) are always DLP-restricted.
+  const previewOnly =
+    can(context.capabilities, 'item.preview') &&
+    !can(context.capabilities, 'item.download');
+  const dlp = context.file.classification === 'confidential' || previewOnly;
 
   return c.json({
     BaseFileName: context.file.name,

@@ -2,11 +2,10 @@ import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../services/authorization';
+import { can, type Capability } from '../services/capabilities';
 import type { FileRow } from '../services/file-upload-common';
-import type { ResourceRole } from '../types/api';
 import { getFileLockState } from '../services/file-lock';
 import type { OidcHonoEnv } from '../types/oidc';
 
@@ -22,7 +21,7 @@ async function loadFile(
   user: { id: string; tenantId: string },
   fileId: string
 ): Promise<
-  | { ok: true; file: FileRow; role: ResourceRole }
+  | { ok: true; file: FileRow; capabilities: readonly Capability[] }
   | { ok: false; response: Response }
 > {
   const [access, file] = await Promise.all([
@@ -36,10 +35,10 @@ async function loadFile(
   if (!access || !file || access.deletedAt !== null || file.upload_state !== 'active') {
     return { ok: false, response: c.json({ error: 'File not found' }, 404) };
   }
-  if (!hasAtLeastRole(access.effectiveRole, 'previewer')) {
+  if (!can(access.capabilities, 'item.preview')) {
     return { ok: false, response: c.json({ error: 'Forbidden' }, 403) };
   }
-  return { ok: true, file, role: access.effectiveRole! };
+  return { ok: true, file, capabilities: access.capabilities };
 }
 
 function getDriveLockId(body: unknown, c: { req: { header: (name: string) => string | undefined } }): string {
@@ -63,7 +62,7 @@ fileLockRoutes.get('/:id/lock-status', async (c) => {
     fileId,
     lock,
     canWrite:
-      hasAtLeastRole(loaded.role, 'editor') &&
+      can(loaded.capabilities, 'item.edit_content') &&
       (!lock || lock.mode !== 'desktop_exclusive'),
     readOnly: Boolean(lock && lock.mode === 'desktop_exclusive'),
     syncPolicy:
@@ -79,8 +78,8 @@ fileLockRoutes.post('/:id/lock', async (c) => {
   const fileId = c.req.param('id');
   const loaded = await loadFile(c, user, fileId);
   if (!loaded.ok) return loaded.response;
-  if (!hasAtLeastRole(loaded.role, 'editor')) {
-    return c.json({ error: 'Editor permission required to lock' }, 403);
+  if (!can(loaded.capabilities, 'item.edit_content')) {
+    return c.json({ error: 'Content edit permission required to lock' }, 403);
   }
   if (!c.env.FILE_LOCK_HUB) {
     return c.json({ error: 'Lock service unavailable' }, 503);

@@ -5,11 +5,14 @@ export type ClassificationLabel =
   | 'unset';
 
 export type ResourceRole =
+  | 'owner'
+  | 'co_owner'
+  | 'editor'
+  | 'viewer_uploader'
+  | 'previewer_uploader'
   | 'viewer'
   | 'previewer'
-  | 'editor'
-  | 'co_owner'
-  | 'owner';
+  | 'uploader';
 
 export type UserRole = 'sys_admin' | 'sec_admin' | 'member';
 

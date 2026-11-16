@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { FolderTreeMenuAction } from '@/components/FolderTreeContextMenu';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
-import type { FolderSummary } from '@/types/files';
+import type { FolderSummary, ResourceRole } from '@/types/files';
 
 export function useFolderTree({
   syncStore,
@@ -32,7 +32,7 @@ export function useFolderTree({
   const [shareTarget, setShareTarget] = useState<FolderSummary | null>(null);
   const [permissionsTarget, setPermissionsTarget] = useState<{
     folder: FolderSummary;
-    role: 'previewer' | 'viewer' | 'editor' | 'co_owner' | 'owner';
+    role: ResourceRole;
   } | null>(null);
   const [moveTarget, setMoveTarget] = useState<FolderSummary | null>(null);
   const [infoTarget, setInfoTarget] = useState<{

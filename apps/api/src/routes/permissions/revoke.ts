@@ -3,9 +3,9 @@ import { buildAuditLogStmt } from '../../services/audit';
 import {
   countEffectiveOwners,
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../../services/authorization';
+import { can } from '../../services/capabilities';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
 import type { ResourceRole } from '../../types/api';
@@ -45,7 +45,7 @@ export function registerPermissionRevokeRoute(routes: Hono<OidcHonoEnv>) {
     if (!access || access.deletedAt !== null) {
       return c.json({ error: 'Target resource not found' }, 404);
     }
-    if (!hasAtLeastRole(access.effectiveRole, 'co_owner')) {
+    if (!can(access.capabilities, 'permission.manage')) {
       return c.json({ error: 'Forbidden' }, 403);
     }
 

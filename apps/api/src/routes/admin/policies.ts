@@ -15,8 +15,17 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
     const user = getAuthenticatedUser(c);
     const policy = await c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
       .bind(user.tenantId)
-      .first();
-    return c.json({ policy });
+      .first<Record<string, unknown>>();
+    return c.json({
+      policy: policy
+        ? {
+            ...policy,
+            // camelCase projection for API consumers; the raw 0/1 column stays
+            // for D1/backwards-compatible readers.
+            advancedRolesEnabled: policy.advanced_roles_enabled === 1,
+          }
+        : null,
+    });
   });
 
   routes.patch('/policies', async (c) => {
@@ -29,6 +38,7 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       trashRetentionDays?: number;
       aiClassificationMode?: AiClassificationMode;
       aiAutoApplyThreshold?: number | null;
+      advancedRolesEnabled?: boolean;
     } | null;
 
     if (!body || typeof body !== 'object') {
@@ -73,6 +83,13 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       }
       updates.push('ai_classification_mode = ?');
       binds.push(body.aiClassificationMode);
+    }
+    if (body.advancedRolesEnabled !== undefined) {
+      if (typeof body.advancedRolesEnabled !== 'boolean') {
+        return c.json({ error: 'advancedRolesEnabled must be a boolean' }, 400);
+      }
+      updates.push('advanced_roles_enabled = ?');
+      binds.push(body.advancedRolesEnabled ? 1 : 0);
     }
     if (body.aiAutoApplyThreshold !== undefined) {
       if (
@@ -131,8 +148,15 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
 
     const updated = await c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
       .bind(user.tenantId)
-      .first();
-    return c.json({ policy: updated });
+      .first<Record<string, unknown>>();
+    return c.json({
+      policy: updated
+        ? {
+            ...updated,
+            advancedRolesEnabled: updated.advanced_roles_enabled === 1,
+          }
+        : null,
+    });
   });
 
 }

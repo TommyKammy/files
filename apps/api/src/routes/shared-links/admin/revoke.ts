@@ -2,9 +2,9 @@ import { Hono } from 'hono';
 import { buildAuditLogStmt } from '../../../services/audit';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../../../services/authorization';
+import { can } from '../../../services/capabilities';
 import { buildSyncChangeStmt } from '../../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../../services/sync-notifier';
 import type { OidcHonoEnv } from '../../../types/oidc';
@@ -37,7 +37,9 @@ export function registerSharedLinkRevokeRoute(routes: Hono<OidcHonoEnv>) {
         link.target_type,
         link.target_id
       );
-      if (!hasAtLeastRole(access?.effectiveRole, 'editor')) {
+      // Creators may always revoke their own link; anyone else needs
+      // `share_link.manage` (editor+).
+      if (!can(access?.capabilities, 'share_link.manage')) {
         return c.json({ error: 'Forbidden' }, 403);
       }
       targetFolderId = link.target_type === 'folder' ? link.target_id : (access?.folderId ?? null);

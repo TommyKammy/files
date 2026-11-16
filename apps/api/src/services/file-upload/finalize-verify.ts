@@ -1,6 +1,7 @@
 import type { AuthUser } from '../../types/api';
 import { buildAuditLogStmt } from '../audit';
-import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
+import { resolveTargetAccess } from '../authorization';
+import { can } from '../capabilities';
 import {
   FileRow,
   FileUploadError,
@@ -58,7 +59,7 @@ export async function verifyFinalizeUpload(
 
   if (version.uploaded_by !== user.id) {
     const access = await resolveTargetAccess(db, user, 'file', file.id);
-    if (!hasAtLeastRole(access?.effectiveRole, 'editor')) {
+    if (!can(access?.capabilities, 'item.upload_version')) {
       throw new FileUploadError(403, 'FORBIDDEN', 'Forbidden');
     }
   }

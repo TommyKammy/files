@@ -3,6 +3,7 @@ export {
   MAX_FOLDER_DEPTH,
   fetchFolderBreadcrumbsRows,
   getFolderBreadcrumbs,
+  resolveFolderBreadcrumbs,
   validateFolderName,
 } from './folder-closure/shared';
 export type { BreadcrumbItem, FolderRow } from './folder-closure/shared';

@@ -325,11 +325,14 @@ function emptyPermissionSummary(): AdminTrashPermissionSummary {
     userCount: 0,
     groupCount: 0,
     roles: {
-      previewer: 0,
-      viewer: 0,
-      editor: 0,
-      co_owner: 0,
       owner: 0,
+      co_owner: 0,
+      editor: 0,
+      viewer_uploader: 0,
+      previewer_uploader: 0,
+      viewer: 0,
+      previewer: 0,
+      uploader: 0,
     },
     sharedLinkCount: 0,
   };

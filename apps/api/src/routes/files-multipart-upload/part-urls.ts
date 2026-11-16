@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../../services/authorization';
+import { can } from '../../services/capabilities';
 import { type FileVersionRow } from '../../services/file-upload-common';
 import { computeMultipartPlan, MAX_MULTIPART_PARTS, PART_URLS_BATCH_MAX } from '../../services/multipart-storage-provider';
 import { issueSignedMultipartPartUrl } from '../../services/storage-url-provider';
@@ -40,7 +40,7 @@ export function registerMultipartPartUrlsRoute(routes: Hono<OidcHonoEnv>) {
 
     if (version.uploaded_by !== user.id) {
       const access = await resolveTargetAccess(c.env.DB, user, 'file', body.fileId);
-      if (!hasAtLeastRole(access?.effectiveRole, 'editor')) {
+      if (!can(access?.capabilities, 'item.upload_version')) {
         return c.json({ error: 'Forbidden' }, 403);
       }
     }

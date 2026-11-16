@@ -1,9 +1,7 @@
 import { Hono } from 'hono';
 import { assertFileNotLocked, FileLockedError } from '../../services/file-lock';
-import {
-  getAuthenticatedUser,
-  hasAtLeastRole,
-} from '../../services/authorization';
+import { getAuthenticatedUser } from '../../services/authorization';
+import { can } from '../../services/capabilities';
 import {
   type FileRow,
   type FileVersionRow,
@@ -53,7 +51,12 @@ export function registerFileVersionRestoreRoute(routes: Hono<OidcHonoEnv>) {
     if (!loaded) {
       return c.json({ error: 'File not found' }, 404);
     }
-    if (!hasAtLeastRole(loaded.access.effectiveRole, 'editor')) {
+    // Restoring a version writes file content: allow content editors and
+    // version uploaders, but never download-only / preview-only roles.
+    if (
+      !can(loaded.access.capabilities, 'item.upload_version') &&
+      !can(loaded.access.capabilities, 'item.edit_content')
+    ) {
       return c.json({ error: 'Forbidden' }, 403);
     }
 

@@ -4,9 +4,9 @@ import { buildAuditLogStmt } from '../services/audit';
 import { assertFileNotLocked, FileLockedError } from '../services/file-lock';
 import {
   getAuthenticatedUser,
-  hasAtLeastRole,
   resolveTargetAccess,
 } from '../services/authorization';
+import { can } from '../services/capabilities';
 import {
   authorizeFileContentAccess,
   contentIntentFromQuery,
@@ -149,7 +149,7 @@ filesUploadRoutes.get('/:id', async (c) => {
   if (!access || access.deletedAt !== null || access.uploadState !== 'active') {
     return c.json({ error: 'File not found' }, 404);
   }
-  if (!hasAtLeastRole(access.effectiveRole, 'previewer')) {
+  if (!can(access.capabilities, 'item.preview')) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
@@ -170,7 +170,8 @@ filesUploadRoutes.get('/:id', async (c) => {
   return c.json({
     file,
     effectiveRole: access.effectiveRole,
-    canDownload: hasAtLeastRole(access.effectiveRole, 'viewer'),
+    capabilities: access.capabilities,
+    canDownload: can(access.capabilities, 'item.download'),
     versions: versions.results,
   });
 });
@@ -216,7 +217,7 @@ filesUploadRoutes.delete('/:id', async (c) => {
   if (!access || !currentFile || access.deletedAt !== null || access.uploadState !== 'active') {
     return c.json({ error: 'File not found' }, 404);
   }
-  if (!hasAtLeastRole(access.effectiveRole, 'editor')) {
+  if (!can(access.capabilities, 'item.delete')) {
     return c.json({ error: 'Forbidden' }, 403);
   }
   try {
