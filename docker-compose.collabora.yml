@@ -2,7 +2,10 @@
 # Start with: docker compose -f docker-compose.collabora.yml up -d
 services:
   collabora:
-    image: collabora/code:latest
+    build:
+      context: docker/collabora-ja
+      dockerfile: Dockerfile
+    image: files-collabora-ja:latest
     container_name: files-collabora
     ports:
       - "9980:9980"

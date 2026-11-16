@@ -125,3 +125,30 @@ letting Collabora show a misleading WebSocket/proxy error.
 
 For interactive editing tests, upload a real `.docx` / `.xlsx` / `.txt`
 file through the workspace, or seed both `file_versions` and the R2 object.
+
+## Japanese fonts and Hina Mincho default
+
+`docker-compose.collabora.yml` builds `docker/collabora-ja/Dockerfile`, which adds:
+
+- Noto Sans CJK / Noto Serif CJK (Debian `fonts-noto-cjk` + `fonts-noto-cjk-extra`)
+- IPAex Gothic / IPAex Mincho
+- Hina Mincho (`HinaMincho-Regular.ttf`, SIL OFL)
+
+Hina Mincho is prepended to LibreOffice's VCL `LATIN_TEXT`, `CJK_TEXT`, and
+`SERIF` default font lists for every locale, and fontconfig aliases map
+`Calibri`, `Liberation Serif`, `DejaVu Serif`, `MS Mincho`, and `Yu Mincho`
+to Hina Mincho. The result is:
+
+- New/default Japanese text uses Hina Mincho.
+- Existing documents that explicitly embed/specify another font keep it.
+- MS Gothic / Yu Gothic / Meiryo fall back to Noto Sans CJK JP for readability.
+
+Verify after rebuilding:
+
+```bash
+docker compose -f docker-compose.collabora.yml build --no-cache
+docker compose -f docker-compose.collabora.yml up -d
+```
+
+Open a Japanese document; the Collabora font box should show `Hina Mincho`
+for default text, and PDF export should embed `HinaMincho-Regular`.
