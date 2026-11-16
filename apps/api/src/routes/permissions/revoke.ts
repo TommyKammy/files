@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
 import { buildAuditLogStmt } from '../../services/audit';
 import {
   countEffectiveOwners,
@@ -11,6 +10,7 @@ import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
 import type { ResourceRole } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
+
 export function registerPermissionRevokeRoute(routes: Hono<OidcHonoEnv>) {
   /** DELETE /api/permissions/:id — revoke a direct permission with last-owner protection */
   routes.delete('/permissions/:id', async (c) => {

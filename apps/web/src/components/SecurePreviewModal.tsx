@@ -1,36 +1,11 @@
 'use client';
 
-import {
-  AlertTriangle,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  Download,
-  FileWarning,
-  Loader2,
-  ShieldAlert,
-  X,
-} from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, Download, ShieldAlert, X } from 'lucide-react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
-import { DynamicWatermarkOverlay } from '@/components/DynamicWatermarkOverlay';
 import { SecurePreviewContent } from '@/components/SecurePreviewContent';
 import { useSecurePreview } from '@/lib/use-secure-preview';
 import { ModalShell } from '@/components/ModalShell';
-import { ApiClientError, getFileContentUrl } from '@/lib/files-api';
-import {
-  formatBytes,
-  isActiveWebFile,
-  isPdfFile,
-  isPlainTextFile,
-  isSafeImageFile,
-} from '@/lib/formatters';
-import {
-  isEditableTarget,
-  isImeComposingEvent,
-  keyboardScopes,
-} from '@/lib/keyboard-shortcuts';
+import { formatBytes } from '@/lib/formatters';
 import type { ClassificationLabel } from '@/types/files';
 
 export interface PreviewTargetFile {

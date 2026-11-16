@@ -1,8 +1,4 @@
-import type { AuthUser, ClassificationLabel } from '../../types/api';
-import { pickStricterClassification } from '../../utils/classification';
-import { buildAuditLogStmt } from '../audit';
-import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
-import { buildSyncChangeStmt } from '../sync-changes';
+import type { ClassificationLabel } from '../../types/api';
 
 export const SINGLE_UPLOAD_MAX_BYTES = 100 * 1024 * 1024; // < 100 MiB for single PUT
 export const MULTIPART_MAX_BYTES = 5_492_059_111_424; // ~4.995 TiB max S3 object size

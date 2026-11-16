@@ -1,28 +1,11 @@
 import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
-import { buildAuditLogStmt } from '../../services/audit';
 import {
   getAuthenticatedUser,
   hasAtLeastRole,
   resolveTargetAccess,
 } from '../../services/authorization';
-import { bytesToBase64Url, base64UrlToBytes } from '../../services/crypto-utils';
-import {
-  createFolderWithClosures,
-  fetchFolderBreadcrumbsRows,
-  FolderServiceError,
-  type FolderRow,
-  getFolderBreadcrumbs,
-  moveFolderSubtree,
-  restoreFolderSubtree,
-  softDeleteFolderSubtree,
-  validateFolderName,
-} from '../../services/folder-closure-service';
-import { buildSyncChangeStmt, parseExpectedVersionInput } from '../../services/sync-changes';
-import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
-import type { ClassificationLabel } from '../../types/api';
+import { fetchFolderBreadcrumbsRows, type FolderRow, getFolderBreadcrumbs } from '../../services/folder-closure-service';
 import type { OidcHonoEnv } from '../../types/oidc';
-import { VALID_CLASSIFICATIONS } from '../../utils/classification';
 import {
   ChildFileRow,
   FILE_CHILD_COLS,
@@ -32,6 +15,7 @@ import {
   handleFolderError,
   parseLimit,
 } from './shared';
+
 export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET /api/folders/roots — accessible top-level root folders for current user */
   routes.get('/roots', async (c) => {

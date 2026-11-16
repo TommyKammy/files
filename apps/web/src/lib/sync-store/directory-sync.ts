@@ -1,7 +1,15 @@
-import type { SyncDeltaItem, SyncInvalidationSignal, AuthUser, BootstrapResponse, FileItem, FolderChildrenResponse, FolderSummary, OutboxMutationRecord, TenantPolicyRow } from '@/types/files';
+import type {
+  SyncDeltaItem,
+  AuthUser,
+  BootstrapResponse,
+  FileItem,
+  FolderChildrenResponse,
+  FolderSummary,
+  TenantPolicyRow,
+} from '@/types/files';
 import type { PersistedDirectoryRecord, SyncPersistenceAdapter, SyncScopeHint } from '@/lib/sync-idb';
-import type { OutboxExecutionResult, MutationOutbox } from '@/lib/mutation-outbox';
-import type { RealtimeConnectionState, RealtimeSecurityRevocationEvent } from '@/lib/sync-ws';
+import type { MutationOutbox } from '@/lib/mutation-outbox';
+import type { RealtimeSecurityRevocationEvent } from '@/lib/sync-ws';
 
 const ROOT_DIR_KEY = '__ROOT__';
 const DEFAULT_SWR_TTL_MS = 15_000;

@@ -7,21 +7,14 @@ import type { useTableVirtualWindow } from '@/lib/use-virtual-window';
 import {
   isEditableTarget,
   isImeComposingEvent,
-  isInteractiveNonRowTarget,
   isTrashShortcut,
   keyboardScopes,
-  selectKeyRange,
   shouldHandleWorkspaceKey,
-  toggleKeySelection,
 } from '@/lib/keyboard-shortcuts';
 import { handleWorkspaceNavigationKey } from '@/lib/keyboard/workspace-navigation';
 import type { WorkspaceClipboardStore } from '@/lib/workspace-clipboard';
 import { resolveContextSelection } from '@/lib/workspace-actions';
-import {
-  getWorkspaceRowKey,
-  isRowSelectable,
-  type WorkspaceTableRow,
-} from '@/lib/workspace-table-row';
+import { getWorkspaceRowKey, type WorkspaceTableRow } from '@/lib/workspace-table-row';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import type { AuthUser, FileItem } from '@/types/files';
 

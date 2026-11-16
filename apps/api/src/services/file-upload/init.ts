@@ -1,8 +1,6 @@
 import type { AuthUser, ClassificationLabel } from '../../types/api';
 import { pickStricterClassification } from '../../utils/classification';
-import { buildAuditLogStmt } from '../audit';
 import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
-import { buildSyncChangeStmt } from '../sync-changes';
 import {
   FileUploadError,
   MULTIPART_MAX_BYTES,
@@ -12,10 +10,6 @@ import {
   validateFileNameAndExt,
 } from './shared';
 
-/**
- * Initialize a pending file + version record after checking folder RBAC, inherited classification,
- * duplicate active file policy, and tenant storage quota.
- */
 export async function initializePendingUpload(
   db: D1Database,
   user: AuthUser,

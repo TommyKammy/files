@@ -1,27 +1,8 @@
 import { Hono } from 'hono';
-import {
-  getClientIp,
-  getScimContext,
-  insertScimAuditStmt,
-  parseScimPagination,
-  scimError,
-  scimJson,
-  type ScimUserDbRow,
-  toScimUserResource,
-} from '../../services/scim-helpers';
-import {
-  normalizeScimUserPayload,
-  parseScimFilterEq,
-  parseScimUserPatch,
-} from '../../services/scim-parser';
-import {
-  SCIM_LIST_RESPONSE_SCHEMA,
-  type ScimHonoEnv,
-  type ScimListResponse,
-  type ScimUserResource,
-} from '../../types/scim';
+import { getScimContext, insertScimAuditStmt, type ScimUserDbRow } from '../../services/scim-helpers';
+import { type ScimHonoEnv } from '../../types/scim';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
-import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
+import { extractLastSyncSeq } from '../../services/sync-notifier';
 
 export const USER_SELECT_COLUMNS =
   'id, tenant_id, idp_issuer, external_idp_id, email, display_name, department, status, created_at, updated_at';

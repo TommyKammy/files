@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, Search, Shield, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { Loader2, Search, Shield, Trash2, UserPlus, Users } from 'lucide-react';
 import { ModalShell } from '@/components/ModalShell';
 import { ModalError } from '@/components/ui/ModalError';
 import { ModalHeader } from '@/components/ui/ModalHeader';

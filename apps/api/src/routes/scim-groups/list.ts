@@ -1,28 +1,14 @@
 import { Hono } from 'hono';
-import { chunkArray, executeBatchChunks } from '../../utils/batch';
 import {
-  getClientIp,
   getScimContext,
-  insertScimAuditStmt,
   parseScimPagination,
   scimError,
   scimJson,
   type ScimGroupDbRow,
   toScimGroupResource,
 } from '../../services/scim-helpers';
-import {
-  extractGroupMemberIds,
-  isRecord,
-  parseScimFilterEq,
-  parseScimGroupPatch,
-} from '../../services/scim-parser';
-import {
-  SCIM_LIST_RESPONSE_SCHEMA,
-  type ScimGroupMemberRef,
-  type ScimGroupResource,
-  type ScimHonoEnv,
-  type ScimListResponse,
-} from '../../types/scim';
+import { parseScimFilterEq } from '../../services/scim-parser';
+import { SCIM_LIST_RESPONSE_SCHEMA, type ScimGroupResource, type ScimHonoEnv, type ScimListResponse } from '../../types/scim';
 
 const D1_CHUNK_SIZE = 30;
 import {

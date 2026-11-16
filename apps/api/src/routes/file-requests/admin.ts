@@ -6,25 +6,8 @@ import {
   hasAtLeastRole,
   resolveTargetAccess,
 } from '../../services/authorization';
-import {
-  decryptCookiePayload,
-  encryptCookiePayload,
-  generateRandomToken,
-  sha256Hex,
-  timingSafeEqual,
-} from '../../services/crypto-utils';
-import {
-  buildR2ObjectKey,
-  FileUploadError,
-  finalizeUploadedVersion,
-  getTenantQuotaStatus,
-  validateFileNameAndExt,
-} from '../../services/file-upload-common';
-import { getShareUnlockSecret } from '../../services/shared-link-security';
-import { issueSignedStorageUrl } from '../../services/storage-url-provider';
-import { emitTenantSyncSignal } from '../../services/sync-notifier';
-import type { AuthUser, ClassificationLabel } from '../../types/api';
-import type { OidcEnv, OidcHonoEnv } from '../../types/oidc';
+import { generateRandomToken, sha256Hex } from '../../services/crypto-utils';
+import type { OidcHonoEnv } from '../../types/oidc';
 import {
   DANGEROUS_EXTENSIONS,
   DEFAULT_MAX_FILE_SIZE_BYTES,
@@ -33,7 +16,6 @@ import {
   parseAllowedExtensionsJson,
 } from './shared';
 
-/** Authenticated File Request management (`/api/file-requests`) */
 export const fileRequestsRoutes = new Hono<OidcHonoEnv>();
 fileRequestsRoutes.use('*', sessionAuthMiddleware({ required: true }));
 

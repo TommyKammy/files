@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
 import { buildAuditLogStmt } from '../../services/audit';
 import {
   countEffectiveOwners,
@@ -16,6 +15,7 @@ import {
   VALID_RESOURCE_ROLES,
   VALID_TARGET_TYPES,
 } from './shared';
+
 export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
   /** POST /api/permissions — grant or update a direct RBAC role (UPSERT) */
   routes.post('/permissions', async (c) => {

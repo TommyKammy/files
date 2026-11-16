@@ -1,9 +1,4 @@
-import type { AuthUser, ClassificationLabel, ResourceRole } from '../../types/api';
-import {
-  CLASSIFICATION_STRICTNESS,
-  isClassificationStricter,
-  pickStricterClassification,
-} from '../../utils/classification';
+import type { AuthUser } from '../../types/api';
 import { buildAuditLogStmt } from '../audit';
 import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
 import { buildSyncChangeStmt } from '../sync-changes';

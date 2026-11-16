@@ -1,26 +1,4 @@
-import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
-import { buildAuditLogStmt } from '../../services/audit';
-import {
-  getAuthenticatedUser,
-  hasAtLeastRole,
-  resolveTargetAccess,
-} from '../../services/authorization';
-import {
-  buildClassificationChangeStatements,
-  buildClassificationPolicyStatements,
-  resolveFolderClassificationFloor,
-} from '../../services/classification-updater';
-import {
-  type FileRow,
-  FileUploadError,
-  validateFileNameAndExt,
-} from '../../services/file-upload-common';
-import { buildSyncChangeStmt, parseExpectedVersionInput } from '../../services/sync-changes';
-import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
 import type { ClassificationLabel } from '../../types/api';
-import type { OidcHonoEnv } from '../../types/oidc';
-import { isClassificationStricter, pickStricterClassification } from '../../utils/classification';
 
 export const ASSIGNABLE_CLASSIFICATIONS = new Set<ClassificationLabel>([
   'confidential',

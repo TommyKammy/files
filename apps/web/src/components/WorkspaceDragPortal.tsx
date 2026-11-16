@@ -15,11 +15,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
-import {
-  type DragWorkspaceItem,
-  type DropTargetEvaluation,
-  encodeDropFolderId,
-} from '@/lib/drag-drop-controller';
+import { type DragWorkspaceItem, encodeDropFolderId } from '@/lib/drag-drop-controller';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import {
   useWorkspaceDragSession,

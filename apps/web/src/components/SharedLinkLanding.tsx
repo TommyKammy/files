@@ -11,23 +11,11 @@ import {
   Lock,
   ShieldAlert,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
-import {
-  type PreResolvedPreviewGrant,
-  type PreviewTargetFile,
-  SecurePreviewModal,
-} from '@/components/SecurePreviewModal';
+import { SecurePreviewModal } from '@/components/SecurePreviewModal';
 import { useSharedLinkLanding } from '@/lib/use-shared-link-landing';
-import {
-  ApiClientError,
-  buildLoginUrl,
-  getPublicShareMeta,
-  issuePublicShareUrl,
-  verifyPublicSharePassword,
-} from '@/lib/files-api';
+import { buildLoginUrl } from '@/lib/files-api';
 import { formatBytes, formatDateTime } from '@/lib/formatters';
-import type { PublicShareFileMeta, PublicShareMeta } from '@/types/files';
 
 export function SharedLinkLanding({ token }: { token: string }) {
   const {

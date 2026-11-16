@@ -1,36 +1,12 @@
-import type { AuthUser, ClassificationLabel } from '../../types/api';
-import type { CopySubtreeQueueMessage } from '../../types/classification';
-import { chunkArray, executeBatchChunks } from '../../utils/batch';
-import { pickStricterClassification } from '../../utils/classification';
-import { buildAuditLogStmt } from '../audit';
+import type { AuthUser } from '../../types/api';
+import { chunkArray } from '../../utils/batch';
 import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
-import {
-  buildClassificationPolicyStatements,
-  resolveFolderClassificationFloor,
-} from '../classification-updater';
-import {
-  type FileRow,
-  FileUploadError,
-  getTenantQuotaStatus,
-  validateFileNameAndExt,
-} from '../file-upload-common';
-import {
-  type FolderRow,
-  FolderServiceError,
-  MAX_FOLDER_DEPTH,
-  moveFolderSubtree,
-  validateFolderName,
-} from '../folder-closure-service';
-import { buildSyncChangeStmt, getSyncWatermarks } from '../sync-changes';
-import { notifyTenantSyncHub } from '../sync-notifier';
-import type { OidcEnv } from '../../types/oidc';
-
+import { type FileRow, getTenantQuotaStatus, validateFileNameAndExt } from '../file-upload-common';
+import { type FolderRow, MAX_FOLDER_DEPTH, validateFolderName } from '../folder-closure-service';
 import { enqueueCopySubtreeJob } from './copy-async';
 import { executeSyncCopySubtree } from './copy-sync';
 import {
   ASYNC_COPY_CHUNK_NODES,
-  CopyFrontierEntry,
-  CopyJobState,
   CopyWorkspaceResult,
   CopyableFileRow,
   SYNC_COPY_NODE_LIMIT,
@@ -38,14 +14,10 @@ import {
   WorkspaceConflictPolicy,
   WorkspaceOpError,
   allocateCopyName,
-  appendStatsAndFolderCopyStatements,
-  appendStatsDeltasStatements,
-  buildCoWFileCopyStatements,
   dedupeBatchItems,
   findSelectedDescendantFolderSet,
   loadExistingNamesInDestination,
   resolveDestinationContext,
-  resolveLatestSyncSeq,
 } from './shared';
 
 export async function copyWorkspaceItems(

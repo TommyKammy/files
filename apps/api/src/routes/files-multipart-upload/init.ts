@@ -1,38 +1,16 @@
 import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
-import { buildAuditLogStmt } from '../../services/audit';
-import {
-  getAuthenticatedUser,
-  hasAtLeastRole,
-  resolveTargetAccess,
-} from '../../services/authorization';
-import {
-  type FileRow,
-  type FileVersionRow,
-  FileUploadError,
-  finalizeUploadedVersion,
-  initializePendingUpload,
-} from '../../services/file-upload-common';
-import {
-  abortMultipartUpload,
-  type CompletedPartInput,
-  completeMultipartUpload,
-  computeMultipartPlan,
-  INITIAL_SIGNED_PARTS_LIMIT,
-  initiateMultipartUpload,
-  MAX_MULTIPART_PARTS,
-  PART_URLS_BATCH_MAX,
-} from '../../services/multipart-storage-provider';
+import { getAuthenticatedUser } from '../../services/authorization';
+import { initializePendingUpload } from '../../services/file-upload-common';
+import { computeMultipartPlan, INITIAL_SIGNED_PARTS_LIMIT, initiateMultipartUpload } from '../../services/multipart-storage-provider';
 import { issueSignedMultipartPartUrl } from '../../services/storage-url-provider';
-import { emitTenantSyncSignal } from '../../services/sync-notifier';
 import type { ClassificationLabel } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import { VALID_CLASSIFICATIONS } from '../../utils/classification';
-
 import {
   MIN_MULTIPART_INIT_BYTES,
   handleMultipartError,
 } from './shared';
+
 export function registerMultipartInitRoute(routes: Hono<OidcHonoEnv>) {
   /** POST /api/files/multipart/init — start multipart upload & issue up to 50 initial part URLs */
   routes.post('/init', async (c) => {

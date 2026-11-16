@@ -1,5 +1,4 @@
-import type { AuthUser, ClassificationLabel } from '../../types/api';
-import { pickStricterClassification } from '../../utils/classification';
+import type { AuthUser } from '../../types/api';
 import { buildAuditLogStmt } from '../audit';
 import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
 import { buildSyncChangeStmt } from '../sync-changes';
@@ -10,11 +9,6 @@ import {
   getTenantQuotaStatus,
 } from './shared';
 
-/**
- * Verify uploaded R2 object metadata via `BUCKET.head()`, re-validate quota,
- * atomically activate metadata + FTS5 + `tenant_storage_stats` in one `DB.batch()`,
- * and enqueue AI classification if `classification === 'unset'`.
- */
 export async function finalizeUploadedVersion(
   db: D1Database,
   bucket: R2Bucket,

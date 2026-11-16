@@ -1,161 +1,56 @@
 'use client';
 
-import {
-  AlertCircle,
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
-  ChevronRight,
-  Clipboard,
-  ClipboardPaste,
-  Copy,
-  Download,
-  FileText,
-  Folder,
-  FolderInput,
-  FolderPlus,
-  Inbox,
-  Info,
-  Keyboard,
-  LayoutGrid,
-  Link2,
-  List,
-  Loader2,
-  MoreHorizontal,
-  RotateCcw,
-  Scissors,
-  Shield,
-  Sparkles,
-  Star,
-  Tag,
-  Trash2,
-  Undo2,
-  X,
-} from 'lucide-react';
+import { Keyboard, Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppShellRail,
   type WorkspacePaletteActions,
 } from '@/components/AppShellRail';
-import { ClassificationBadge } from '@/components/ClassificationBadge';
-import { ClassificationCell } from '@/components/ClassificationCell';
 import { FileDropzoneUploader } from '@/components/FileDropzoneUploader';
-import { ModalShell } from '@/components/ModalShell';
-import { MoveCopyTreeModal } from '@/components/MoveCopyTreeModal';
-import {
-  type PreviewTargetFile,
-  SecurePreviewModal,
-} from '@/components/SecurePreviewModal';
 import { SignInCard } from '@/components/SignInCard';
-import { WorkspaceBackgroundMenu } from '@/components/WorkspaceBackgroundMenu';
-import {
-  type ContextMenuActionId,
-  WorkspaceContextMenu,
-} from '@/components/WorkspaceContextMenu';
+import { type ContextMenuActionId } from '@/components/WorkspaceContextMenu';
 import type { InspectorTarget } from '@/components/WorkspaceInspectorDrawer';
 import { WorkspaceInspectorOverlay } from '@/components/WorkspaceInspectorOverlay';
-import { WorkspaceEmptyState } from '@/components/WorkspaceEmptyState';
 import { WorkspaceFileListSection } from '@/components/WorkspaceFileListSection';
-import { WorkspaceGridBody } from '@/components/WorkspaceGridBody';
 import { WorkspaceItemCard } from '@/components/WorkspaceItemCard';
 import { WorkspaceItemRow } from '@/components/WorkspaceItemRow';
 import { WorkspaceActionOverlays } from '@/components/WorkspaceActionOverlays';
-import { WorkspaceBreadcrumbs } from '@/components/WorkspaceBreadcrumbs';
 import { WorkspaceClipboardBar } from '@/components/WorkspaceClipboardBar';
-import {
-  WorkspaceManagementModals,
-  type ActiveModal,
-} from '@/components/WorkspaceManagementModals';
+import { WorkspaceManagementModals } from '@/components/WorkspaceManagementModals';
 import { WorkspaceMainHeader } from '@/components/WorkspaceMainHeader';
 import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
-import {
-  WorkspaceUtilityOverlays,
-  type ClassificationPickerState,
-} from '@/components/WorkspaceUtilityOverlays';
-import { WorkspaceSelectionBar } from '@/components/WorkspaceSelectionBar';
-import { WorkspaceSelectionCheckbox } from '@/components/WorkspaceSelectionCheckbox';
+import { WorkspaceUtilityOverlays } from '@/components/WorkspaceUtilityOverlays';
 import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
-import { WorkspaceTableBody } from '@/components/WorkspaceTableBody';
-import { WorkspaceToolbar } from '@/components/WorkspaceToolbar';
 import {
   getDropTargetClassName,
   WorkspaceDragProvider,
 } from '@/components/WorkspaceDragPortal';
-import {
-  type DragWorkspaceItem,
-  ROOT_DROP_ID,
-} from '@/lib/drag-drop-controller';
-import {
-  ApiClientError,
-  getFileContentUrl,
-  listTrash,
-} from '@/lib/files-api';
-import {
-  formatBytes,
-  formatDateTime,
-  hasRoleAtLeast,
-  isPdfFile,
-} from '@/lib/formatters';
+import { type DragWorkspaceItem } from '@/lib/drag-drop-controller';
+import { ApiClientError, getFileContentUrl } from '@/lib/files-api';
+import { hasRoleAtLeast } from '@/lib/formatters';
 import { IntentPrefetcher } from '@/lib/intent-prefetch';
-import {
-  isEditableTarget,
-  isImeComposingEvent,
-  isInteractiveNonRowTarget,
-  isTrashShortcut,
-  keyboardScopes,
-  selectKeyRange,
-  shouldHandleWorkspaceKey,
-  toggleKeySelection,
-} from '@/lib/keyboard-shortcuts';
-import {
-  getWorkspaceSyncStore,
-  useWorkspaceDirectory,
-} from '@/lib/sync-store';
+import { getWorkspaceSyncStore } from '@/lib/sync-store';
 import { useMarqueeSelection } from '@/lib/use-marquee-selection';
-import { useTableVirtualWindow } from '@/lib/use-virtual-window';
 import { useWorkspaceActions } from '@/lib/use-workspace-actions';
 import { useWorkspaceData } from '@/lib/use-workspace-data';
 import { useWorkspaceDialogs } from '@/lib/use-workspace-dialogs';
 import { useWorkspaceInlineRename } from '@/lib/use-workspace-inline-rename';
 import { useWorkspaceKeyboard } from '@/lib/use-workspace-keyboard';
 import { useWorkspaceSelection } from '@/lib/use-workspace-selection';
-import { useWorkspaceTrash } from '@/lib/use-workspace-trash';
 import { useWorkspaceUploads } from '@/lib/use-workspace-uploads';
 import { useWorkspaceVirtualization } from '@/lib/use-workspace-virtualization';
 import { describeWorkspaceRow } from '@/lib/workspace-row-presentation';
-import {
-  getWorkspaceRowKey,
-  isRowControlTarget,
-  isRowSelectable,
-  toDragWorkspaceItem,
-  type InlineRenameState,
-  type WorkspaceTableRow,
-} from '@/lib/workspace-table-row';
+import { getWorkspaceRowKey, isRowSelectable, toDragWorkspaceItem, type WorkspaceTableRow } from '@/lib/workspace-table-row';
 import { useWorkspaceViewPrefs } from '@/lib/use-workspace-view-prefs';
 import {
   getWorkspaceClipboardStore,
   useWorkspaceClipboard,
 } from '@/lib/workspace-clipboard';
-import {
-  buildContextMenuCapabilities,
-  resolveContextSelection,
-  resolvePointerSelection,
-  resolveTargetRows,
-} from '@/lib/workspace-actions';
-import {
-  chunkItemsIntoGridRows,
-  getAriaSortValue,
-  sortWorkspaceFoldersAndFiles,
-} from '@/lib/workspace-sort-and-view';
-import type {
-  ClassificationLabel,
-  FileItem,
-  FolderSummary,
-  ResourceRole,
-  SearchResultItem,
-} from '@/types/files';
+import { resolveContextSelection } from '@/lib/workspace-actions';
+import { sortWorkspaceFoldersAndFiles } from '@/lib/workspace-sort-and-view';
+import type { FileItem, ResourceRole, SearchResultItem } from '@/types/files';
 
 function collectDragItemsForRow(
   row: WorkspaceTableRow,

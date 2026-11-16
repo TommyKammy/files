@@ -1,21 +1,12 @@
 import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../../middleware/session-auth';
-import { buildAuditLogStmt } from '../../services/audit';
 import {
   getAuthenticatedUser,
   requireSecOrSysAdmin,
 } from '../../services/authorization';
-import { buildClassificationChangeStatements } from '../../services/classification-updater';
-import { FileRow } from '../../services/file-upload-common';
-import { buildSyncChangeStmt } from '../../services/sync-changes';
-import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
-import type { ClassificationLabel } from '../../types/api';
-import type { AiClassificationMode } from '../../types/classification';
 import type { OidcHonoEnv } from '../../types/oidc';
-import { isClassificationStricter, pickStricterClassification } from '../../utils/classification';
-
 import type { AuditLogRow } from './shared';
-/** Audit logs API (`/api/audit-logs`) — Keyset paginated over idx_audit_logs_tenant_time */
+
 export const auditLogsRoutes = new Hono<OidcHonoEnv>();
 auditLogsRoutes.use('*', sessionAuthMiddleware({ required: true }), requireSecOrSysAdmin);
 

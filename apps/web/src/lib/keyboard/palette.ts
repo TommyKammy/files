@@ -1,9 +1,4 @@
-import type {
-  ClassificationLabel,
-  FolderSummary,
-  SearchResultItem,
-} from '@/types/files';
-
+import type { FolderSummary, SearchResultItem } from '@/types/files';
 import { parseSearchQuery } from './search';
 
 export type PaletteCommandId =

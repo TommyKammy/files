@@ -1,37 +1,17 @@
 import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
-import { buildAuditLogStmt } from '../../services/audit';
 import {
   getAuthenticatedUser,
   hasAtLeastRole,
   resolveTargetAccess,
 } from '../../services/authorization';
-import {
-  type FileRow,
-  type FileVersionRow,
-  FileUploadError,
-  finalizeUploadedVersion,
-  initializePendingUpload,
-} from '../../services/file-upload-common';
-import {
-  abortMultipartUpload,
-  type CompletedPartInput,
-  completeMultipartUpload,
-  computeMultipartPlan,
-  INITIAL_SIGNED_PARTS_LIMIT,
-  initiateMultipartUpload,
-  MAX_MULTIPART_PARTS,
-  PART_URLS_BATCH_MAX,
-} from '../../services/multipart-storage-provider';
-import { issueSignedMultipartPartUrl } from '../../services/storage-url-provider';
+import { type FileVersionRow, finalizeUploadedVersion } from '../../services/file-upload-common';
+import { type CompletedPartInput, completeMultipartUpload } from '../../services/multipart-storage-provider';
 import { emitTenantSyncSignal } from '../../services/sync-notifier';
-import type { ClassificationLabel } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
-import { VALID_CLASSIFICATIONS } from '../../utils/classification';
-
 import {
   handleMultipartError,
 } from './shared';
+
 export function registerMultipartCompleteRoute(routes: Hono<OidcHonoEnv>) {
   /** POST /api/files/multipart/complete — combine parts, head()-verify size & quota, commit D1 + AI queue */
   routes.post('/complete', async (c) => {

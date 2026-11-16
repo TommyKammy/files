@@ -1,14 +1,6 @@
 'use client';
 
-import {
-  ChevronRight,
-  Folder,
-  FolderOpen,
-  LogOut,
-  Search,
-  ShieldAlert,
-  Trash2,
-} from 'lucide-react';
+import { FolderOpen, LogOut, Search, ShieldAlert, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -20,10 +12,7 @@ import {
 } from '@/components/WorkspaceDragPortal';
 import { ROOT_DROP_ID } from '@/lib/drag-drop-controller';
 import { logoutSession } from '@/lib/files-api';
-import {
-  isImeComposingEvent,
-  keyboardScopes,
-} from '@/lib/keyboard-shortcuts';
+import { isImeComposingEvent } from '@/lib/keyboard-shortcuts';
 import type { WorkspacePaletteActions } from '@/lib/palette-actions';
 import {
   getWorkspaceSyncStore,

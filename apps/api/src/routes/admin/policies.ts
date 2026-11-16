@@ -1,22 +1,14 @@
 import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
 import { buildAuditLogStmt } from '../../services/audit';
-import {
-  getAuthenticatedUser,
-  requireSecOrSysAdmin,
-} from '../../services/authorization';
-import { buildClassificationChangeStatements } from '../../services/classification-updater';
-import { FileRow } from '../../services/file-upload-common';
+import { getAuthenticatedUser } from '../../services/authorization';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
-import type { ClassificationLabel } from '../../types/api';
 import type { AiClassificationMode } from '../../types/classification';
 import type { OidcHonoEnv } from '../../types/oidc';
-import { isClassificationStricter, pickStricterClassification } from '../../utils/classification';
-
 import {
   VALID_AI_MODES,
 } from './shared';
+
 export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET / PATCH /api/admin/policies — tenant governance policy settings */
   routes.get('/policies', async (c) => {

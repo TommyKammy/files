@@ -9,28 +9,16 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DestinationRowButton,
   type DestinationRow,
 } from '@/components/DestinationRowButton';
 import { ModalShell } from '@/components/ModalShell';
 import { useMoveCopyTree } from '@/lib/use-move-copy-tree';
-import { buildDestinationRows } from '@/lib/build-destination-rows';
-import {
-  type DragWorkspaceItem,
-  evaluateDropTarget,
-} from '@/lib/drag-drop-controller';
-import { isImeComposingEvent, keyboardScopes } from '@/lib/keyboard-shortcuts';
-import { type WorkspaceSyncStore, useWorkspaceSyncSnapshot } from '@/lib/sync-store';
-import {
-  evaluateCopyDestination,
-  loadRecentDestinations,
-  type RecentDestinationEntry,
-  recordRecentDestination,
-} from '@/lib/workspace-actions';
-import type { AuthUser, ClassificationLabel, ResourceRole } from '@/types/files';
-
+import { type DragWorkspaceItem } from '@/lib/drag-drop-controller';
+import { isImeComposingEvent } from '@/lib/keyboard-shortcuts';
+import { type WorkspaceSyncStore } from '@/lib/sync-store';
+import type { AuthUser } from '@/types/files';
 
 export function MoveCopyTreeModal({
   items,

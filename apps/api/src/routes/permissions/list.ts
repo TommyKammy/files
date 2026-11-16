@@ -1,20 +1,11 @@
 import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
-import { buildAuditLogStmt } from '../../services/audit';
-import {
-  countEffectiveOwners,
-  getAuthenticatedUser,
-  hasAtLeastRole,
-  resolveTargetAccess,
-} from '../../services/authorization';
-import { buildSyncChangeStmt } from '../../services/sync-changes';
-import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
-import type { ResourceRole } from '../../types/api';
+import { getAuthenticatedUser, hasAtLeastRole, resolveTargetAccess } from '../../services/authorization';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
   PermissionListRow,
   VALID_TARGET_TYPES,
 } from './shared';
+
 export function registerPermissionListRoute(routes: Hono<OidcHonoEnv>) {
   /** GET /api/permissions?targetType=folder|file&targetId=... */
   routes.get('/permissions', async (c) => {

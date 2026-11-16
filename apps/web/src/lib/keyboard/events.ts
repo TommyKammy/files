@@ -1,9 +1,3 @@
-import type {
-  ClassificationLabel,
-  FolderSummary,
-  SearchResultItem,
-} from '@/types/files';
-
 import type { KeyboardScope } from './scopes';
 
 export interface KeyEventLike {

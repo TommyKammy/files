@@ -1,22 +1,11 @@
 import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
-import { buildAuditLogStmt } from '../../services/audit';
-import {
-  getAuthenticatedUser,
-  requireSecOrSysAdmin,
-} from '../../services/authorization';
-import { buildClassificationChangeStatements } from '../../services/classification-updater';
-import { FileRow } from '../../services/file-upload-common';
-import { buildSyncChangeStmt } from '../../services/sync-changes';
-import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
+import { getAuthenticatedUser } from '../../services/authorization';
 import type { ClassificationLabel } from '../../types/api';
-import type { AiClassificationMode } from '../../types/classification';
 import type { OidcHonoEnv } from '../../types/oidc';
-import { isClassificationStricter, pickStricterClassification } from '../../utils/classification';
-
 import {
   StorageStatRow,
 } from './shared';
+
 export function registerStorageStatsRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET /api/admin/storage-stats — O(1) lookup against tenant_storage_stats (no full files scan) */
   routes.get('/storage-stats', async (c) => {

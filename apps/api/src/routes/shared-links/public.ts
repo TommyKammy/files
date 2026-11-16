@@ -5,7 +5,6 @@ import { registerPublicShareMetaRoutes } from './public/meta';
 import { registerPublicSharePasswordRoutes } from './public/password';
 import { registerPublicShareUrlRoutes } from './public/url';
 
-/** Public & session-scoped share delivery routes (`/api/s/:token/*`) */
 export const publicShareRoutes = new Hono<OidcHonoEnv>();
 
 publicShareRoutes.use('*', async (c, next) => {

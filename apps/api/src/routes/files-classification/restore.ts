@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
 import { buildAuditLogStmt } from '../../services/audit';
 import {
   getAuthenticatedUser,
@@ -7,24 +6,17 @@ import {
   resolveTargetAccess,
 } from '../../services/authorization';
 import {
-  buildClassificationChangeStatements,
-  buildClassificationPolicyStatements,
-  resolveFolderClassificationFloor,
-} from '../../services/classification-updater';
-import {
   type FileRow,
   FileUploadError,
   validateFileNameAndExt,
 } from '../../services/file-upload-common';
-import { buildSyncChangeStmt, parseExpectedVersionInput } from '../../services/sync-changes';
+import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
-import type { ClassificationLabel } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
-import { isClassificationStricter, pickStricterClassification } from '../../utils/classification';
-
 import {
   findActiveFileNameConflict,
 } from './shared';
+
 export function registerFileRestoreRoute(routes: Hono<OidcHonoEnv>) {
   /** POST /api/files/:id/restore — restore soft-deleted single file & reindex FTS5 */
   routes.post('/:id/restore', async (c) => {

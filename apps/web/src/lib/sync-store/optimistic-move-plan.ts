@@ -1,9 +1,4 @@
-import {
-  allocateCopyDisplayName,
-  getExtensionFromName,
-  hasRoleAtLeast,
-  pickStricterClassification,
-} from '@/lib/formatters';
+import { allocateCopyDisplayName, getExtensionFromName } from '@/lib/formatters';
 import { checkRoleGuard } from '@/lib/mutation-outbox';
 import type {
   ClassificationLabel,

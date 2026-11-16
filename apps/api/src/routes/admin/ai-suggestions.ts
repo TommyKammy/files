@@ -1,24 +1,17 @@
 import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
-import { buildAuditLogStmt } from '../../services/audit';
-import {
-  getAuthenticatedUser,
-  requireSecOrSysAdmin,
-} from '../../services/authorization';
+import { getAuthenticatedUser } from '../../services/authorization';
 import { buildClassificationChangeStatements } from '../../services/classification-updater';
 import { FileRow } from '../../services/file-upload-common';
-import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
 import type { ClassificationLabel } from '../../types/api';
-import type { AiClassificationMode } from '../../types/classification';
 import type { OidcHonoEnv } from '../../types/oidc';
 import { isClassificationStricter, pickStricterClassification } from '../../utils/classification';
-
 import {
   ASSIGNABLE_LABELS,
   MAX_BULK_APPROVE_ITEMS,
   executeGroupedBatches,
 } from './shared';
+
 export function registerAiSuggestionRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET /api/admin/ai-suggestions — queued AI classification suggestions (uses partial index) */
   routes.get('/ai-suggestions', async (c) => {

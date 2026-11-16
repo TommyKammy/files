@@ -5,7 +5,6 @@ import { registerPublicFileRequestMetaRoute } from './public/meta';
 import { registerPublicFileRequestUploadCompleteRoutes } from './public/upload-complete';
 import { registerPublicFileRequestUploadInitRoute } from './public/upload-init';
 
-/** Public Blind Dropbox API (`/api/fr/:token/*`) */
 export const publicFileRequestsRoutes = new Hono<OidcHonoEnv>();
 
 publicFileRequestsRoutes.use('*', async (c, next) => {

@@ -1,24 +1,17 @@
 import { Hono } from 'hono';
-import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
+import { getCookie, setCookie } from 'hono/cookie';
 import {
   getOidcStateCookieName,
-  getSessionCookieName,
   isLocalDevBypassAllowed,
   LOCAL_DEV_OIDC_STATE_COOKIE,
-  LOCAL_DEV_SESSION_COOKIE,
   OIDC_STATE_COOKIE,
-  readSessionTokenFromRequest,
-  SESSION_COOKIE,
-  sessionAuthMiddleware,
   shouldUseSecureHostCookie,
-  verifyRequestOriginForCsrf,
 } from '../../middleware/session-auth';
 import {
   decryptCookiePayload,
   encryptCookiePayload,
   generateRandomToken,
   sha256Base64Url,
-  sha256Hex,
   timingSafeEqual,
 } from '../../services/crypto-utils';
 import {
@@ -28,9 +21,7 @@ import {
   verifyOidcIdToken,
 } from '../../services/oidc-verifier';
 import { AccountLinkConflictError, syncUserWithD1 } from '../../services/user-sync';
-import type { UserRole } from '../../types/api';
-import type { IdpProviderConfig, OidcEnv, OidcHonoEnv } from '../../types/oidc';
-
+import type { OidcHonoEnv } from '../../types/oidc';
 import {
   OIDC_STATE_TTL_MS,
   OidcStatePayload,
@@ -42,6 +33,7 @@ import {
   resolveProviderById,
   sanitizeReturnTo,
 } from './shared';
+
 export function registerOidcRoutes(routes: Hono<OidcHonoEnv>) {
   routes.get('/auth/login', async (c) => {
     const cookieKey = c.env.OIDC_STATE_COOKIE_KEY;

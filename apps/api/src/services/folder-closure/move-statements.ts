@@ -5,11 +5,7 @@ import {
 } from '../../utils/classification';
 import { buildAuditLogStmt } from '../audit';
 import { buildSyncChangeStmt } from '../sync-changes';
-import {
-  ClassificationStatsBucket,
-  INLINE_CLASSIFICATION_PROPAGATION_LIMIT,
-  type FolderRow,
-} from './shared';
+import { ClassificationStatsBucket, INLINE_CLASSIFICATION_PROPAGATION_LIMIT } from './shared';
 import type { MovePlan } from './move-plan';
 
 export async function buildMoveStatements(

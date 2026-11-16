@@ -1,29 +1,12 @@
 import type { AuthUser, ClassificationLabel } from '../../types/api';
-import type { CopySubtreeQueueMessage } from '../../types/classification';
-import { chunkArray, executeBatchChunks } from '../../utils/batch';
+import { chunkArray } from '../../utils/batch';
 import { pickStricterClassification } from '../../utils/classification';
 import { buildAuditLogStmt } from '../audit';
 import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
-import {
-  buildClassificationPolicyStatements,
-  resolveFolderClassificationFloor,
-} from '../classification-updater';
-import {
-  type FileRow,
-  FileUploadError,
-  getTenantQuotaStatus,
-  validateFileNameAndExt,
-} from '../file-upload-common';
-import {
-  type FolderRow,
-  FolderServiceError,
-  MAX_FOLDER_DEPTH,
-  moveFolderSubtree,
-  validateFolderName,
-} from '../folder-closure-service';
+import { resolveFolderClassificationFloor } from '../classification-updater';
+import { type FileRow, FileUploadError, validateFileNameAndExt } from '../file-upload-common';
+import { type FolderRow, FolderServiceError } from '../folder-closure-service';
 import { buildSyncChangeStmt, getSyncWatermarks } from '../sync-changes';
-import { notifyTenantSyncHub } from '../sync-notifier';
-import type { OidcEnv } from '../../types/oidc';
 
 export const MAX_WORKSPACE_BATCH_ITEMS = 50;
 export const SYNC_COPY_NODE_LIMIT = 100;

@@ -1,34 +1,14 @@
 import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
-import { buildAuditLogStmt } from '../../services/audit';
-import {
-  getAuthenticatedUser,
-  hasAtLeastRole,
-  resolveTargetAccess,
-} from '../../services/authorization';
-import { bytesToBase64Url, base64UrlToBytes } from '../../services/crypto-utils';
-import {
-  createFolderWithClosures,
-  fetchFolderBreadcrumbsRows,
-  FolderServiceError,
-  type FolderRow,
-  getFolderBreadcrumbs,
-  moveFolderSubtree,
-  restoreFolderSubtree,
-  softDeleteFolderSubtree,
-  validateFolderName,
-} from '../../services/folder-closure-service';
-import { buildSyncChangeStmt, parseExpectedVersionInput } from '../../services/sync-changes';
-import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
-import type { ClassificationLabel } from '../../types/api';
+import { getAuthenticatedUser } from '../../services/authorization';
+import { type FolderRow } from '../../services/folder-closure-service';
 import type { OidcHonoEnv } from '../../types/oidc';
-import { VALID_CLASSIFICATIONS } from '../../utils/classification';
 import {
   ChildFileRow,
   FILE_CHILD_COLS,
   FOLDER_CHILD_COLS,
   parseLimit,
 } from './shared';
+
 export function registerFolderTrashRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET /api/folders/trash — top-level soft-deleted folders & files accessible to user */
   routes.get('/trash', async (c) => {

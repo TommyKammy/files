@@ -5,20 +5,12 @@ import {
   Loader2,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { ModalShell } from '@/components/ModalShell';
 import { useCreateFileRequest } from '@/lib/use-create-file-request';
 import { CopyableUrl } from '@/components/ui/CopyableUrl';
 import { ModalError } from '@/components/ui/ModalError';
 import { ModalHeader } from '@/components/ui/ModalHeader';
-import {
-  ApiClientError,
-  createFileRequest,
-  deactivateFileRequest,
-  listFileRequests,
-} from '@/lib/files-api';
 import { formatBytes, formatDateTime } from '@/lib/formatters';
-import type { FileRequestSummary } from '@/types/files';
 
 export function CreateFileRequestModal({
   folderId,

@@ -1,14 +1,10 @@
 'use client';
 
-import { ChevronDown, ChevronRight, Folder, FolderOpen, Info, Loader2, Pin, X } from 'lucide-react';
-
+import { ChevronDown, ChevronRight, Folder, Pin, X } from 'lucide-react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
 import { FolderTreeRow } from '@/components/FolderTreeRow';
 import { useFolderTree } from '@/lib/use-folder-tree';
-import {
-  type FolderTreeMenuAction,
-  FolderTreeContextMenu,
-} from '@/components/FolderTreeContextMenu';
+import { FolderTreeContextMenu } from '@/components/FolderTreeContextMenu';
 import { MoveCopyTreeModal } from '@/components/MoveCopyTreeModal';
 import { PermissionsModal } from '@/components/PermissionsModal';
 import { SharePopover } from '@/components/SharePopover';

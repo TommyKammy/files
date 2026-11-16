@@ -1,43 +1,6 @@
-import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../../middleware/session-auth';
-import { buildAuditLogStmt } from '../../../services/audit';
-import {
-  getAuthenticatedUser,
-  hasAtLeastRole,
-  resolveTargetAccess,
-} from '../../../services/authorization';
-import {
-  decryptCookiePayload,
-  encryptCookiePayload,
-  generateRandomToken,
-  sha256Hex,
-  timingSafeEqual,
-} from '../../../services/crypto-utils';
-import {
-  buildR2ObjectKey,
-  FileUploadError,
-  finalizeUploadedVersion,
-  getTenantQuotaStatus,
-  validateFileNameAndExt,
-} from '../../../services/file-upload-common';
-import { getShareUnlockSecret } from '../../../services/shared-link-security';
-import { issueSignedStorageUrl } from '../../../services/storage-url-provider';
-import { emitTenantSyncSignal } from '../../../services/sync-notifier';
-import type { AuthUser, ClassificationLabel } from '../../../types/api';
-import type { OidcEnv, OidcHonoEnv } from '../../../types/oidc';
-import {
-  DANGEROUS_EXTENSIONS,
-  DEFAULT_RATE_LIMIT_PER_MIN,
-  FileRequestRow,
-  FileRequestRuntimeEnv,
-  SUBMISSION_TOKEN_TTL_MS,
-  SubmissionGrantPayload,
-  appendTimestampSuffix,
-  getClientIp,
-  parseAllowedExtensionsJson,
-  resolveFolderRequestClassification,
-  verifyTurnstileToken,
-} from '../shared';
+import { sha256Hex } from '../../../services/crypto-utils';
+import { FileRequestRow } from '../shared';
+
 export async function loadActiveFileRequest(
   db: D1Database,
   rawToken: string

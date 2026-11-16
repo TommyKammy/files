@@ -1,30 +1,10 @@
-import type { AuthUser, ClassificationLabel } from '../../types/api';
+import type { ClassificationLabel } from '../../types/api';
 import type { CopySubtreeQueueMessage } from '../../types/classification';
-import { chunkArray, executeBatchChunks } from '../../utils/batch';
-import { pickStricterClassification } from '../../utils/classification';
-import { buildAuditLogStmt } from '../audit';
-import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
-import {
-  buildClassificationPolicyStatements,
-  resolveFolderClassificationFloor,
-} from '../classification-updater';
-import {
-  type FileRow,
-  FileUploadError,
-  getTenantQuotaStatus,
-  validateFileNameAndExt,
-} from '../file-upload-common';
-import {
-  type FolderRow,
-  FolderServiceError,
-  MAX_FOLDER_DEPTH,
-  moveFolderSubtree,
-  validateFolderName,
-} from '../folder-closure-service';
-import { buildSyncChangeStmt, getSyncWatermarks } from '../sync-changes';
+import { executeBatchChunks } from '../../utils/batch';
+import { type FileRow } from '../file-upload-common';
+import { type FolderRow } from '../folder-closure-service';
 import { notifyTenantSyncHub } from '../sync-notifier';
 import type { OidcEnv } from '../../types/oidc';
-
 import {
   ASYNC_COPY_CHUNK_NODES,
   CopyJobState,

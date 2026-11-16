@@ -7,7 +7,6 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
 import { AuditLogSection } from '@/components/admin/AuditLogSection';
 import { SharedLinksPolicySection } from '@/components/admin/SharedLinksPolicySection';
@@ -15,30 +14,6 @@ import { StorageStatsSection } from '@/components/admin/StorageStatsSection';
 import { AppShellRail } from '@/components/AppShellRail';
 import { useGovernanceDashboard } from '@/lib/use-governance-dashboard';
 import { LocalDevQuickLoginPanel, SignInCard } from '@/components/SignInCard';
-import {
-  adminEmergencyRevokeSharedLink,
-  ApiClientError,
-  bulkApproveAiSuggestions,
-  fetchAdminAiSuggestions,
-  fetchAdminPolicies,
-  fetchAdminSharedLinks,
-  fetchAdminStorageStats,
-  fetchAuditLogs,
-  updateAdminPolicies,
-} from '@/lib/files-api';
-import { AdminAiBatchCoalescer } from '@/lib/mutation-outbox';
-import {
-  getWorkspaceSyncStore,
-  useWorkspaceSyncSnapshot,
-} from '@/lib/sync-store';
-import type {
-  AdminSharedLinkRow,
-  AiSuggestionItem,
-  AuditLogEntry,
-  ClassificationLabel,
-  StorageStatsResponse,
-  TenantPolicyRow,
-} from '@/types/files';
 
 export function HybridGovernanceDashboard() {
   const {

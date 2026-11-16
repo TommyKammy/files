@@ -9,25 +9,14 @@ import {
   ShieldAlert,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
 import { CopyableUrl } from '@/components/ui/CopyableUrl';
 import { useSharePopover } from '@/lib/use-share-popover';
 import { ModalError } from '@/components/ui/ModalError';
 import { ModalHeader } from '@/components/ui/ModalHeader';
 import { ModalShell } from '@/components/ModalShell';
-import {
-  ApiClientError,
-  createSharedLink,
-  listSharedLinks,
-  revokeSharedLink,
-} from '@/lib/files-api';
 import { formatDateTime } from '@/lib/formatters';
-import type {
-  ClassificationLabel,
-  ShareAccessScope,
-  SharedLinkSummary,
-} from '@/types/files';
+import type { ClassificationLabel, ShareAccessScope } from '@/types/files';
 
 export function SharePopover({
   targetType,

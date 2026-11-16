@@ -1,18 +1,9 @@
 import { Hono } from 'hono';
-import { sessionAuthMiddleware } from '../../middleware/session-auth';
 import { buildAuditLogStmt } from '../../services/audit';
-import {
-  getAuthenticatedUser,
-  requireSecOrSysAdmin,
-} from '../../services/authorization';
-import { buildClassificationChangeStatements } from '../../services/classification-updater';
-import type { FileRow } from '../../services/file-upload-common';
+import { getAuthenticatedUser } from '../../services/authorization';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
-import type { ClassificationLabel } from '../../types/api';
-import type { AiClassificationMode } from '../../types/classification';
 import type { OidcHonoEnv } from '../../types/oidc';
-import { isClassificationStricter, pickStricterClassification } from '../../utils/classification';
 
 export function registerAdminSharedLinkRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET /api/admin/shared-links — active shared links feed for governance monitoring */

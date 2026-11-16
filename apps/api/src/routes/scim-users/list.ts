@@ -1,30 +1,23 @@
 import { Hono } from 'hono';
 import {
-  getClientIp,
   getScimContext,
-  insertScimAuditStmt,
   parseScimPagination,
   scimError,
   scimJson,
   type ScimUserDbRow,
   toScimUserResource,
 } from '../../services/scim-helpers';
-import {
-  normalizeScimUserPayload,
-  parseScimFilterEq,
-  parseScimUserPatch,
-} from '../../services/scim-parser';
+import { parseScimFilterEq } from '../../services/scim-parser';
 import {
   SCIM_LIST_RESPONSE_SCHEMA,
   type ScimHonoEnv,
   type ScimListResponse,
   type ScimUserResource,
 } from '../../types/scim';
-import { buildSyncChangeStmt } from '../../services/sync-changes';
-import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
 import {
   USER_SELECT_COLUMNS,
 } from './shared';
+
 export function registerScimUserListRoutes(routes: Hono<ScimHonoEnv>) {
   routes.get('/', async (c) => {
     const scim = getScimContext(c);

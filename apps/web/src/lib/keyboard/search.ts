@@ -1,8 +1,4 @@
-import type {
-  ClassificationLabel,
-  FolderSummary,
-  SearchResultItem,
-} from '@/types/files';
+import type { ClassificationLabel } from '@/types/files';
 
 export interface ParsedSearchQuery {
   filter: ClassificationLabel | null;

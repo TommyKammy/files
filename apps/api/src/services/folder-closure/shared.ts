@@ -1,12 +1,5 @@
-import type { AuthUser, ClassificationLabel, ResourceRole } from '../../types/api';
-import {
-  CLASSIFICATION_STRICTNESS,
-  isClassificationStricter,
-  pickStricterClassification,
-} from '../../utils/classification';
-import { buildAuditLogStmt } from '../audit';
+import type { AuthUser, ClassificationLabel } from '../../types/api';
 import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
-import { buildSyncChangeStmt } from '../sync-changes';
 
 export const MAX_FOLDER_DEPTH = 20;
 export const INLINE_CLASSIFICATION_PROPAGATION_LIMIT = 100;

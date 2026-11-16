@@ -25,26 +25,8 @@ import {
   updateFileMetadata,
   updateFolder,
 } from '@/lib/files-api';
-import {
-  allocateCopyDisplayName,
-  getExtensionFromName,
-  hasRoleAtLeast,
-  isClassificationFloorViolated,
-  pickStricterClassification,
-} from '@/lib/formatters';
-import {
-  matchesLocalSearchItem,
-  parseSearchQuery,
-} from '@/lib/keyboard-shortcuts';
-import {
-  checkClassificationFloorGuard,
-  checkRoleGuard,
-  MutationOutbox,
-  type OutboxExecutionResult,
-} from '@/lib/mutation-outbox';
+import { MutationOutbox, type OutboxExecutionResult } from '@/lib/mutation-outbox';
 import { applyDeltaChangesToCache } from '@/lib/sync-store/delta';
-import { planOptimisticCopy } from '@/lib/sync-store/optimistic-copy-plan';
-import { planOptimisticMove } from '@/lib/sync-store/optimistic-move-plan';
 import {
   collectDestNameSets as cacheCollectDestNameSets,
   getAncestorClassifications as cacheGetAncestorClassifications,
@@ -63,6 +45,7 @@ import {
   type CacheContext,
   type DirectoryViewModel,
 } from '@/lib/sync-store/cache';
+
 export type { DirectoryViewModel } from '@/lib/sync-store/cache';
 import {
   clearToastsAndUndo,
@@ -103,8 +86,6 @@ import {
   getSyncDbName,
   IndexedDbSyncPersistence,
   type PersistedDirectoryRecord,
-  type PersistedMetaRecord,
-  pruneWorkingSetInMemory,
   readSyncScopeHint,
   type SyncPersistenceAdapter,
   type SyncScopeHint,
@@ -123,11 +104,8 @@ import {
 } from '@/lib/sync-store/realtime';
 import type {
   AuthUser,
-  BatchMoveWorkspaceResponse,
   BootstrapResponse,
-  BreadcrumbItem,
   ClassificationLabel,
-  CopyWorkspaceResponse,
   FileItem,
   FolderChildrenResponse,
   FolderSummary,
@@ -138,7 +116,6 @@ import type {
   SyncDeltaResponse,
   SyncInvalidationSignal,
   TenantPolicyRow,
-  WorkspaceBatchItemRef,
   WorkspaceConflictPolicy,
   WorkspaceToastItem,
 } from '@/types/files';

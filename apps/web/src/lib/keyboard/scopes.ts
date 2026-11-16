@@ -1,8 +1,4 @@
-import type {
-  ClassificationLabel,
-  FolderSummary,
-  SearchResultItem,
-} from '@/types/files';
+
 
 export type KeyboardScope =
   | 'workspace'

@@ -9,26 +9,11 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
 import { ModalShell } from '@/components/ModalShell';
 import { useCommandPalette } from '@/lib/use-command-palette';
-import { logoutSession, searchWorkspaceFiles } from '@/lib/files-api';
 import { formatBytes, formatDateTime } from '@/lib/formatters';
-import {
-  buildPaletteCommands,
-  isImeComposingEvent,
-  keyboardScopes,
-  mergePaletteEntries,
-  type PaletteCommand,
-  type PaletteEntry,
-} from '@/lib/keyboard-shortcuts';
 import type { WorkspacePaletteActions } from '@/lib/palette-actions';
-import {
-  getWorkspaceSyncStore,
-  useWorkspaceSyncSnapshot,
-} from '@/lib/sync-store';
 import type { AuthUser, SearchResultItem } from '@/types/files';
 
 export function CommandPalette({
