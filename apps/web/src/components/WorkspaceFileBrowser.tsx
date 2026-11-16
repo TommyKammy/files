@@ -61,7 +61,10 @@ import {
 } from '@/lib/workspace-clipboard';
 import {
   buildContextMenuCapabilities,
+  isRootCreationRestricted,
+  readFolderStructureMode,
   resolveContextSelection,
+  ROOT_CREATION_NOTICE,
 } from '@/lib/workspace-actions';
 import {
   getTrashEmptyState,
@@ -144,6 +147,12 @@ export function WorkspaceFileBrowser() {
   const breadcrumbs = isTrashView ? [] : directory.breadcrumbs;
   const folders = isTrashView ? trash.folders : directory.folders;
   const files = isTrashView ? trash.files : directory.files;
+  const folderStructureMode = readFolderStructureMode(snapshot.policy);
+  const isSysAdminUser = user?.role === 'sys_admin';
+  const rootCreationRestricted =
+    !isTrashView &&
+    folderId === null &&
+    isRootCreationRestricted(folderStructureMode, isSysAdminUser);
   const trashFilterActive =
     isTrashView &&
     getTrashEmptyState(trash.filters, trash.items.length) ===
@@ -735,6 +744,7 @@ export function WorkspaceFileBrowser() {
     folderId,
     effectiveRole,
     isPrivilegedAdmin,
+    folderStructureMode,
     selectedRows,
     focusedRow,
     error,
@@ -762,6 +772,7 @@ export function WorkspaceFileBrowser() {
         folderCapabilities: directory.capabilities,
         isPrivilegedAdmin,
         isSysAdmin,
+        folderStructureMode,
         hasClipboardItems: Boolean(
           clipboardState && clipboardState.items.length > 0
         ),
@@ -779,6 +790,7 @@ export function WorkspaceFileBrowser() {
       directory.capabilities,
       isPrivilegedAdmin,
       isSysAdmin,
+      folderStructureMode,
       clipboardState,
       resolveRowRole,
     ]
@@ -945,6 +957,10 @@ export function WorkspaceFileBrowser() {
   }, [isTrashView, currentFolder, breadcrumbs, folderId, router]);
 
   const openCreateFolderModal = useCallback(() => {
+    if (rootCreationRestricted) {
+      setError(ROOT_CREATION_NOTICE);
+      return;
+    }
     setFolderNameInput('');
     setFolderClassInput(
       currentFolder?.classification === 'confidential'
@@ -952,7 +968,12 @@ export function WorkspaceFileBrowser() {
         : 'internal'
     );
     setActiveModal({ kind: 'createFolder', parentId: folderId ?? null });
-  }, [currentFolder?.classification, folderId]);
+  }, [
+    currentFolder?.classification,
+    folderId,
+    rootCreationRestricted,
+    setError,
+  ]);
 
   const handleBackgroundContextMenu = useCallback(
     (event: React.MouseEvent) => {
@@ -1114,6 +1135,8 @@ export function WorkspaceFileBrowser() {
     isTrashView,
     isPrivilegedAdmin,
     isSysAdmin,
+    folderId,
+    folderStructureMode,
     effectiveRole,
     folderCapabilities: directory.capabilities,
     canEditRow,
@@ -1358,7 +1381,7 @@ export function WorkspaceFileBrowser() {
           sortBy={listSortBy}
           sortDir={listSortDir}
           selectedRows={selectedRows}
-          canCreateFolder={canCreateFolder}
+          canCreateFolder={canCreateFolder && !rootCreationRestricted}
           canRenameCurrentFolder={canRenameCurrentFolder}
           canShareCurrentFolder={canShareCurrentFolder}
           canManageCurrentFolderPerms={canManageCurrentFolderPerms}
@@ -1372,18 +1395,8 @@ export function WorkspaceFileBrowser() {
           canTrashSelection={selectionCapabilities.canTrash}
           viewMode={viewMode}
           inspectorOpen={inspectorOpen}
-          onNewFolder={() => {
-            setFolderNameInput('');
-            setFolderClassInput(
-              currentFolder?.classification === 'confidential'
-                ? 'confidential'
-                : 'internal'
-            );
-            setActiveModal({
-              kind: 'createFolder',
-              parentId: folderId ?? null,
-            });
-          }}
+          rootCreationRestricted={rootCreationRestricted}
+          onNewFolder={openCreateFolderModal}
           onTogglePin={handleTogglePin}
           onOpenFileRequest={() => {
             if (!currentFolder) return;
@@ -1534,6 +1547,7 @@ export function WorkspaceFileBrowser() {
           loadingMore={loadingMore}
           trashError={trashError}
           trashFilterActive={trashFilterActive}
+          rootCreationRestricted={rootCreationRestricted}
           marqueeSurfaceRef={marqueeSurfaceRef}
           containerRef={virtualWindow.containerRef}
           onMarqueePointerDown={marquee.onPointerDown}
@@ -1644,11 +1658,12 @@ export function WorkspaceFileBrowser() {
         folderCapabilities={directory.capabilities}
         currentFolder={currentFolder}
         viewMode={viewMode}
-        canCreateFolder={canCreateFolder}
+        canCreateFolder={canCreateFolder && !rootCreationRestricted}
         canUploadNew={canUploadNew}
         canPaste={selectionCapabilities.canPaste}
         isPrivilegedAdmin={isPrivilegedAdmin}
         isSysAdmin={isSysAdmin}
+        folderStructureMode={folderStructureMode}
         clipboardState={clipboardState}
         resolveRowRole={resolveRowRole}
         user={user}
@@ -1690,6 +1705,7 @@ export function WorkspaceFileBrowser() {
         <WorkspaceTrashRestoreModal
           item={trashRestoreTarget}
           isSysAdmin={isSysAdmin}
+          folderStructureMode={folderStructureMode}
           syncStore={syncStore}
           onClose={() => setTrashRestoreTarget(null)}
           onSuccess={handleTrashRestoreSuccess}

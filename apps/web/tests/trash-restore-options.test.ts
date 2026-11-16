@@ -199,6 +199,27 @@ test('folder destination evaluation rejects self/descendants and tracks circular
   assert.equal(rootWithoutOwner.allowed, false);
   assert.match(rootWithoutOwner.reason ?? '', /Owner/);
 
+  const rootClosedMember = evaluateTrashRestoreDestination({
+    context: ctx,
+    targetId: null,
+    targetEffectiveRole: 'owner',
+    itemEffectiveRole: 'owner',
+    isSysAdmin: false,
+    folderStructureMode: 'closed',
+  });
+  assert.equal(rootClosedMember.allowed, false);
+  assert.match(rootClosedMember.reason ?? '', /Closed 構成/);
+
+  const rootClosedSysAdmin = evaluateTrashRestoreDestination({
+    context: ctx,
+    targetId: null,
+    targetEffectiveRole: 'owner',
+    itemEffectiveRole: 'owner',
+    isSysAdmin: true,
+    folderStructureMode: 'closed',
+  });
+  assert.equal(rootClosedSysAdmin.allowed, true);
+
   const inaccessible = evaluateTrashRestoreDestination({
     context: ctx,
     targetId: 'folder-private',

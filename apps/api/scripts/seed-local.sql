@@ -50,3 +50,9 @@ VALUES
   ('perm-seed-general-admin', 'tenant-default', 'folder', 'folder-root-general', 'user', 'dev-admin-001', 'owner', 'dev-admin-001'),
   ('perm-seed-general-member', 'tenant-default', 'folder', 'folder-root-general', 'user', 'dev-member-001', 'editor', 'dev-admin-001'),
   ('perm-seed-conf-admin', 'tenant-default', 'folder', 'folder-root-confidential', 'user', 'dev-admin-001', 'owner', 'dev-admin-001');
+
+INSERT OR IGNORE INTO groups (id, tenant_id, name)
+VALUES ('group-e2e-collaborators', 'tenant-default', 'E2E Collaborators');
+
+INSERT OR IGNORE INTO group_members (group_id, user_id)
+VALUES ('group-e2e-collaborators', 'dev-member-001');

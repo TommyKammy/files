@@ -2,6 +2,11 @@ import type { AuthUser } from '../../types/api';
 import { can } from '../capabilities';
 import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
 import {
+  canCreateAtRoot,
+  getFolderStructureMode,
+  ROOT_CREATION_ADMIN_ONLY_MESSAGE,
+} from '../folder-structure';
+import {
   type FolderRow,
   FolderServiceError,
   MAX_FOLDER_DEPTH,
@@ -100,12 +105,22 @@ export async function resolveMovePlan(
         'Cannot move a folder into one of its descendants'
       );
     }
-  } else if (source.parent_id !== null && !hasAtLeastRole(sourceAccess.effectiveRole, 'owner')) {
-    throw new FolderServiceError(
-      403,
-      'FORBIDDEN',
-      'Owner permission required to promote a folder to workspace root'
-    );
+  } else if (source.parent_id !== null) {
+    const mode = await getFolderStructureMode(db, user.tenantId);
+    if (!canCreateAtRoot(mode, user)) {
+      throw new FolderServiceError(
+        403,
+        'ROOT_CREATION_ADMIN_ONLY',
+        ROOT_CREATION_ADMIN_ONLY_MESSAGE
+      );
+    }
+    if (!hasAtLeastRole(sourceAccess.effectiveRole, 'owner')) {
+      throw new FolderServiceError(
+        403,
+        'FORBIDDEN',
+        'Owner permission required to promote a folder to workspace root'
+      );
+    }
   }
 
   // Max depth <= 20 check

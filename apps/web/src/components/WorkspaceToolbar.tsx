@@ -12,6 +12,7 @@ import {
   Star,
 } from 'lucide-react';
 import type { FolderSummary } from '@/types/files';
+import { ROOT_CREATION_NOTICE } from '@/lib/workspace-actions';
 
 export function WorkspaceToolbar({
   isTrashView,
@@ -24,6 +25,7 @@ export function WorkspaceToolbar({
   currentFolder,
   viewMode,
   inspectorOpen,
+  rootCreationRestricted = false,
   onNewFolder,
   onTogglePin,
   onOpenFileRequest,
@@ -43,6 +45,7 @@ export function WorkspaceToolbar({
   currentFolder: FolderSummary | null;
   viewMode: 'list' | 'grid';
   inspectorOpen: boolean;
+  rootCreationRestricted?: boolean;
   onNewFolder: () => void;
   onTogglePin: (folder: FolderSummary) => void;
   onOpenFileRequest: () => void;
@@ -62,7 +65,7 @@ export function WorkspaceToolbar({
     >
       {!isTrashView && (
         <>
-          {canCreateFolder && (
+          {canCreateFolder && !rootCreationRestricted && (
             <button
               type="button"
               onClick={onNewFolder}
@@ -71,6 +74,15 @@ export function WorkspaceToolbar({
               <FolderPlus className="h-3.5 w-3.5 text-blue-600" />
               <span>新規フォルダ</span>
             </button>
+          )}
+
+          {rootCreationRestricted && (
+            <p
+              role="status"
+              className="inline-flex min-h-7 max-w-md items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[0.6875rem] leading-snug text-amber-800"
+            >
+              {ROOT_CREATION_NOTICE}
+            </p>
           )}
 
           {currentFolder && canRenameCurrentFolder && (

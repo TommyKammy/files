@@ -17,6 +17,7 @@ import { useWorkspaceTrashActions } from '@/lib/use-workspace-trash-actions';
 import type {
   AuthUser,
   FileItem,
+  FolderStructureMode,
   FolderSummary,
   ResourceRole,
 } from '@/types/files';
@@ -29,6 +30,7 @@ export function useWorkspaceActions({
   folderId,
   effectiveRole,
   isPrivilegedAdmin,
+  folderStructureMode = 'open',
   selectedRows,
   focusedRow,
   error,
@@ -52,6 +54,7 @@ export function useWorkspaceActions({
   folderId: string | null;
   effectiveRole: ResourceRole;
   isPrivilegedAdmin: boolean;
+  folderStructureMode?: FolderStructureMode;
   selectedRows: WorkspaceTableRow[];
   focusedRow: WorkspaceTableRow | null;
   error: string | null;
@@ -113,6 +116,7 @@ export function useWorkspaceActions({
     getShortcutTargets,
     resolveRowRole,
     isSysAdmin,
+    folderStructureMode,
     setError,
     setSelectedKeys,
     setSelectionAnchorKey,

@@ -1,4 +1,6 @@
 import type {
+  AdminRootFolderListResponse,
+  AdminRootFolderRecord,
   AdminSharedLinkRow,
   AdminTrashListResponse,
   AdminTrashRestoreResponse,
@@ -6,7 +8,9 @@ import type {
   AiSuggestionItem,
   AuditLogEntry,
   ClassificationLabel,
+  FolderStructureMode,
   StorageStatsResponse,
+  TenantPolicyResponse,
   TenantPolicyRow,
   TrashBulkItemRef,
   TrashBulkResponse,
@@ -63,7 +67,7 @@ export function adminEmergencyRevokeSharedLink(
   });
 }
 
-export function fetchAdminPolicies(): Promise<{ policy: TenantPolicyRow }> {
+export function fetchAdminPolicies(): Promise<TenantPolicyResponse> {
   return apiFetch('/api/admin/policies');
 }
 
@@ -76,11 +80,90 @@ export function updateAdminPolicies(payload: {
   aiClassificationMode?: AiClassificationMode;
   aiAutoApplyThreshold?: number | null;
   advancedRolesEnabled?: boolean;
-}): Promise<{ policy: TenantPolicyRow }> {
+  folderStructureMode?: FolderStructureMode;
+}): Promise<TenantPolicyResponse & { policy: TenantPolicyRow }> {
   return apiFetch('/api/admin/policies', {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
+}
+
+export function fetchAdminRootFolders(params?: {
+  search?: string;
+  status?: 'active' | 'archived' | 'all';
+  includeArchived?: boolean;
+  ownerMissingOnly?: boolean;
+}): Promise<AdminRootFolderListResponse> {
+  const qs = new URLSearchParams();
+  if (params?.search?.trim()) qs.set('search', params.search.trim());
+  if (params?.status) qs.set('status', params.status);
+  if (params?.includeArchived !== undefined) {
+    qs.set('includeArchived', params.includeArchived ? '1' : '0');
+  }
+  if (params?.ownerMissingOnly) qs.set('ownerMissingOnly', '1');
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return apiFetch(`/api/admin/root-folders${suffix}`);
+}
+
+export function createAdminRootFolder(payload: {
+  name: string;
+  classification?: ClassificationLabel;
+  isPinned?: boolean;
+  ownerUserId: string;
+  coOwnerUserIds?: string[];
+  coOwnerGroupIds?: string[];
+}): Promise<{ root: AdminRootFolderRecord }> {
+  return apiFetch('/api/admin/root-folders', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function transferAdminRootFolderOwner(
+  folderId: string,
+  payload: {
+    newOwnerUserId: string;
+    demotePreviousOwnersTo?: 'co_owner' | 'editor' | 'revoke';
+  }
+): Promise<{ root: AdminRootFolderRecord }> {
+  return apiFetch(
+    `/api/admin/root-folders/${encodeURIComponent(folderId)}/transfer-owner`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export function grantAdminRootFolderCoOwners(
+  folderId: string,
+  payload: { userIds?: string[]; groupIds?: string[] }
+): Promise<{ root: AdminRootFolderRecord }> {
+  return apiFetch(
+    `/api/admin/root-folders/${encodeURIComponent(folderId)}/co-owners`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export function archiveAdminRootFolder(
+  folderId: string
+): Promise<{ ok: boolean; deletedAt: string }> {
+  return apiFetch(
+    `/api/admin/root-folders/${encodeURIComponent(folderId)}/archive`,
+    { method: 'POST' }
+  );
+}
+
+export function restoreAdminRootFolder(
+  folderId: string
+): Promise<{ ok: boolean; root: AdminRootFolderRecord }> {
+  return apiFetch(
+    `/api/admin/root-folders/${encodeURIComponent(folderId)}/restore`,
+    { method: 'POST' }
+  );
 }
 
 export function fetchAuditLogs(params?: {

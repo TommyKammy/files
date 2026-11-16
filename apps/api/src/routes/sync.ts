@@ -20,6 +20,7 @@ import {
   sha256Hex,
 } from '../services/crypto-utils';
 import type { FolderRow } from '../services/folder-closure-service';
+import { getFolderStructureMode } from '../services/folder-structure';
 import { listAuthorizedSyncDeltas } from '../services/sync-changes';
 import type { OidcHonoEnv } from '../types/oidc';
 
@@ -88,7 +89,20 @@ syncRoutes.get('/bootstrap', async (c) => {
     ),
   ]);
 
-  const policy = (policyRes.results[0] as Record<string, unknown> | undefined) ?? null;
+  const rawPolicy =
+    (policyRes.results[0] as Record<string, unknown> | undefined) ?? null;
+  const folderStructureMode = rawPolicy
+    ? rawPolicy.folder_structure_mode === 'closed'
+      ? 'closed'
+      : 'open'
+    : await getFolderStructureMode(c.env.DB, user.tenantId);
+  const policy = rawPolicy
+    ? {
+        ...rawPolicy,
+        advancedRolesEnabled: rawPolicy.advanced_roles_enabled === 1,
+        folderStructureMode,
+      }
+    : null;
   // Non-linear composition: a folder carrying both `viewer` and `uploader`
   // grants must bootstrap as `viewer_uploader`, not `viewer` (MAX rank loss).
   const mapFolder = (row: FolderRow & { role_list: string | null }) => {
@@ -116,6 +130,7 @@ syncRoutes.get('/bootstrap', async (c) => {
   return c.json({
     user,
     policy,
+    folderStructureMode,
     rootFolders,
     pinnedFolders,
     currentSeq,

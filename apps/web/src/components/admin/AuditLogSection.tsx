@@ -1,6 +1,10 @@
 'use client';
 
-import { Download, Loader2 } from 'lucide-react';
+import { Download, Loader2, X } from 'lucide-react';
+import {
+  formatAuditActionLabel,
+  isRootFolderAuditAction,
+} from '@/lib/admin-audit';
 import { formatAuditDateTime } from '@/lib/formatters';
 import type { AuditLogEntry } from '@/types/files';
 
@@ -10,18 +14,22 @@ export function AuditLogSection({
   auditActionFilter,
   auditStatusFilter,
   auditLoadingMore,
+  auditPresetActions = [],
   onActionFilterChange,
   onStatusFilterChange,
   onLoadMore,
+  onClearPreset,
 }: {
   auditLogs: AuditLogEntry[];
   auditCursor: { createdAt: string; id: string } | null;
   auditActionFilter: string;
   auditStatusFilter: '' | 'allowed' | 'blocked';
   auditLoadingMore: boolean;
+  auditPresetActions?: readonly string[];
   onActionFilterChange: (value: string) => void;
   onStatusFilterChange: (value: '' | 'allowed' | 'blocked') => void;
   onLoadMore: () => void;
+  onClearPreset?: () => void;
 }) {
   const csvQuery = new URLSearchParams({ format: 'csv', limit: '200' });
   if (auditActionFilter.trim()) {
@@ -32,13 +40,35 @@ export function AuditLogSection({
   }
 
   return (
-    <section className="overflow-hidden rounded-lg border border-[#e7e7ea] bg-white">
+    <section
+      id="admin-audit-logs"
+      aria-labelledby="admin-audit-logs-heading"
+      className="scroll-mt-6 overflow-hidden rounded-lg border border-[#e7e7ea] bg-white"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
-        <h2 className="text-sm font-semibold text-slate-900">
+        <h2
+          id="admin-audit-logs-heading"
+          className="text-sm font-semibold text-slate-900"
+        >
           不変監査ログ (Audit Logs — Keyset Pagination)
         </h2>
 
         <div className="flex flex-wrap items-center gap-2">
+          {auditPresetActions.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[0.6875rem] font-medium text-blue-800">
+              <span>ルートフォルダ監査のみ</span>
+              {onClearPreset && (
+                <button
+                  type="button"
+                  aria-label="監査ログのプリセット絞り込みを解除"
+                  onClick={onClearPreset}
+                  className="rounded-full p-0.5 hover:bg-blue-100"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </span>
+          )}
           <input
             id="audit-action-filter"
             name="auditActionFilter"
@@ -106,14 +136,27 @@ export function AuditLogSection({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {auditLogs.map((log) => (
-              <tr key={log.id} className="hover:bg-slate-50/70">
+              <tr
+                key={log.id}
+                className={`hover:bg-slate-50/70 ${
+                  auditPresetActions.length > 0 &&
+                  isRootFolderAuditAction(log.action)
+                    ? 'bg-blue-50/40'
+                    : ''
+                }`}
+              >
                 <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[0.6875rem] text-slate-600">
                   <time dateTime={log.createdAt}>
                     {formatAuditDateTime(log.createdAt)}
                   </time>
                 </td>
-                <td className="px-4 py-2.5 font-mono text-[0.6875rem] font-medium text-slate-900">
-                  {log.action}
+                <td className="px-4 py-2.5">
+                  <span className="block font-mono text-[0.6875rem] font-medium text-slate-900">
+                    {log.action}
+                  </span>
+                  <span className="mt-0.5 block text-[0.625rem] text-slate-500">
+                    {formatAuditActionLabel(log.action)}
+                  </span>
                 </td>
                 <td className="px-4 py-2.5">
                   <span

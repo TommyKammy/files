@@ -22,9 +22,12 @@ import type {
   AiSuggestionItem,
   AuditLogEntry,
   ClassificationLabel,
+  ClosedRootReport,
+  FolderStructureMode,
   StorageStatsResponse,
   TenantPolicyRow,
 } from '@/types/files';
+import { ROOT_FOLDER_AUDIT_ACTIONS } from '@/lib/admin-audit';
 
 export function useGovernanceDashboard() {
   const syncStore = getWorkspaceSyncStore();
@@ -53,6 +56,15 @@ export function useGovernanceDashboard() {
     null
   );
   const advancedRolesDirtyRef = useRef(false);
+  const [folderStructureSaving, setFolderStructureSaving] = useState(false);
+  const [folderStructureError, setFolderStructureError] = useState<
+    string | null
+  >(null);
+  const [folderStructureNotice, setFolderStructureNotice] = useState<
+    string | null
+  >(null);
+  const [closedModeReport, setClosedModeReport] =
+    useState<ClosedRootReport | null>(null);
 
   function setAdvancedRolesDirty(dirty: boolean) {
     advancedRolesDirtyRef.current = dirty;
@@ -64,6 +76,7 @@ export function useGovernanceDashboard() {
     id: string;
   } | null>(null);
   const [auditActionFilter, setAuditActionFilter] = useState('');
+  const [auditActionPreset, setAuditActionPreset] = useState<string[]>([]);
   const [auditStatusFilter, setAuditStatusFilter] = useState<'' | 'allowed' | 'blocked'>('');
   const [auditLoadingMore, setAuditLoadingMore] = useState(false);
 
@@ -99,6 +112,7 @@ export function useGovernanceDashboard() {
           fetchAdminPolicies(),
           fetchAuditLogs({
             action: auditActionFilter.trim() || undefined,
+            actions: auditActionPreset.length > 0 ? auditActionPreset : undefined,
             status: auditStatusFilter || undefined,
             limit: 50,
           }),
@@ -112,6 +126,7 @@ export function useGovernanceDashboard() {
         if (!advancedRolesDirtyRef.current) {
           setPolicy(policyRes.policy);
         }
+        setClosedModeReport(policyRes.closedModeReport ?? null);
         setAuditLogs(logsRes.logs);
         setAuditCursor(logsRes.nextCursor);
       } catch (err) {
@@ -134,6 +149,7 @@ export function useGovernanceDashboard() {
       isPrivilegedAdmin,
       labelFilter,
       auditActionFilter,
+      auditActionPreset,
       auditStatusFilter,
     ]
   );
@@ -374,12 +390,66 @@ export function useGovernanceDashboard() {
     }
   }
 
+  async function handleFolderStructureUpdate(
+    nextMode: FolderStructureMode
+  ): Promise<boolean> {
+    if (folderStructureSaving) return false;
+    setFolderStructureSaving(true);
+    setFolderStructureError(null);
+    setFolderStructureNotice(null);
+    try {
+      const res = await updateAdminPolicies({
+        folderStructureMode: nextMode,
+      });
+      setPolicy(res.policy);
+      setClosedModeReport(res.closedModeReport ?? null);
+      void syncStore.bootstrap({ force: true });
+      setFolderStructureNotice(
+        nextMode === 'closed'
+          ? 'フォルダ構成モードを Closed に変更しました。ルート直下の作成・移動・コピー・復元は sys_admin のみになります。既存フォルダと権限は維持されています。'
+          : 'フォルダ構成モードを Open に変更しました。権限を持つメンバーがルート直下に作成・移動・コピー・復元できます。'
+      );
+      return true;
+    } catch (err) {
+      setFolderStructureError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'フォルダ構成モードの更新に失敗しました'
+      );
+      return false;
+    } finally {
+      setFolderStructureSaving(false);
+    }
+  }
+
+  function handleShowRootFolderAudit() {
+    setAuditActionFilter('');
+    setAuditActionPreset([...ROOT_FOLDER_AUDIT_ACTIONS]);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        document
+          .getElementById('admin-audit-logs')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  }
+
+  function handleClearAuditPreset() {
+    setAuditActionPreset([]);
+  }
+
+  function handleAuditActionFilterChange(value: string) {
+    setAuditActionPreset([]);
+    setAuditActionFilter(value);
+  }
+
   async function handleLoadMoreLogs() {
     if (!auditCursor || auditLoadingMore) return;
     setAuditLoadingMore(true);
     try {
       const res = await fetchAuditLogs({
         action: auditActionFilter.trim() || undefined,
+        actions: auditActionPreset.length > 0 ? auditActionPreset : undefined,
         status: auditStatusFilter || undefined,
         cursorCreatedAt: auditCursor.createdAt,
         cursorId: auditCursor.id,
@@ -417,13 +487,18 @@ export function useGovernanceDashboard() {
     advancedRolesError,
     advancedRolesNotice,
     setAdvancedRolesDirty,
+    folderStructureSaving,
+    folderStructureError,
+    folderStructureNotice,
+    closedModeReport,
     auditLogs,
     auditCursor,
     auditActionFilter,
+    auditActionPreset,
     auditStatusFilter,
     auditLoadingMore,
     setLabelFilter,
-    setAuditActionFilter,
+    setAuditActionFilter: handleAuditActionFilterChange,
     setAuditStatusFilter,
     setPolicy,
     loadAll,
@@ -434,6 +509,9 @@ export function useGovernanceDashboard() {
     handleEmergencyRevoke,
     handlePolicySubmit,
     handleAdvancedRolesUpdate,
+    handleFolderStructureUpdate,
+    handleShowRootFolderAudit,
+    handleClearAuditPreset,
     handleLoadMoreLogs,
   };
 }

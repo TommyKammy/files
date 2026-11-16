@@ -1,6 +1,11 @@
 import { Hono } from 'hono';
 import { buildAuditLogStmt } from '../../services/audit';
 import { getAuthenticatedUser } from '../../services/authorization';
+import {
+  buildClosedRootReport,
+  getFolderStructureMode,
+  type FolderStructureMode,
+} from '../../services/folder-structure';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
 import type { AiClassificationMode } from '../../types/classification';
@@ -9,22 +14,41 @@ import {
   VALID_AI_MODES,
 } from './shared';
 
+function parseFolderStructureMode(value: unknown): FolderStructureMode | null {
+  return value === 'open' || value === 'closed' ? value : null;
+}
+
+function projectPolicy(
+  policy: Record<string, unknown>,
+  folderStructureMode: FolderStructureMode
+): Record<string, unknown> {
+  return {
+    ...policy,
+    // camelCase projection for API consumers; the raw snake_case column stays
+    // for D1/backwards-compatible readers.
+    advancedRolesEnabled: policy.advanced_roles_enabled === 1,
+    folderStructureMode,
+  };
+}
+
 export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET / PATCH /api/admin/policies — tenant governance policy settings */
   routes.get('/policies', async (c) => {
     const user = getAuthenticatedUser(c);
-    const policy = await c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
-      .bind(user.tenantId)
-      .first<Record<string, unknown>>();
+    const [policy, folderStructureMode] = await Promise.all([
+      c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
+        .bind(user.tenantId)
+        .first<Record<string, unknown>>(),
+      getFolderStructureMode(c.env.DB, user.tenantId),
+    ]);
+    const closedModeReport =
+      folderStructureMode === 'closed'
+        ? await buildClosedRootReport(c.env.DB, user.tenantId)
+        : null;
     return c.json({
-      policy: policy
-        ? {
-            ...policy,
-            // camelCase projection for API consumers; the raw 0/1 column stays
-            // for D1/backwards-compatible readers.
-            advancedRolesEnabled: policy.advanced_roles_enabled === 1,
-          }
-        : null,
+      policy: policy ? projectPolicy(policy, folderStructureMode) : null,
+      folderStructureMode,
+      ...(closedModeReport ? { closedModeReport } : {}),
     });
   });
 
@@ -39,6 +63,7 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       aiClassificationMode?: AiClassificationMode;
       aiAutoApplyThreshold?: number | null;
       advancedRolesEnabled?: boolean;
+      folderStructureMode?: unknown;
     } | null;
 
     if (!body || typeof body !== 'object') {
@@ -47,6 +72,30 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
 
     const updates: string[] = [];
     const binds: unknown[] = [];
+
+    if (body.folderStructureMode !== undefined) {
+      if (user.role !== 'sys_admin') {
+        return c.json(
+          {
+            error: 'Only sys_admin can change folder structure mode',
+            code: 'SYS_ADMIN_REQUIRED',
+          },
+          403
+        );
+      }
+      const mode = parseFolderStructureMode(body.folderStructureMode);
+      if (!mode) {
+        return c.json(
+          {
+            error: "folderStructureMode must be 'open' or 'closed'",
+            code: 'INVALID_FOLDER_STRUCTURE_MODE',
+          },
+          400
+        );
+      }
+      updates.push('folder_structure_mode = ?');
+      binds.push(mode);
+    }
 
     if (body.enforceCompanyOnlyLinks !== undefined) {
       updates.push('enforce_company_only_links = ?');
@@ -134,6 +183,9 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
         action: 'admin.policy_updated',
         payload: {
           updatedFields: Object.keys(body),
+          ...(body.folderStructureMode !== undefined
+            ? { folderStructureMode: body.folderStructureMode }
+            : {}),
           updatedAt: nowIso,
         },
         nowIso,
@@ -146,17 +198,20 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       eventKind: 'admin.policy_updated',
     });
 
-    const updated = await c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
-      .bind(user.tenantId)
-      .first<Record<string, unknown>>();
+    const [updated, folderStructureMode] = await Promise.all([
+      c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
+        .bind(user.tenantId)
+        .first<Record<string, unknown>>(),
+      getFolderStructureMode(c.env.DB, user.tenantId),
+    ]);
+    const closedModeReport =
+      folderStructureMode === 'closed'
+        ? await buildClosedRootReport(c.env.DB, user.tenantId)
+        : null;
     return c.json({
-      policy: updated
-        ? {
-            ...updated,
-            advancedRolesEnabled: updated.advanced_roles_enabled === 1,
-          }
-        : null,
+      policy: updated ? projectPolicy(updated, folderStructureMode) : null,
+      folderStructureMode,
+      ...(closedModeReport ? { closedModeReport } : {}),
     });
   });
-
 }

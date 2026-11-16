@@ -11,6 +11,11 @@ import {
   resolveTargetAccess,
 } from '../authorization';
 import { buildClassificationPolicyStatements } from '../classification-updater';
+import {
+  canCreateAtRoot,
+  getFolderStructureMode,
+  ROOT_CREATION_ADMIN_ONLY_MESSAGE,
+} from '../folder-structure';
 import { buildSyncChangeStmt } from '../sync-changes';
 import { extractLastSyncSeq } from '../sync-notifier';
 import {
@@ -116,6 +121,17 @@ export async function restoreFolderWithOptions(
     options.targetParentId !== undefined ? options.targetParentId : folder.parent_id;
   const isMoving = requestedTarget !== folder.parent_id;
   const restoreParentChain = options.restoreParentChain === true;
+
+  if (requestedTarget === null) {
+    const mode = await getFolderStructureMode(db, user.tenantId);
+    if (!canCreateAtRoot(mode, user)) {
+      restoreError(
+        403,
+        'ROOT_CREATION_ADMIN_ONLY',
+        ROOT_CREATION_ADMIN_ONLY_MESSAGE
+      );
+    }
+  }
 
   const originalDestination = await buildRestoreDestinationContext(
     db,

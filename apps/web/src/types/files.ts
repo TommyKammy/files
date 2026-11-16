@@ -45,6 +45,21 @@ export type Capability =
 
 export type UserRole = 'sys_admin' | 'sec_admin' | 'member';
 
+/** Open keeps root creation available; closed restricts root placement to sys_admin. */
+export type FolderStructureMode = 'open' | 'closed';
+
+export interface ClosedRootReport {
+  totalRootFolders: number;
+  missingOwnerCount: number;
+  suspendedOwnerCount: number;
+  roots: Array<{
+    id: string;
+    name: string;
+    ownerMissing: boolean;
+    hasSuspendedOwner: boolean;
+  }>;
+}
+
 export type ShareAccessScope =
   | 'public'
   | 'company_only'
@@ -405,6 +420,7 @@ export interface RestoreFolderOptionsResponse {
 export interface BootstrapResponse {
   user: AuthUser;
   policy: TenantPolicyRow | null;
+  folderStructureMode?: FolderStructureMode;
   rootFolders: FolderSummary[];
   pinnedFolders: FolderSummary[];
   currentSeq: number;
@@ -658,8 +674,60 @@ export interface TenantPolicyRow {
   ai_auto_apply_threshold: number | null;
   advanced_roles_enabled?: number;
   advancedRolesEnabled?: boolean;
+  folder_structure_mode?: FolderStructureMode;
+  folderStructureMode?: FolderStructureMode;
   updated_by: string | null;
   updated_at: string;
+}
+
+export interface TenantPolicyResponse {
+  policy: TenantPolicyRow | null;
+  folderStructureMode?: FolderStructureMode;
+  closedModeReport?: ClosedRootReport;
+}
+
+export interface AdminRootFolderOwner {
+  granteeType: 'user' | 'group';
+  granteeId: string;
+  name: string;
+  email: string | null;
+  status: 'active' | 'suspended';
+}
+
+export interface AdminRootFolderRecord {
+  id: string;
+  name: string;
+  classification: ClassificationLabel;
+  isPinned: boolean;
+  version: number;
+  createdBy: string;
+  createdByName: string;
+  createdByEmail: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  deletedBy: string | null;
+  owners: AdminRootFolderOwner[];
+  coOwners: AdminRootFolderOwner[];
+  itemCount: number;
+  totalBytes: number;
+  ownerMissing: boolean;
+  hasSuspendedOwner: boolean;
+}
+
+export interface AdminRootFolderSummary {
+  totalRootFolders: number;
+  activeRootFolders: number;
+  archivedRootFolders: number;
+  missingOwnerCount: number;
+  suspendedOwnerCount: number;
+  totalBytes: number;
+  folderStructureMode: FolderStructureMode;
+}
+
+export interface AdminRootFolderListResponse {
+  roots: AdminRootFolderRecord[];
+  summary: AdminRootFolderSummary;
 }
 
 export interface AuditLogEntry {

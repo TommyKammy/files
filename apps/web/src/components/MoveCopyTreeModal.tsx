@@ -16,9 +16,10 @@ import {
 import { ModalShell } from '@/components/ModalShell';
 import { useMoveCopyTree } from '@/lib/use-move-copy-tree';
 import { type DragWorkspaceItem } from '@/lib/drag-drop-controller';
+import { ROOT_CREATION_NOTICE } from '@/lib/workspace-actions';
 import { isImeComposingEvent } from '@/lib/keyboard-shortcuts';
 import { type WorkspaceSyncStore } from '@/lib/sync-store';
-import type { AuthUser } from '@/types/files';
+import type { AuthUser, FolderStructureMode } from '@/types/files';
 
 export function MoveCopyTreeModal({
   items,
@@ -26,6 +27,7 @@ export function MoveCopyTreeModal({
   currentFolderId,
   user,
   isSysAdmin,
+  folderStructureMode = 'open',
   syncStore,
   onClose,
   onSuccess,
@@ -35,6 +37,7 @@ export function MoveCopyTreeModal({
   currentFolderId: string | null;
   user: AuthUser;
   isSysAdmin: boolean;
+  folderStructureMode?: FolderStructureMode;
   syncStore: WorkspaceSyncStore;
   onClose: () => void;
   onSuccess: (action: 'move' | 'copy', targetFolderId: string | null) => void;
@@ -56,12 +59,14 @@ export function MoveCopyTreeModal({
     handleCreateInlineFolder,
     executeAction,
     toggleExpand,
+    inlineRootCreationBlocked,
   } = useMoveCopyTree({
     items,
     modeHint,
     currentFolderId,
     user,
     isSysAdmin,
+    folderStructureMode,
     syncStore,
     onClose,
     onSuccess,
@@ -131,14 +136,27 @@ export function MoveCopyTreeModal({
           <button
             type="button"
             onClick={() => setInlineNewFolderOpen((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            disabled={inlineRootCreationBlocked}
+            title={
+              inlineRootCreationBlocked ? ROOT_CREATION_NOTICE : undefined
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45"
           >
             <FolderPlus className="h-3.5 w-3.5 text-blue-600" />
             <span>新規フォルダ</span>
           </button>
         </div>
 
-        {inlineNewFolderOpen && (
+        {inlineRootCreationBlocked && (
+          <p
+            role="status"
+            className="border-b border-amber-100 bg-amber-50 px-4 py-1.5 text-[0.6875rem] text-amber-800"
+          >
+            {ROOT_CREATION_NOTICE}
+          </p>
+        )}
+
+        {inlineNewFolderOpen && !inlineRootCreationBlocked && (
           <div className="flex items-center gap-2 border-b border-blue-100 bg-blue-50/60 px-4 py-2 text-xs">
             <input
               autoFocus

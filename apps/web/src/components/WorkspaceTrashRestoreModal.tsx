@@ -41,6 +41,7 @@ import {
 } from '@/lib/trash-restore-options';
 import type {
   FileItem,
+  FolderStructureMode,
   FolderSummary,
   RestoreDestinationContext,
   TrashItem,
@@ -61,12 +62,14 @@ const LOAD_CONTEXT_ERROR = '復元情報の取得に失敗しました';
 export function WorkspaceTrashRestoreModal({
   item,
   isSysAdmin,
+  folderStructureMode = 'open',
   syncStore,
   onClose,
   onSuccess,
 }: {
   item: TrashItem;
   isSysAdmin: boolean;
+  folderStructureMode?: FolderStructureMode;
   syncStore: WorkspaceSyncStore;
   onClose: () => void;
   onSuccess: (result: TrashRestoreSuccessResult) => void;
@@ -126,6 +129,7 @@ export function WorkspaceTrashRestoreModal({
         targetEffectiveRole: row.effectiveRole,
         itemEffectiveRole: item.effectiveRole ?? null,
         isSysAdmin,
+        folderStructureMode,
         isDescendantOfItem:
           item.type === 'folder'
             ? syncStore.isFolderAncestorOf(item.id, row.folderId)
@@ -136,7 +140,7 @@ export function WorkspaceTrashRestoreModal({
         copyEval: { allowed: evalResult.allowed, reason: evalResult.reason },
       };
     },
-    [context, item, isSysAdmin, syncStore]
+    [context, item, isSysAdmin, folderStructureMode, syncStore]
   );
 
   const refreshDestinationContext = useCallback(
@@ -295,29 +299,28 @@ export function WorkspaceTrashRestoreModal({
     if (!state || !context) return;
     if (!canSubmitTrashRestore(state, { busy, loadingDestination })) return;
 
-    if (
-      state.mode === 'custom' &&
-      state.targetId === null &&
-      item.type === 'folder' &&
-      context.item.parentId !== null &&
-      !isSysAdmin &&
-      !evaluateTrashRestoreDestination({
+    if (state.mode === 'custom' && state.targetId === null) {
+      const rootEvaluation = evaluateTrashRestoreDestination({
         context,
         targetId: null,
         itemEffectiveRole: item.effectiveRole ?? null,
         isSysAdmin,
-      }).allowed
-    ) {
-      setState((prev) =>
-        prev
-          ? {
-              ...prev,
-              error: 'ルートへ復元するには Owner 権限が必要です',
-              errorCode: 'FORBIDDEN',
-            }
-          : prev
-      );
-      return;
+        folderStructureMode,
+      });
+      if (!rootEvaluation.allowed) {
+        setState((prev) =>
+          prev
+            ? {
+                ...prev,
+                error:
+                  rootEvaluation.reason ??
+                  'ルート直下へ復元する権限がありません',
+                errorCode: 'FORBIDDEN',
+              }
+            : prev
+        );
+        return;
+      }
     }
     void performRestore(state);
   }, [
@@ -327,6 +330,7 @@ export function WorkspaceTrashRestoreModal({
     loadingDestination,
     item,
     isSysAdmin,
+    folderStructureMode,
     performRestore,
   ]);
 

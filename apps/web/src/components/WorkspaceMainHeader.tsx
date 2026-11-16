@@ -40,6 +40,7 @@ export function WorkspaceMainHeader({
   canTrashSelection,
   viewMode,
   inspectorOpen,
+  rootCreationRestricted = false,
   onNewFolder,
   onTogglePin,
   onOpenFileRequest,
@@ -80,6 +81,7 @@ export function WorkspaceMainHeader({
   canTrashSelection: boolean;
   viewMode: 'list' | 'grid';
   inspectorOpen: boolean;
+  rootCreationRestricted?: boolean;
   onNewFolder: () => void;
   onTogglePin: (folder: FolderSummary) => void;
   onOpenFileRequest: () => void;
@@ -149,6 +151,7 @@ export function WorkspaceMainHeader({
           currentFolder={currentFolder}
           viewMode={viewMode}
           inspectorOpen={inspectorOpen}
+          rootCreationRestricted={rootCreationRestricted}
           onNewFolder={onNewFolder}
           onTogglePin={onTogglePin}
           onOpenFileRequest={onOpenFileRequest}

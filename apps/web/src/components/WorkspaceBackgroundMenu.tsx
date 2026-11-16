@@ -15,6 +15,7 @@ import {
   MenuSurface,
   type MenuEntry,
 } from '@/components/MenuSurface';
+import { ROOT_CREATION_NOTICE } from '@/lib/workspace-actions';
 
 type BackgroundMenuActionId =
   | 'newFolder'
@@ -33,6 +34,7 @@ export function WorkspaceBackgroundMenu({
   canPaste,
   clipboardCount,
   viewMode,
+  rootCreationRestricted = false,
   returnFocus = null,
   onAction,
   onClose,
@@ -44,6 +46,7 @@ export function WorkspaceBackgroundMenu({
   canPaste: boolean;
   clipboardCount: number;
   viewMode: 'list' | 'grid';
+  rootCreationRestricted?: boolean;
   returnFocus?: HTMLElement | null;
   onAction: (action: BackgroundMenuActionId) => void;
   onClose: () => void;
@@ -52,9 +55,11 @@ export function WorkspaceBackgroundMenu({
     return [
       {
         id: 'newFolder',
-        label: '新しいフォルダ',
+        label: rootCreationRestricted
+          ? `新しいフォルダ（${ROOT_CREATION_NOTICE}）`
+          : '新しいフォルダ',
         icon: <FolderPlus className="h-3.5 w-3.5" />,
-        enabled: canCreate,
+        enabled: canCreate && !rootCreationRestricted,
       },
       {
         id: 'uploadFiles',
@@ -113,6 +118,7 @@ export function WorkspaceBackgroundMenu({
     canPaste,
     clipboardCount,
     viewMode,
+    rootCreationRestricted,
   ]);
 
   return (

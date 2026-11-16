@@ -10,12 +10,40 @@ import type {
   Capability,
   ClassificationLabel,
   FileItem,
+  FolderStructureMode,
   FolderSummary,
   ResourceRole,
 } from '@/types/files';
 
 export const RECENT_DESTINATIONS_STORAGE_KEY = 'files.workspace.recent-dests.v1';
 const MAX_RECENT_DESTINATIONS = 5;
+
+export const ROOT_CREATION_NOTICE =
+  '現在 Closed 構成のため、ルート直下の作成・移動は sys_admin のみ可能です';
+export const ROOT_CREATION_RESTRICTED_REASON =
+  'Closed 構成のため、ルート直下への作成・移動・復元は sys_admin 専用です';
+
+export function readFolderStructureMode(
+  policy:
+    | {
+        folderStructureMode?: FolderStructureMode;
+        folder_structure_mode?: FolderStructureMode;
+      }
+    | null
+    | undefined
+): FolderStructureMode {
+  return policy?.folderStructureMode === 'closed' ||
+    policy?.folder_structure_mode === 'closed'
+    ? 'closed'
+    : 'open';
+}
+
+export function isRootCreationRestricted(
+  mode: FolderStructureMode,
+  isSysAdmin: boolean
+): boolean {
+  return mode === 'closed' && !isSysAdmin;
+}
 
 export interface RecentDestinationEntry {
   id: string | null;
@@ -32,6 +60,7 @@ export interface EvaluateCopyTargetInput {
   targetEffectiveRole?: ResourceRole;
   targetCapabilities?: Capability[];
   isSysAdmin?: boolean;
+  folderStructureMode?: FolderStructureMode;
   isAncestorOf: (ancestorId: string, candidateId: string | null) => boolean;
   resolveItemRole: (item: DragWorkspaceItem) => ResourceRole;
   resolveItemCapabilities?: (item: DragWorkspaceItem) => Capability[] | undefined;
@@ -52,6 +81,7 @@ export function evaluateCopyDestination(
     targetEffectiveRole = 'editor',
     targetCapabilities,
     isSysAdmin = false,
+    folderStructureMode = 'open',
     isAncestorOf,
     resolveItemRole,
     resolveItemCapabilities,
@@ -59,6 +89,17 @@ export function evaluateCopyDestination(
 
   if (items.length === 0) {
     return { allowed: false, promotesToConfidential: false };
+  }
+
+  if (
+    targetFolderId === null &&
+    isRootCreationRestricted(folderStructureMode, isSysAdmin)
+  ) {
+    return {
+      allowed: false,
+      reason: ROOT_CREATION_RESTRICTED_REASON,
+      promotesToConfidential: false,
+    };
   }
 
   const itemAccess = (item: DragWorkspaceItem) => ({
@@ -75,14 +116,6 @@ export function evaluateCopyDestination(
       return {
         allowed: false,
         reason: 'Previewer 権限のアイテムはコピーできません (DLP 保護)',
-        promotesToConfidential: false,
-      };
-    }
-
-    if (item.type === 'file' && targetFolderId === null) {
-      return {
-        allowed: false,
-        reason: 'ファイルはルート直下へコピーできません（フォルダを選択してください）',
         promotesToConfidential: false,
       };
     }
@@ -250,6 +283,7 @@ export function buildContextMenuCapabilities(options: {
   folderCapabilities?: Capability[];
   isPrivilegedAdmin: boolean;
   isSysAdmin: boolean;
+  folderStructureMode?: FolderStructureMode;
   hasClipboardItems: boolean;
   clipboardHasFiles: boolean;
   resolveRowRole: (row: ContextRowTarget) => ResourceRole;
@@ -263,6 +297,7 @@ export function buildContextMenuCapabilities(options: {
     folderCapabilities,
     isPrivilegedAdmin,
     isSysAdmin,
+    folderStructureMode = 'open',
     hasClipboardItems,
     clipboardHasFiles,
     resolveRowRole,
@@ -316,9 +351,14 @@ export function buildContextMenuCapabilities(options: {
   const canPaste =
     hasClipboardItems &&
     canWritePasteDest &&
-    !(pasteDestIsRoot && clipboardHasFiles);
+    !(pasteDestIsRoot && isRootCreationRestricted(folderStructureMode, isSysAdmin));
 
   const hasAnyFile = targets.some((t) => t.kind === 'file');
+  const duplicateDestIsRoot = currentFolderId === null;
+  const duplicateAllowedByMode = !(
+    duplicateDestIsRoot &&
+    isRootCreationRestricted(folderStructureMode, isSysAdmin)
+  );
 
   return {
     isMulti,
@@ -349,6 +389,7 @@ export function buildContextMenuCapabilities(options: {
     canCut: targetCapsByKind('folder.move', 'item.move'),
     canPaste,
     canDuplicate:
+      duplicateAllowedByMode &&
       targets.length > 0 &&
       (isSysAdmin ||
         (targetCaps('item.download') &&

@@ -88,5 +88,22 @@ describe('D1 schema & migrations (0001 + 0002 + 0003)', () => {
       "SELECT COUNT(*) AS cnt FROM file_versions WHERE r2_object_key = 'tenants/t1/objects/shared-cow-v1'"
     ).first<{ cnt: number }>();
     expect(sharedRefCount?.cnt).toBe(2);
+
+    // Migration 0008: open / closed folder structure mode (default open).
+    const [policyCols, policyRow] = await Promise.all([
+      env.DB.prepare('PRAGMA table_info(tenant_policies)').all<{ name: string }>(),
+      env.DB.prepare(
+        "SELECT folder_structure_mode FROM tenant_policies WHERE tenant_id = 't1'"
+      ).first<{ folder_structure_mode: string }>(),
+    ]);
+    expect(policyCols.results.map((column) => column.name)).toContain(
+      'folder_structure_mode'
+    );
+    expect(policyRow?.folder_structure_mode).toBe('open');
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_policies SET folder_structure_mode = 'invalid' WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
   });
 });

@@ -10,12 +10,14 @@ import type { DragWorkspaceItem } from '@/lib/drag-drop-controller';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import {
   buildContextMenuCapabilities,
+  isRootCreationRestricted,
   resolveTargetRows,
   type ContextRowTarget,
 } from '@/lib/workspace-actions';
 import type {
   AuthUser,
   Capability,
+  FolderStructureMode,
   FolderSummary,
   ResourceRole,
   WorkspaceClipboardState,
@@ -55,6 +57,7 @@ export function WorkspaceActionOverlays({
   canPaste,
   isPrivilegedAdmin,
   isSysAdmin,
+  folderStructureMode = 'open',
   clipboardState,
   resolveRowRole,
   user,
@@ -81,6 +84,7 @@ export function WorkspaceActionOverlays({
   canPaste: boolean;
   isPrivilegedAdmin: boolean;
   isSysAdmin: boolean;
+  folderStructureMode?: FolderStructureMode;
   clipboardState: WorkspaceClipboardState | null;
   resolveRowRole: (row: ContextRowTarget) => ResourceRole;
   user: AuthUser | null;
@@ -111,6 +115,7 @@ export function WorkspaceActionOverlays({
           folderCapabilities,
           isPrivilegedAdmin,
           isSysAdmin,
+          folderStructureMode,
           hasClipboardItems: Boolean(clip && clip.items.length > 0),
           clipboardHasFiles: Boolean(
             clip?.items.some((i) => i.type === 'file')
@@ -156,6 +161,10 @@ export function WorkspaceActionOverlays({
           canPaste={canPaste}
           clipboardCount={clipboardState?.items.length ?? 0}
           viewMode={viewMode}
+          rootCreationRestricted={
+            folderId === null &&
+            isRootCreationRestricted(folderStructureMode, isSysAdmin)
+          }
           returnFocus={backgroundMenu.trigger}
           onAction={onBackgroundAction}
           onClose={onCloseBackgroundMenu}
@@ -169,6 +178,7 @@ export function WorkspaceActionOverlays({
           currentFolderId={folderId}
           user={user}
           isSysAdmin={isSysAdmin}
+          folderStructureMode={folderStructureMode}
           syncStore={syncStore}
           onClose={onCloseMoveCopy}
           onSuccess={onMoveCopySuccess}

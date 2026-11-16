@@ -13,6 +13,11 @@ import {
 } from '../../services/file-upload-common';
 import { buildSyncChangeStmt, parseExpectedVersionInput } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
+import {
+  canCreateAtRoot,
+  getFolderStructureMode,
+  ROOT_CREATION_ADMIN_ONLY_MESSAGE,
+} from '../../services/folder-structure';
 import type { OidcHonoEnv } from '../../types/oidc';
 import { pickStricterClassification } from '../../utils/classification';
 import {
@@ -86,6 +91,19 @@ export function registerFileUpdateRoute(routes: Hono<OidcHonoEnv>) {
     const targetFolderId = requestedFolderId !== undefined ? requestedFolderId : file.folder_id;
     const isMoving = targetFolderId !== file.folder_id;
     let nextClassification = file.classification;
+
+    if (isMoving && targetFolderId === null) {
+      const mode = await getFolderStructureMode(c.env.DB, user.tenantId);
+      if (!canCreateAtRoot(mode, user)) {
+        return c.json(
+          {
+            error: ROOT_CREATION_ADMIN_ONLY_MESSAGE,
+            code: 'ROOT_CREATION_ADMIN_ONLY',
+          },
+          403
+        );
+      }
+    }
 
     if (isMoving && targetFolderId !== null) {
       const destAccess = await resolveTargetAccess(c.env.DB, user, 'folder', targetFolderId);

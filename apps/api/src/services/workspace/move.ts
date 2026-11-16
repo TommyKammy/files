@@ -3,6 +3,11 @@ import { hasAtLeastRole, resolveTargetAccess } from '../authorization';
 import { can } from '../capabilities';
 import { type FileRow, validateFileNameAndExt } from '../file-upload-common';
 import { type FolderRow, MAX_FOLDER_DEPTH, moveFolderSubtree } from '../folder-closure-service';
+import {
+  canCreateAtRoot,
+  getFolderStructureMode,
+  ROOT_CREATION_ADMIN_ONLY_MESSAGE,
+} from '../folder-structure';
 import { moveFilesToDestination } from './move-files';
 import {
   BatchMoveResult,
@@ -107,6 +112,22 @@ export async function batchMoveWorkspaceItems(
       (!selectedFolderIdSet.has(entry.row.folder_id) &&
         !strictDescendantFolderSet.has(entry.row.folder_id))
   );
+
+  if (dest.parentId === null) {
+    const movesIntoRoot =
+      rootFoldersToProcess.some((entry) => entry.row.parent_id !== null) ||
+      rootFilesToProcess.some((entry) => entry.row.folder_id !== null);
+    if (movesIntoRoot) {
+      const mode = await getFolderStructureMode(db, user.tenantId);
+      if (!canCreateAtRoot(mode, user)) {
+        throw new WorkspaceOpError(
+          403,
+          'ROOT_CREATION_ADMIN_ONLY',
+          ROOT_CREATION_ADMIN_ONLY_MESSAGE
+        );
+      }
+    }
+  }
 
   const skippedIds: string[] = [];
   const foldersToMove: Array<{

@@ -1,6 +1,15 @@
 import { canAccess } from '@/lib/capabilities';
 import { pickStricterClassification } from '@/lib/formatters';
-import type { Capability, ClassificationLabel, ResourceRole } from '@/types/files';
+import {
+  isRootCreationRestricted,
+  ROOT_CREATION_RESTRICTED_REASON,
+} from '@/lib/workspace-actions';
+import type {
+  Capability,
+  ClassificationLabel,
+  FolderStructureMode,
+  ResourceRole,
+} from '@/types/files';
 
 export const DRAG_THRESHOLD_PX = 6;
 export const DROP_HOVER_PREFETCH_DELAY_MS = 100;
@@ -33,6 +42,7 @@ export interface EvaluateDropTargetInput {
   targetEffectiveRole?: ResourceRole;
   targetCapabilities?: Capability[];
   isSysAdmin?: boolean;
+  folderStructureMode?: FolderStructureMode;
   isAncestorOf: (ancestorId: string, candidateId: string | null) => boolean;
   resolveItemRole: (item: DragWorkspaceItem) => ResourceRole;
   resolveItemCapabilities?: (item: DragWorkspaceItem) => Capability[] | undefined;
@@ -53,6 +63,7 @@ export function evaluateDropTarget(
     targetEffectiveRole = 'editor',
     targetCapabilities,
     isSysAdmin = false,
+    folderStructureMode = 'open',
     isAncestorOf,
     resolveItemRole,
     resolveItemCapabilities,
@@ -77,6 +88,17 @@ export function evaluateDropTarget(
     return {
       allowed: false,
       reason: '同じフォルダ内には移動できません',
+      promotesToConfidential: false,
+    };
+  }
+
+  if (
+    targetFolderId === null &&
+    isRootCreationRestricted(folderStructureMode, isSysAdmin)
+  ) {
+    return {
+      allowed: false,
+      reason: ROOT_CREATION_RESTRICTED_REASON,
       promotesToConfidential: false,
     };
   }
@@ -120,13 +142,6 @@ export function evaluateDropTarget(
         }
       }
     } else {
-      if (targetFolderId === null) {
-        return {
-          allowed: false,
-          reason: 'ファイルはルート直下へ移動できません（フォルダを選択してください）',
-          promotesToConfidential: false,
-        };
-      }
       if (!isSysAdmin && !canAccess(itemAccess(item), 'item.move')) {
         return {
           allowed: false,

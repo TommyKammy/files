@@ -39,7 +39,23 @@ export function revokePermission(permissionId: string): Promise<{ ok: boolean }>
 }
 
 export function searchPrincipals(q: string): Promise<{ principals: PrincipalCandidate[] }> {
-  return apiFetch(`/api/principals/search?q=${encodeURIComponent(q)}`);
+  return apiFetch<{
+    principals: Array<{
+      type: 'user' | 'group';
+      id: string;
+      name?: string;
+      displayName?: string;
+      email: string | null;
+      department?: string | null;
+    }>;
+  }>(`/api/principals/search?q=${encodeURIComponent(q)}`).then((response) => ({
+    principals: response.principals.map((principal) => ({
+      type: principal.type,
+      id: principal.id,
+      name: principal.name ?? principal.displayName ?? principal.id,
+      email: principal.email,
+    })),
+  }));
 }
 
 export function listSharedLinks(

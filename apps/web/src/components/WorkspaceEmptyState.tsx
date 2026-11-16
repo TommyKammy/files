@@ -7,6 +7,7 @@ export function WorkspaceEmptyState({
   folderId,
   uploadOnly = false,
   trashFilterActive = false,
+  rootCreationRestricted = false,
   onClearTrashFilters,
   onContextMenu,
   onClick,
@@ -15,6 +16,7 @@ export function WorkspaceEmptyState({
   folderId: string | null;
   uploadOnly?: boolean;
   trashFilterActive?: boolean;
+  rootCreationRestricted?: boolean;
   onClearTrashFilters?: () => void;
   onContextMenu: (event: React.MouseEvent) => void;
   onClick: (event: React.MouseEvent) => void;
@@ -54,6 +56,8 @@ export function WorkspaceEmptyState({
             ? '削除したアイテムはここに表示されます'
             : uploadOnly
               ? 'アップロード専用のため、既存ファイルの一覧・プレビュー・ダウンロードは表示されません。上のアップロード欄から新しいファイルを追加できます。'
+              : rootCreationRestricted
+                ? '現在 Closed 構成のため、ルート直下の作成・移動は sys_admin のみ可能です。既存ルートフォルダ内では引き続き作成できます。'
               : folderId
                 ? 'ファイルをドロップするか、上の「ファイルを選択」から追加できます'
                 : '「新規フォルダ」からワークスペースを作成できます'}

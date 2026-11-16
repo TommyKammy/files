@@ -7,9 +7,13 @@ import { canAccess } from '@/lib/capabilities';
 import type { WorkspaceTableRow } from '@/lib/workspace-table-row';
 import type {
   Capability,
+  FolderStructureMode,
   ResourceRole,
   WorkspaceClipboardState,
 } from '@/types/files';
+import {
+  isRootCreationRestricted,
+} from '@/lib/workspace-actions';
 
 export function useWorkspacePaletteActions({
   focusedRow,
@@ -17,6 +21,8 @@ export function useWorkspacePaletteActions({
   isTrashView,
   isPrivilegedAdmin,
   isSysAdmin,
+  folderId,
+  folderStructureMode = 'open',
   effectiveRole,
   folderCapabilities,
   canEditRow,
@@ -41,6 +47,8 @@ export function useWorkspacePaletteActions({
   isTrashView: boolean;
   isPrivilegedAdmin: boolean;
   isSysAdmin: boolean;
+  folderId?: string | null;
+  folderStructureMode?: FolderStructureMode;
   effectiveRole: ResourceRole;
   folderCapabilities?: Capability[];
   canEditRow: (row: WorkspaceTableRow) => boolean;
@@ -71,11 +79,15 @@ export function useWorkspacePaletteActions({
     });
     const targets = getShortcutTargets();
     const primary = focusedRow ?? selectedRows[0] ?? null;
+    const rootCreationRestricted =
+      (folderId ?? null) === null &&
+      isRootCreationRestricted(folderStructureMode, isSysAdmin);
 
     return {
       hasTargetItem: Boolean(focusedRow || selectedRows.length > 0),
       canCreateFolder:
         !isTrashView &&
+        !rootCreationRestricted &&
         (isSysAdmin ||
           canAccess(
             { capabilities: folderCapabilities, effectiveRole },
@@ -136,6 +148,7 @@ export function useWorkspacePaletteActions({
         ),
       canPasteClipboard:
         !isTrashView &&
+        !rootCreationRestricted &&
         Boolean(clipboardState && clipboardState.items.length > 0) &&
         (isSysAdmin ||
           canAccess(
@@ -144,6 +157,7 @@ export function useWorkspacePaletteActions({
           )),
       canDuplicateTarget:
         !isTrashView &&
+        !rootCreationRestricted &&
         targets.length > 0 &&
         (isSysAdmin ||
           (canAccess({ capabilities: folderCapabilities }, 'item.upload_new') &&
@@ -195,6 +209,8 @@ export function useWorkspacePaletteActions({
       isTrashView,
       isPrivilegedAdmin,
       isSysAdmin,
+      folderId,
+      folderStructureMode,
       effectiveRole,
       folderCapabilities,
       canEditRow,

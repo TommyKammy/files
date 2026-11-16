@@ -5,6 +5,11 @@ import { resolveTargetAccess } from './authorization';
 import { can } from './capabilities';
 import { buildClassificationPolicyStatements } from './classification-updater';
 import {
+  canCreateAtRoot,
+  getFolderStructureMode,
+  ROOT_CREATION_ADMIN_ONLY_MESSAGE,
+} from './folder-structure';
+import {
   type FileRow,
   FileUploadError,
   validateFileNameAndExt,
@@ -172,6 +177,17 @@ export async function restoreTrashFile(
     : file.folder_id;
   const isMoving = targetFolderId !== file.folder_id;
   const isOriginalDestination = targetFolderId === file.folder_id;
+
+  if (targetFolderId === null) {
+    const mode = await getFolderStructureMode(db, user.tenantId);
+    if (!canCreateAtRoot(mode, user)) {
+      trashRestoreError(
+        403,
+        'ROOT_CREATION_ADMIN_ONLY',
+        ROOT_CREATION_ADMIN_ONLY_MESSAGE
+      );
+    }
+  }
 
   const destination = await buildRestoreDestinationContext(
     db,

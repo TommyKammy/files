@@ -13,11 +13,13 @@ import {
 } from '@/lib/sync-store';
 import {
   evaluateCopyDestination,
+  isRootCreationRestricted,
   loadRecentDestinations,
+  ROOT_CREATION_RESTRICTED_REASON,
   type RecentDestinationEntry,
   recordRecentDestination,
 } from '@/lib/workspace-actions';
-import type { AuthUser } from '@/types/files';
+import type { AuthUser, FolderStructureMode } from '@/types/files';
 import type { DestinationRow } from '@/components/DestinationRowButton';
 
 export function useMoveCopyTree({
@@ -26,6 +28,7 @@ export function useMoveCopyTree({
   currentFolderId,
   user,
   isSysAdmin,
+  folderStructureMode = 'open',
   syncStore,
   onClose,
   onSuccess,
@@ -35,6 +38,7 @@ export function useMoveCopyTree({
   currentFolderId: string | null;
   user: AuthUser;
   isSysAdmin: boolean;
+  folderStructureMode?: FolderStructureMode;
   syncStore: WorkspaceSyncStore;
   onClose: () => void;
   onSuccess: (action: 'move' | 'copy', targetFolderId: string | null) => void;
@@ -136,6 +140,7 @@ export function useMoveCopyTree({
         targetAncestorClassifications,
         targetEffectiveRole: row.effectiveRole,
         isSysAdmin,
+        folderStructureMode,
         isAncestorOf,
         resolveItemRole,
       });
@@ -147,13 +152,14 @@ export function useMoveCopyTree({
         targetAncestorClassifications,
         targetEffectiveRole: row.effectiveRole,
         isSysAdmin,
+        folderStructureMode,
         isAncestorOf,
         resolveItemRole,
       });
 
       return { moveEval, copyEval };
     },
-    [syncStore, items, isSysAdmin]
+    [syncStore, items, isSysAdmin, folderStructureMode]
   );
 
   const selectedEval = useMemo(
@@ -204,6 +210,13 @@ export function useMoveCopyTree({
     const trimmed = inlineNewFolderName.trim();
     if (!trimmed) return;
     const parentId = selectedRow?.folderId ?? null;
+    if (
+      parentId === null &&
+      isRootCreationRestricted(folderStructureMode, isSysAdmin)
+    ) {
+      setActionError(ROOT_CREATION_RESTRICTED_REASON);
+      return;
+    }
     const parentClass = selectedRow?.classification ?? 'internal';
     const res = syncStore.optimisticCreateFolder({
       parentId,
@@ -222,7 +235,18 @@ export function useMoveCopyTree({
     setInlineNewFolderName('');
     setInlineNewFolderOpen(false);
     setActionError(null);
-  }, [inlineNewFolderName, selectedRow, syncStore, toggleExpand]);
+  }, [
+    inlineNewFolderName,
+    selectedRow,
+    syncStore,
+    toggleExpand,
+    folderStructureMode,
+    isSysAdmin,
+  ]);
+
+  const inlineRootCreationBlocked =
+    (selectedRow?.folderId ?? null) === null &&
+    isRootCreationRestricted(folderStructureMode, isSysAdmin);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -338,5 +362,6 @@ export function useMoveCopyTree({
     handleCreateInlineFolder,
     executeAction,
     toggleExpand,
+    inlineRootCreationBlocked,
   };
 }

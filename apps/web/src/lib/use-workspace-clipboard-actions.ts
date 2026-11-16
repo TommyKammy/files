@@ -4,13 +4,21 @@ import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { DragWorkspaceItem } from '@/lib/drag-drop-controller';
 import { canAccess } from '@/lib/capabilities';
+import {
+  isRootCreationRestricted,
+  ROOT_CREATION_RESTRICTED_REASON,
+} from '@/lib/workspace-actions';
 import type { WorkspaceClipboardStore } from '@/lib/workspace-clipboard';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import {
   toDragWorkspaceItem,
   type WorkspaceTableRow,
 } from '@/lib/workspace-table-row';
-import type { AuthUser, ResourceRole } from '@/types/files';
+import type {
+  AuthUser,
+  FolderStructureMode,
+  ResourceRole,
+} from '@/types/files';
 
 export function useWorkspaceClipboardActions({
   syncStore,
@@ -22,6 +30,7 @@ export function useWorkspaceClipboardActions({
   getShortcutTargets,
   resolveRowRole,
   isSysAdmin,
+  folderStructureMode = 'open',
   setError,
   setSelectedKeys,
   setSelectionAnchorKey,
@@ -38,6 +47,7 @@ export function useWorkspaceClipboardActions({
   ) => WorkspaceTableRow[];
   resolveRowRole: (row: WorkspaceTableRow) => ResourceRole;
   isSysAdmin: boolean;
+  folderStructureMode?: FolderStructureMode;
   setError: (message: string | null) => void;
   setSelectedKeys: Dispatch<SetStateAction<Set<string>>>;
   setSelectionAnchorKey: (key: string | null) => void;
@@ -172,6 +182,17 @@ export function useWorkspaceClipboardActions({
         targetParentOverride !== undefined
           ? targetParentOverride
           : folderId;
+      if (
+        destId === null &&
+        isRootCreationRestricted(folderStructureMode, isSysAdmin)
+      ) {
+        setError(ROOT_CREATION_RESTRICTED_REASON);
+        syncStore.pushToast({
+          kind: 'warning',
+          message: ROOT_CREATION_RESTRICTED_REASON,
+        });
+        return;
+      }
       const refs = clip.items.map((it) => ({ type: it.type, id: it.id }));
 
       setError(null);
@@ -213,6 +234,8 @@ export function useWorkspaceClipboardActions({
       isTrashView,
       clipboardStore,
       folderId,
+      folderStructureMode,
+      isSysAdmin,
       syncStore,
       setError,
       setSelectedKeys,
@@ -222,6 +245,14 @@ export function useWorkspaceClipboardActions({
   const handleDuplicateTargets = useCallback(
     (explicitTargets?: WorkspaceTableRow[]) => {
       if (isTrashView) return;
+      if (folderId === null && isRootCreationRestricted(folderStructureMode, isSysAdmin)) {
+        setError(ROOT_CREATION_RESTRICTED_REASON);
+        syncStore.pushToast({
+          kind: 'warning',
+          message: ROOT_CREATION_RESTRICTED_REASON,
+        });
+        return;
+      }
       const targets = getShortcutTargets(explicitTargets);
       if (targets.length === 0) return;
       setError(null);
@@ -242,7 +273,15 @@ export function useWorkspaceClipboardActions({
         });
       }
     },
-    [isTrashView, getShortcutTargets, syncStore, folderId, setError]
+    [
+      isTrashView,
+      getShortcutTargets,
+      syncStore,
+      folderId,
+      folderStructureMode,
+      isSysAdmin,
+      setError,
+    ]
   );
 
   const handleOpenMoveCopyModal = useCallback(

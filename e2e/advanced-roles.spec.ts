@@ -145,11 +145,16 @@ test.describe('高度ロール UI / アップロード専用・プレビュー�
       .first();
     await expect(section).toBeVisible();
     await expect(
-      section.getByText('[P9-3]', { exact: false }).first()
+      section.getByRole('heading', {
+        name: 'フォルダ構成モード (Open / Closed)',
+      })
     ).toBeVisible();
     await expect(
-      section.getByText(/オープン \/ クローズド構成/).first()
+      section.getByText(/既存のルートフォルダ・配下フォルダ・ファイル・権限は/).first()
     ).toBeVisible();
+    await expect(
+      section.locator('input[name="folderStructureMode"][value="open"]')
+    ).toBeChecked();
 
     const toggle = admin.page.locator('#policy-advanced-roles-enabled');
     await expect(toggle).toBeVisible();

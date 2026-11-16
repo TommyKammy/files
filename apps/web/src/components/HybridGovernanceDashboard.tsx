@@ -9,6 +9,7 @@ import {
 import Link from 'next/link';
 import { AccessControlSettingsSection } from '@/components/admin/AccessControlSettingsSection';
 import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
+import { AdminRootFoldersSection } from '@/components/admin/AdminRootFoldersSection';
 import { AdminTrashSection } from '@/components/admin/AdminTrashSection';
 import { AuditLogSection } from '@/components/admin/AuditLogSection';
 import { SharedLinksPolicySection } from '@/components/admin/SharedLinksPolicySection';
@@ -38,9 +39,14 @@ export function HybridGovernanceDashboard() {
     advancedRolesError,
     advancedRolesNotice,
     setAdvancedRolesDirty,
+    folderStructureSaving,
+    folderStructureError,
+    folderStructureNotice,
+    closedModeReport,
     auditLogs,
     auditCursor,
     auditActionFilter,
+    auditActionPreset,
     auditStatusFilter,
     auditLoadingMore,
     setLabelFilter,
@@ -55,6 +61,9 @@ export function HybridGovernanceDashboard() {
     handleEmergencyRevoke,
     handlePolicySubmit,
     handleAdvancedRolesUpdate,
+    handleFolderStructureUpdate,
+    handleShowRootFolderAudit,
+    handleClearAuditPreset,
     handleLoadMoreLogs,
   } = useGovernanceDashboard();
 
@@ -193,7 +202,13 @@ export function HybridGovernanceDashboard() {
           saving={advancedRolesSaving}
           error={advancedRolesError}
           notice={advancedRolesNotice}
+          canManageFolderStructure={user.role === 'sys_admin'}
+          folderStructureSaving={folderStructureSaving}
+          folderStructureError={folderStructureError}
+          folderStructureNotice={folderStructureNotice}
+          closedModeReport={closedModeReport}
           onSave={handleAdvancedRolesUpdate}
+          onSaveFolderStructureMode={handleFolderStructureUpdate}
           onDirtyChange={setAdvancedRolesDirty}
         />
 
@@ -208,15 +223,22 @@ export function HybridGovernanceDashboard() {
 
         <AdminTrashSection user={user} />
 
+        <AdminRootFoldersSection
+          user={user}
+          onShowAuditLogs={handleShowRootFolderAudit}
+        />
+
         <AuditLogSection
           auditLogs={auditLogs}
           auditCursor={auditCursor}
           auditActionFilter={auditActionFilter}
           auditStatusFilter={auditStatusFilter}
           auditLoadingMore={auditLoadingMore}
+          auditPresetActions={auditActionPreset}
           onActionFilterChange={setAuditActionFilter}
           onStatusFilterChange={setAuditStatusFilter}
           onLoadMore={handleLoadMoreLogs}
+          onClearPreset={handleClearAuditPreset}
         />
 
       </main>

@@ -5,6 +5,11 @@ import { can } from '../capabilities';
 import { resolveTargetAccess } from '../authorization';
 import { buildSyncChangeStmt } from '../sync-changes';
 import {
+  canCreateAtRoot,
+  getFolderStructureMode,
+  ROOT_CREATION_ADMIN_ONLY_MESSAGE,
+} from '../folder-structure';
+import {
   FolderRow,
   FolderServiceError,
   MAX_FOLDER_DEPTH,
@@ -24,6 +29,17 @@ export async function createFolderWithClosures(
 ): Promise<FolderRow> {
   const name = validateFolderName(input.name);
   const parentId = input.parentId ?? null;
+
+  if (parentId === null) {
+    const mode = await getFolderStructureMode(db, user.tenantId);
+    if (!canCreateAtRoot(mode, user)) {
+      throw new FolderServiceError(
+        403,
+        'ROOT_CREATION_ADMIN_ONLY',
+        ROOT_CREATION_ADMIN_ONLY_MESSAGE
+      );
+    }
+  }
 
   let parentFolder: FolderRow | null = null;
   if (parentId !== null) {

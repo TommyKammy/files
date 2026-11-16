@@ -66,15 +66,38 @@ test('evaluateCopyDestination blocks previewer DLP, root loose files, cycles, an
   assert.equal(previewerBlocked.allowed, false);
   assert.match(previewerBlocked.reason ?? '', /Previewer/);
 
-  const rootFileBlocked = evaluateCopyDestination({
+  const rootFileOpen = evaluateCopyDestination({
     items: [dragFile],
     targetFolderId: null,
     targetClassification: 'unset',
     isAncestorOf: () => false,
     resolveItemRole: () => 'viewer',
   });
-  assert.equal(rootFileBlocked.allowed, false);
-  assert.match(rootFileBlocked.reason ?? '', /ルート/);
+  assert.equal(rootFileOpen.allowed, true);
+
+  const rootFileClosedMember = evaluateCopyDestination({
+    items: [dragFile],
+    targetFolderId: null,
+    targetClassification: 'unset',
+    isSysAdmin: false,
+    folderStructureMode: 'closed',
+    isAncestorOf: () => false,
+    resolveItemRole: () => 'viewer',
+  });
+  assert.equal(rootFileClosedMember.allowed, false);
+  assert.match(rootFileClosedMember.reason ?? '', /Closed 構成/);
+  assert.match(rootFileClosedMember.reason ?? '', /sys_admin 専用/);
+
+  const rootFileClosedSysAdmin = evaluateCopyDestination({
+    items: [dragFile],
+    targetFolderId: null,
+    targetClassification: 'unset',
+    isSysAdmin: true,
+    folderStructureMode: 'closed',
+    isAncestorOf: () => false,
+    resolveItemRole: () => 'viewer',
+  });
+  assert.equal(rootFileClosedSysAdmin.allowed, true);
 
   const folderCycleBlocked = evaluateCopyDestination({
     items: [
@@ -180,4 +203,74 @@ test('resolveTargetRows and buildContextMenuCapabilities distinguish single vs m
     resolveRowRole: () => 'editor',
   });
   assert.equal(rootFolderPaste.canPaste, true);
+
+  const rootPasteClosedMember = buildContextMenuCapabilities({
+    targets: [fld],
+    primaryRow: fld,
+    currentFolderId: null,
+    folderRole: 'editor',
+    isPrivilegedAdmin: false,
+    isSysAdmin: false,
+    folderStructureMode: 'closed',
+    hasClipboardItems: true,
+    clipboardHasFiles: true,
+    resolveRowRole: () => 'editor',
+  });
+  assert.equal(rootPasteClosedMember.canPaste, true);
+
+  const rootBackgroundPasteClosedMember = buildContextMenuCapabilities({
+    targets: [],
+    primaryRow: null,
+    currentFolderId: null,
+    folderRole: 'editor',
+    isPrivilegedAdmin: false,
+    isSysAdmin: false,
+    folderStructureMode: 'closed',
+    hasClipboardItems: true,
+    clipboardHasFiles: true,
+    resolveRowRole: () => 'editor',
+  });
+  assert.equal(rootBackgroundPasteClosedMember.canPaste, false);
+
+  const rootBackgroundPasteClosedSysAdmin = buildContextMenuCapabilities({
+    targets: [],
+    primaryRow: null,
+    currentFolderId: null,
+    folderRole: 'editor',
+    isPrivilegedAdmin: false,
+    isSysAdmin: true,
+    folderStructureMode: 'closed',
+    hasClipboardItems: true,
+    clipboardHasFiles: true,
+    resolveRowRole: () => 'editor',
+  });
+  assert.equal(rootBackgroundPasteClosedSysAdmin.canPaste, true);
+
+  const rootDuplicateClosedMember = buildContextMenuCapabilities({
+    targets: [f1],
+    primaryRow: f1,
+    currentFolderId: null,
+    folderRole: 'editor',
+    isPrivilegedAdmin: false,
+    isSysAdmin: false,
+    folderStructureMode: 'closed',
+    hasClipboardItems: false,
+    clipboardHasFiles: false,
+    resolveRowRole: () => 'editor',
+  });
+  assert.equal(rootDuplicateClosedMember.canDuplicate, false);
+
+  const rootDuplicateClosedSysAdmin = buildContextMenuCapabilities({
+    targets: [f1],
+    primaryRow: f1,
+    currentFolderId: null,
+    folderRole: 'editor',
+    isPrivilegedAdmin: false,
+    isSysAdmin: true,
+    folderStructureMode: 'closed',
+    hasClipboardItems: false,
+    clipboardHasFiles: false,
+    resolveRowRole: () => 'editor',
+  });
+  assert.equal(rootDuplicateClosedSysAdmin.canDuplicate, true);
 });

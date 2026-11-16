@@ -8,6 +8,11 @@ import {
 } from '../file-upload-common';
 import { type FolderRow, MAX_FOLDER_DEPTH, validateFolderName } from '../folder-closure-service';
 import {
+  canCreateAtRoot,
+  getFolderStructureMode,
+  ROOT_CREATION_ADMIN_ONLY_MESSAGE,
+} from '../folder-structure';
+import {
   type CopyableFileRow,
   type DestinationContext,
   WorkspaceConflictPolicy,
@@ -74,6 +79,17 @@ export async function resolveCopyPlan(
   const conflictPolicy: WorkspaceConflictPolicy =
     input.conflictPolicy === 'fail' ? 'fail' : 'rename';
   const dest = await resolveDestinationContext(db, user, input.targetParentId);
+
+  if (dest.parentId === null) {
+    const mode = await getFolderStructureMode(db, user.tenantId);
+    if (!canCreateAtRoot(mode, user)) {
+      throw new WorkspaceOpError(
+        403,
+        'ROOT_CREATION_ADMIN_ONLY',
+        ROOT_CREATION_ADMIN_ONLY_MESSAGE
+      );
+    }
+  }
 
   const folderRefs = items.filter((i) => i.type === 'folder');
   const fileRefs = items.filter((i) => i.type === 'file');

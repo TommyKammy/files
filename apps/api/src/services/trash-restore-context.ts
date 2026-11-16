@@ -11,6 +11,10 @@ import {
 import { hasAtLeastRole, resolveTargetAccess } from './authorization';
 import { canRole } from './capabilities';
 import {
+  canCreateAtRoot,
+  getFolderStructureMode,
+} from './folder-structure';
+import {
   findActiveFileNameConflict,
   resolveUniqueRestoredFileName,
 } from './filename-conflict';
@@ -369,6 +373,11 @@ export async function buildTrashRestoreContext(
   id: string,
   target?: { provided: boolean; parentId: string | null }
 ): Promise<TrashRestoreContextResponse> {
+  const rootCreationAllowed = canCreateAtRoot(
+    await getFolderStructureMode(db, user.tenantId),
+    user
+  );
+
   if (type === 'file') {
     const [access, file] = await Promise.all([
       resolveTargetAccess(db, user, 'file', id),
@@ -440,7 +449,7 @@ export async function buildTrashRestoreContext(
         circular: false,
         maxDepthExceeded: false,
         targetDeleted: destination.isDeleted,
-        canRestoreToRoot: true,
+        canRestoreToRoot: rootCreationAllowed,
       },
     };
   }
@@ -549,8 +558,9 @@ export async function buildTrashRestoreContext(
       maxDepthExceeded,
       targetDeleted: destination.isDeleted,
       canRestoreToRoot:
-        folder.parent_id === null ||
-        hasAtLeastRole(access.effectiveRole, 'owner'),
+        rootCreationAllowed &&
+        (folder.parent_id === null ||
+          hasAtLeastRole(access.effectiveRole, 'owner')),
     },
   };
 }

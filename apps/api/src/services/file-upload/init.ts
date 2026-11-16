@@ -3,6 +3,11 @@ import { pickStricterClassification } from '../../utils/classification';
 import { resolveTargetAccess } from '../authorization';
 import { can } from '../capabilities';
 import {
+  canCreateAtRoot,
+  getFolderStructureMode,
+  ROOT_CREATION_ADMIN_ONLY_MESSAGE,
+} from '../folder-structure';
+import {
   FileUploadError,
   MULTIPART_MAX_BYTES,
   SINGLE_UPLOAD_MAX_BYTES,
@@ -109,6 +114,17 @@ export async function initializePendingUpload(
       'FILE_ALREADY_EXISTS',
       `File "${name}" already exists in this folder`
     );
+  }
+
+  if (input.folderId === null && !existing) {
+    const mode = await getFolderStructureMode(db, user.tenantId);
+    if (!canCreateAtRoot(mode, user)) {
+      throw new FileUploadError(
+        403,
+        'ROOT_CREATION_ADMIN_ONLY',
+        ROOT_CREATION_ADMIN_ONLY_MESSAGE
+      );
+    }
   }
 
   if (existing) {

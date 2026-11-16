@@ -2,11 +2,16 @@ import { canAccess } from '@/lib/capabilities';
 import { pickStricterClassification } from '@/lib/formatters';
 import type {
   ClassificationLabel,
+  FolderStructureMode,
   ResourceRole,
   RestoreDestinationContext,
   TrashRestoreConflict,
   TrashRestoreContextResponse,
 } from '@/types/files';
+import {
+  isRootCreationRestricted,
+  ROOT_CREATION_RESTRICTED_REASON,
+} from '@/lib/workspace-actions';
 
 const CLASSIFICATION_SEVERITY: Record<ClassificationLabel, number> = {
   confidential: 3,
@@ -171,6 +176,7 @@ export function evaluateTrashRestoreDestination(input: {
   targetEffectiveRole?: ResourceRole | null;
   itemEffectiveRole?: ResourceRole | null;
   isSysAdmin?: boolean;
+  folderStructureMode?: FolderStructureMode;
   isDescendantOfItem?: boolean;
 }): TrashRestoreDestinationEvaluation {
   const {
@@ -179,6 +185,7 @@ export function evaluateTrashRestoreDestination(input: {
     targetEffectiveRole,
     itemEffectiveRole,
     isSysAdmin = false,
+    folderStructureMode = 'open',
     isDescendantOfItem = false,
   } = input;
 
@@ -195,6 +202,13 @@ export function evaluateTrashRestoreDestination(input: {
   }
 
   if (targetId === null) {
+    if (isRootCreationRestricted(folderStructureMode, isSysAdmin)) {
+      return {
+        allowed: false,
+        circular: false,
+        reason: ROOT_CREATION_RESTRICTED_REASON,
+      };
+    }
     if (
       context.type === 'folder' &&
       context.item.parentId !== null &&

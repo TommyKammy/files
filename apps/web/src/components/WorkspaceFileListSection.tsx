@@ -62,6 +62,7 @@ export function WorkspaceFileListSection({
   loadingMore,
   trashError,
   trashFilterActive,
+  rootCreationRestricted,
   marqueeSurfaceRef,
   containerRef,
   onMarqueePointerDown,
@@ -101,6 +102,7 @@ export function WorkspaceFileListSection({
   loadingMore: boolean;
   trashError: string | null;
   trashFilterActive: boolean;
+  rootCreationRestricted?: boolean;
   marqueeSurfaceRef: RefObject<HTMLDivElement | null>;
   containerRef: RefObject<HTMLDivElement | null>;
   onMarqueePointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
@@ -159,6 +161,7 @@ export function WorkspaceFileListSection({
               folderId={folderId}
               uploadOnly={uploadOnly}
               trashFilterActive={trashFilterActive}
+              rootCreationRestricted={rootCreationRestricted}
               onClearTrashFilters={onClearTrashFilters}
               onContextMenu={onBackgroundContextMenu}
               onClick={onBackgroundEmptyClick}

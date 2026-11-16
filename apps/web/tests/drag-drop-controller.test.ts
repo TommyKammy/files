@@ -104,7 +104,7 @@ test('evaluateDropTarget rejects same-directory drops, cycles, and insufficient 
   assert.equal(rootPromotionSysAdmin.allowed, true);
   assert.equal(rootPromotionSysAdmin.promotesToConfidential, false);
 
-  const looseFileToRootDenied = evaluateDropTarget({
+  const looseFileToRootOpen = evaluateDropTarget({
     dragItems: [fileItem],
     targetFolderId: null,
     targetClassification: 'unset',
@@ -112,8 +112,50 @@ test('evaluateDropTarget rejects same-directory drops, cycles, and insufficient 
     isAncestorOf: () => false,
     resolveItemRole: () => 'owner',
   });
-  assert.equal(looseFileToRootDenied.allowed, false);
-  assert.match(looseFileToRootDenied.reason ?? '', /ルート直下/);
+  assert.equal(looseFileToRootOpen.allowed, true);
+
+  const looseFileToRootClosedMember = evaluateDropTarget({
+    dragItems: [fileItem],
+    targetFolderId: null,
+    targetClassification: 'unset',
+    isSysAdmin: false,
+    folderStructureMode: 'closed',
+    isAncestorOf: () => false,
+    resolveItemRole: () => 'owner',
+  });
+  assert.equal(looseFileToRootClosedMember.allowed, false);
+  assert.match(looseFileToRootClosedMember.reason ?? '', /Closed 構成/);
+});
+
+test('evaluateDropTarget allows sys_admin root placement in closed mode', () => {
+  const folderItem = makeItem({
+    type: 'folder',
+    id: 'fld-closed-root',
+    name: 'Closed Root Move',
+    parentId: 'fld-parent',
+  });
+  const sysAdminRoot = evaluateDropTarget({
+    dragItems: [folderItem],
+    targetFolderId: null,
+    targetClassification: 'unset',
+    isSysAdmin: true,
+    folderStructureMode: 'closed',
+    isAncestorOf: () => false,
+    resolveItemRole: () => 'editor',
+  });
+  assert.equal(sysAdminRoot.allowed, true);
+
+  const memberRoot = evaluateDropTarget({
+    dragItems: [folderItem],
+    targetFolderId: null,
+    targetClassification: 'unset',
+    isSysAdmin: false,
+    folderStructureMode: 'closed',
+    isAncestorOf: () => false,
+    resolveItemRole: () => 'owner',
+  });
+  assert.equal(memberRoot.allowed, false);
+  assert.match(memberRoot.reason ?? '', /sys_admin 専用/);
 });
 
 test('evaluateDropTarget detects 0ms Confidential promotion warning cleanly', () => {
