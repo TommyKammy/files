@@ -46,6 +46,51 @@ import { applyDeltaChangesToCache } from '@/lib/sync-store/delta';
 import { planOptimisticCopy } from '@/lib/sync-store/optimistic-copy-plan';
 import { planOptimisticMove } from '@/lib/sync-store/optimistic-move-plan';
 import {
+  collectDestNameSets as cacheCollectDestNameSets,
+  getAncestorClassifications as cacheGetAncestorClassifications,
+  getDirectoryView as cacheGetDirectoryView,
+  getPinnedFolders as cacheGetPinnedFolders,
+  hasCachedDirectory as cacheHasCachedDirectory,
+  isDirectoryFresh as cacheIsDirectoryFresh,
+  isFolderAncestorOf as cacheIsFolderAncestorOf,
+  markCachedSubtreeStale as cacheMarkCachedSubtreeStale,
+  removeFileFromCache as cacheRemoveFileFromCache,
+  removeFolderFromCache as cacheRemoveFolderFromCache,
+  resolveItemEffectiveRole as cacheResolveItemEffectiveRole,
+  searchCachedWorkspaceItems as cacheSearchCachedWorkspaceItems,
+  upsertFileInCache as cacheUpsertFileInCache,
+  upsertFolderInCache as cacheUpsertFolderInCache,
+  type CacheContext,
+  type DirectoryViewModel,
+} from '@/lib/sync-store/cache';
+export type { DirectoryViewModel } from '@/lib/sync-store/cache';
+import {
+  clearToastsAndUndo,
+  dismissToast,
+  pushToast,
+  pushUndo,
+  undoLatest,
+  type ToastContext,
+  type UndoAction,
+} from '@/lib/sync-store/toasts';
+export type { UndoAction } from '@/lib/sync-store/toasts';
+import {
+  bootstrap,
+  ensureDirectoryLoaded,
+  loadMoreDirectory,
+  syncDelta,
+  type DirectorySyncContext,
+} from '@/lib/sync-store/directory-sync';
+import { executeOutboxMutation } from '@/lib/sync-store/outbox-execute';
+import {
+  evictSubtreeFromCache,
+  flushPersistence,
+  invalidateAllCachedDirectories,
+  pruneAndSchedulePersist,
+  resetMemoryOnly,
+  type PersistenceContext,
+} from '@/lib/sync-store/persistence';
+import {
   applyOutboxRollback,
   applyOutboxSuccess,
 } from '@/lib/sync-store/outbox-result';
@@ -61,12 +106,16 @@ import {
   WORKING_SET_MAX_DIRECTORIES,
   writeSyncScopeHint,
 } from '@/lib/sync-idb';
-import {
-  normalizeSecurityRevocationEvent,
-  type RealtimeConnectionState,
-  type RealtimeSecurityRevocationEvent,
-  WorkspaceRealtimeClient,
+import type {
+  RealtimeConnectionState,
+  RealtimeSecurityRevocationEvent,
 } from '@/lib/sync-ws';
+import {
+  handleRealtimeSignal,
+  startRealtime,
+  stopRealtime,
+  type RealtimeContext,
+} from '@/lib/sync-store/realtime';
 import type {
   AuthUser,
   BatchMoveWorkspaceResponse,
@@ -92,15 +141,8 @@ import type {
 const ROOT_DIR_KEY = '__ROOT__';
 const DEFAULT_SWR_TTL_MS = 15_000;
 const MAX_DELTA_PAGES_PER_SYNC = 5;
-const MAX_UNDO_STACK = 20;
 
 export type SyncAuthStatus = 'unknown' | 'authenticated' | 'unauthenticated';
-
-export interface UndoAction {
-  id: string;
-  label: string;
-  applyUndo: () => Promise<void> | void;
-}
 
 export interface SyncStoreSnapshot {
   authStatus: SyncAuthStatus;
@@ -116,19 +158,6 @@ export interface SyncStoreSnapshot {
   canUndo: boolean;
   pendingMutationCount: number;
   revision: number;
-}
-
-export interface DirectoryViewModel {
-  dirKey: string;
-  folderId: string | null;
-  existsInCache: boolean;
-  isStale: boolean;
-  folder: FolderSummary | null;
-  effectiveRole: ResourceRole;
-  folders: FolderSummary[];
-  files: FileItem[];
-  breadcrumbs: BreadcrumbItem[];
-  nextCursor: string | null;
 }
 
 export interface SyncStoreDeps {
@@ -423,58 +452,11 @@ export class WorkspaceSyncStore {
   }
 
   getDirectoryView(folderId: string | null): DirectoryViewModel {
-    const dirKey = dirKeyForFolder(folderId);
-    const record = this.directoriesByKey.get(dirKey);
-
-    if (!record) {
-      return {
-        dirKey,
-        folderId,
-        existsInCache: false,
-        isStale: true,
-        folder: folderId ? this.foldersById.get(folderId) ?? null : null,
-        effectiveRole: folderId ? this.foldersById.get(folderId)?.effectiveRole ?? 'viewer' : 'editor',
-        folders: [],
-        files: [],
-        breadcrumbs: [],
-        nextCursor: null,
-      };
-    }
-
-    const folders: FolderSummary[] = [];
-    for (const id of record.folderIds) {
-      const f = this.foldersById.get(id);
-      if (f && f.deleted_at == null) folders.push(f);
-    }
-    const files: FileItem[] = [];
-    for (const id of record.fileIds) {
-      const fl = this.filesById.get(id);
-      if (fl && fl.deleted_at == null) files.push(fl);
-    }
-
-    return {
-      dirKey,
-      folderId,
-      existsInCache: true,
-      isStale: Boolean(record.stale),
-      folder: folderId ? this.foldersById.get(folderId) ?? null : null,
-      effectiveRole: record.effectiveRole,
-      folders,
-      files,
-      breadcrumbs: record.breadcrumbs,
-      nextCursor: record.nextCursor,
-    };
+    return cacheGetDirectoryView(this.cacheContext(), folderId);
   }
 
   getPinnedFolders(): FolderSummary[] {
-    const list: FolderSummary[] = [];
-    for (const id of this.pinnedFolderIds) {
-      const folder = this.foldersById.get(id);
-      if (folder && folder.deleted_at == null) {
-        list.push(folder);
-      }
-    }
-    return list;
+    return cacheGetPinnedFolders(this.cacheContext());
   }
 
   /**
@@ -488,95 +470,18 @@ export class WorkspaceSyncStore {
     folders: Array<{ folder: FolderSummary; pathHint: string }>;
     files: SearchResultItem[];
   } {
-    if (this.authStatus !== 'authenticated') {
-      return { folders: [], files: [] };
-    }
-    const parsed = parseSearchQuery(query);
-    if (parsed.isCommandMode) {
-      return { folders: [], files: [] };
-    }
-
-    const buildPathHint = (parentId: string | null): string => {
-      if (!parentId) return 'ルート';
-      const parts: string[] = [];
-      let cursor: string | null = parentId;
-      let guard = 0;
-      while (cursor && guard < 10) {
-        guard += 1;
-        const f = this.foldersById.get(cursor);
-        if (!f) break;
-        parts.unshift(f.name);
-        cursor = f.parent_id;
-      }
-      return parts.length > 0 ? parts.join(' / ') : 'フォルダ';
-    };
-
-    const folders = Array.from(this.foldersById.values())
-      .filter(
-        (folder) =>
-          folder.deleted_at == null &&
-          matchesLocalSearchItem(
-            folder.name,
-            folder.classification,
-            buildPathHint(folder.parent_id),
-            parsed
-          )
-      )
-      .sort((a, b) => {
-        if (a.is_pinned !== b.is_pinned) return b.is_pinned - a.is_pinned;
-        return b.updated_at.localeCompare(a.updated_at);
-      })
-      .slice(0, limit)
-      .map((folder) => ({
-        folder,
-        pathHint: buildPathHint(folder.parent_id),
-      }));
-
-    const files = Array.from(this.filesById.values())
-      .filter((file) => {
-        if (file.deleted_at != null) return false;
-        if (file.upload_state === 'pending') return false;
-        const parentName = file.folder_id
-          ? this.foldersById.get(file.folder_id)?.name ?? null
-          : null;
-        return matchesLocalSearchItem(
-          file.name,
-          file.classification,
-          parentName,
-          parsed
-        );
-      })
-      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-      .slice(0, limit)
-      .map(
-        (file): SearchResultItem => ({
-          id: file.id,
-          folderId: file.folder_id,
-          folderName: file.folder_id
-            ? this.foldersById.get(file.folder_id)?.name ?? null
-            : null,
-          name: file.name,
-          extension: file.extension,
-          mimeType: file.mime_type,
-          sizeBytes: file.size_bytes,
-          classification: file.classification,
-          aiSuggestedLabel: file.ai_suggested_label,
-          aiConfidence: file.ai_confidence,
-          updatedAt: file.updated_at,
-        })
-      );
-
-    return { folders, files };
+    return cacheSearchCachedWorkspaceItems(this.cacheContext(), query, limit);
   }
 
-  isDirectoryFresh(folderId: string | null, ttlMs = DEFAULT_SWR_TTL_MS): boolean {
-    const dir = this.directoriesByKey.get(dirKeyForFolder(folderId));
-    if (!dir || dir.stale) return false;
-    return this.now() - dir.revalidatedAt < ttlMs;
+  isDirectoryFresh(
+    folderId: string | null,
+    ttlMs = DEFAULT_SWR_TTL_MS
+  ): boolean {
+    return cacheIsDirectoryFresh(this.cacheContext(), folderId, ttlMs);
   }
 
   hasCachedDirectory(folderId: string | null): boolean {
-    return this.directoriesByKey.has(dirKeyForFolder(folderId));
+    return cacheHasCachedDirectory(this.cacheContext(), folderId);
   }
 
   /**
@@ -654,119 +559,159 @@ export class WorkspaceSyncStore {
     await this.bootstrap({ force: true });
   }
 
-  async bootstrap(options?: { force?: boolean }): Promise<BootstrapResponse | null> {
-    if (this.bootstrapPromise && !options?.force) {
-      return this.bootstrapPromise;
-    }
+  private cacheContext(): CacheContext {
+    const self = this;
+    return {
+      get authStatus() {
+        return self.authStatus;
+      },
+      foldersById: this.foldersById,
+      filesById: this.filesById,
+      directoriesByKey: this.directoriesByKey,
+      get rootFolderIds() {
+        return self.rootFolderIds;
+      },
+      set rootFolderIds(value) {
+        self.rootFolderIds = value;
+      },
+      get pinnedFolderIds() {
+        return self.pinnedFolderIds;
+      },
+      set pinnedFolderIds(value) {
+        self.pinnedFolderIds = value;
+      },
+      now: this.now,
+      pruneAndSchedulePersist: () => this.pruneAndSchedulePersist(),
+      emit: () => this.emit(),
+    };
+  }
 
-    let promise: Promise<BootstrapResponse | null> | null = null;
-    promise = (async (): Promise<BootstrapResponse | null> => {
-      this.revalidatingCount += 1;
-      this.emit();
+  private directorySyncContext(): DirectorySyncContext {
+    const self = this;
+    return {
+      persistence: this.persistence,
+      outbox: this.outbox,
+      fetchBootstrapFn: this.fetchBootstrapFn,
+      fetchDeltaFn: this.fetchDeltaFn,
+      fetchRootFoldersFn: this.fetchRootFoldersFn,
+      fetchFolderChildrenFn: this.fetchFolderChildrenFn,
+      readHintFn: this.readHintFn,
+      writeHintFn: this.writeHintFn,
+      now: this.now,
+      get bootstrapPromise() {
+        return self.bootstrapPromise;
+      },
+      set bootstrapPromise(value) {
+        self.bootstrapPromise = value;
+      },
+      get deltaPromise() {
+        return self.deltaPromise;
+      },
+      set deltaPromise(value) {
+        self.deltaPromise = value;
+      },
+      get revalidatingCount() {
+        return self.revalidatingCount;
+      },
+      set revalidatingCount(value) {
+        self.revalidatingCount = value;
+      },
+      get user() {
+        return self.user;
+      },
+      set user(value) {
+        self.user = value;
+      },
+      get authStatus() {
+        return self.authStatus;
+      },
+      set authStatus(value) {
+        self.authStatus = value;
+      },
+      get hydratedScopeKey() {
+        return self.hydratedScopeKey;
+      },
+      set hydratedScopeKey(value) {
+        self.hydratedScopeKey = value;
+      },
+      get policy() {
+        return self.policy;
+      },
+      set policy(value) {
+        self.policy = value;
+      },
+      get purgedBeforeSeq() {
+        return self.purgedBeforeSeq;
+      },
+      set purgedBeforeSeq(value) {
+        self.purgedBeforeSeq = value;
+      },
+      get bootstrapDone() {
+        return self.bootstrapDone;
+      },
+      set bootstrapDone(value) {
+        self.bootstrapDone = value;
+      },
+      get syncSeq() {
+        return self.syncSeq;
+      },
+      set syncSeq(value) {
+        self.syncSeq = value;
+      },
+      get rootFolderIds() {
+        return self.rootFolderIds;
+      },
+      set rootFolderIds(value) {
+        self.rootFolderIds = value;
+      },
+      get rootNextCursor() {
+        return self.rootNextCursor;
+      },
+      set rootNextCursor(value) {
+        self.rootNextCursor = value;
+      },
+      get pinnedFolderIds() {
+        return self.pinnedFolderIds;
+      },
+      set pinnedFolderIds(value) {
+        self.pinnedFolderIds = value;
+      },
+      get outboxLoadedScopeKey() {
+        return self.outboxLoadedScopeKey;
+      },
+      set outboxLoadedScopeKey(value) {
+        self.outboxLoadedScopeKey = value;
+      },
+      get activeDirKey() {
+        return self.activeDirKey;
+      },
+      set activeDirKey(value) {
+        self.activeDirKey = value;
+      },
+      foldersById: this.foldersById,
+      filesById: this.filesById,
+      directoriesByKey: this.directoriesByKey,
+      inFlightDirs: this.inFlightDirs,
+      resetMemoryOnly: () => this.resetMemoryOnly(),
+      invalidateAllCachedDirectories: () =>
+        this.invalidateAllCachedDirectories(),
+      pruneAndSchedulePersist: () => this.pruneAndSchedulePersist(),
+      emit: () => this.emit(),
+      applyDeltaChanges: (changes) => this.applyDeltaChanges(changes),
+      emitSecurityRevocation: (event) =>
+        this.emitSecurityRevocation(event),
+      purgeCurrentScope: () => this.purgeCurrentScope(),
+      startRealtime: () => this.startRealtime(),
+      syncDelta: () => this.syncDelta(),
+      ensureDirectoryLoaded: (folderId, options) =>
+        this.ensureDirectoryLoaded(folderId, options),
+    };
+  }
 
-      try {
-        const res = await this.fetchBootstrapFn();
-        const prevUser = this.user;
-        const hint = this.readHintFn();
-
-        // Detect tenant or user identity change and eradicate old local cache immediately
-        if (
-          prevUser &&
-          (prevUser.id !== res.user.id || prevUser.tenantId !== res.user.tenantId)
-        ) {
-          await this.persistence.purgeScope(prevUser.tenantId, prevUser.id);
-          this.resetMemoryOnly();
-        } else if (
-          hint &&
-          (hint.userId !== res.user.id || hint.tenantId !== res.user.tenantId)
-        ) {
-          await this.persistence.purgeScope(hint.tenantId, hint.userId);
-          this.resetMemoryOnly();
-        }
-
-        const previousSeq = this.syncSeq;
-        this.user = res.user;
-        this.authStatus = 'authenticated';
-        this.hydratedScopeKey = `${res.user.tenantId}:${res.user.id}`;
-        this.writeHintFn(res.user);
-        this.policy = res.policy;
-        this.purgedBeforeSeq = res.purgedBeforeSeq;
-        this.bootstrapDone = true;
-
-        // If client sync cursor predates Cron purge horizon, drop cached child directories
-        if (previousSeq > 0 && previousSeq < res.purgedBeforeSeq) {
-          this.invalidateAllCachedDirectories();
-          this.syncSeq = res.currentSeq;
-        } else if (this.syncSeq === 0) {
-          this.syncSeq = res.currentSeq;
-        }
-
-        const nowMs = this.now();
-        for (const rf of res.rootFolders) {
-          this.foldersById.set(rf.id, rf);
-        }
-        for (const pf of res.pinnedFolders) {
-          this.foldersById.set(pf.id, pf);
-        }
-
-        this.rootFolderIds = res.rootFolders.map((f) => f.id);
-        this.rootNextCursor = null;
-        this.pinnedFolderIds = res.pinnedFolders.map((f) => f.id);
-
-        this.directoriesByKey.set(ROOT_DIR_KEY, {
-          dirKey: ROOT_DIR_KEY,
-          folderId: null,
-          effectiveRole: 'editor',
-          folderIds: this.rootFolderIds,
-          fileIds: [],
-          nextCursor: null,
-          breadcrumbs: [],
-          lastAccessedAt: nowMs,
-          revalidatedAt: nowMs,
-          stale: false,
-        });
-
-        this.pruneAndSchedulePersist();
-        this.emit();
-
-        // Reconcile any incremental changes between previous cached seq and server head
-        if (
-          previousSeq > 0 &&
-          previousSeq >= res.purgedBeforeSeq &&
-          previousSeq < res.currentSeq
-        ) {
-          await this.syncDelta();
-        }
-
-        const currentScopeKey = `${res.user.tenantId}:${res.user.id}`;
-        if (this.outboxLoadedScopeKey !== currentScopeKey) {
-          this.outboxLoadedScopeKey = currentScopeKey;
-          const persistedOutbox =
-            (await this.persistence.loadOutbox?.(res.user.tenantId, res.user.id)) ?? [];
-          if (persistedOutbox.length > 0) {
-            this.outbox.restorePersistedItems(persistedOutbox);
-          }
-        }
-
-        this.startRealtime();
-        return res;
-      } catch (err) {
-        if (isUnauthorizedError(err)) {
-          await this.purgeCurrentScope();
-          return null;
-        }
-        throw err;
-      } finally {
-        this.revalidatingCount = Math.max(0, this.revalidatingCount - 1);
-        this.emit();
-        if (this.bootstrapPromise === promise) {
-          this.bootstrapPromise = null;
-        }
-      }
-    })();
-
-    this.bootstrapPromise = promise;
-    return promise;
+  async bootstrap(
+    options?: { force?: boolean }
+  ): Promise<BootstrapResponse | null> {
+    return bootstrap(this.directorySyncContext(), options);
   }
 
   /**
@@ -774,88 +719,7 @@ export class WorkspaceSyncStore {
    * On `resetRequired: true`, wipes stale working-set directories immediately.
    */
   async syncDelta(): Promise<void> {
-    if (this.authStatus !== 'authenticated' || !this.user) return;
-    if (this.deltaPromise) return this.deltaPromise;
-
-    const promise = (async () => {
-      let rounds = 0;
-      let shouldReloadActive = false;
-
-      while (rounds < MAX_DELTA_PAGES_PER_SYNC) {
-        rounds += 1;
-        const delta = await this.fetchDeltaFn(this.syncSeq, 200);
-        this.purgedBeforeSeq = delta.purgedBeforeSeq;
-
-        if (delta.resetRequired) {
-          this.invalidateAllCachedDirectories();
-          this.syncSeq = delta.currentSeq;
-          shouldReloadActive = true;
-          break;
-        }
-
-        if (delta.changes.length > 0) {
-          const outcome = this.applyDeltaChanges(delta.changes);
-          if (outcome.shouldRevokeAll) {
-            this.emitSecurityRevocation({
-              kind: 'user.suspended',
-              scopeFolderIds: [],
-              seq: null,
-            });
-            await this.purgeCurrentScope();
-            return;
-          }
-          for (const change of delta.changes) {
-            if (change.action === 'permission.revoke') {
-              const myUserId = this.user?.id;
-              const granteeType = change.payload?.granteeType;
-              if (
-                granteeType === 'group' ||
-                (granteeType === 'user' && change.targetUserId === myUserId)
-              ) {
-                this.emitSecurityRevocation({
-                  kind: 'permission.revoke',
-                  scopeFolderIds: change.folderId ? [change.folderId] : [],
-                  seq: change.seq,
-                });
-              }
-            } else if (change.action === 'shared_link.revoke') {
-              this.emitSecurityRevocation({
-                kind: 'shared_link.revoke',
-                scopeFolderIds: change.folderId ? [change.folderId] : [],
-                seq: change.seq,
-              });
-            }
-          }
-          if (outcome.shouldRevalidateActive) {
-            shouldReloadActive = true;
-          }
-        }
-
-        this.syncSeq = Math.max(this.syncSeq, delta.nextSeq);
-        if (!delta.hasMore) break;
-      }
-
-      this.pruneAndSchedulePersist();
-      this.emit();
-
-      if (shouldReloadActive) {
-        const folderId = this.activeDirKey === ROOT_DIR_KEY ? null : this.activeDirKey;
-        await this.ensureDirectoryLoaded(folderId, { force: true });
-      }
-    })()
-      .catch(async (err) => {
-        if (isUnauthorizedError(err)) {
-          await this.purgeCurrentScope();
-        }
-      })
-      .finally(() => {
-        if (this.deltaPromise === promise) {
-          this.deltaPromise = null;
-        }
-      });
-
-    this.deltaPromise = promise;
-    return promise;
+    return syncDelta(this.directorySyncContext());
   }
 
   /**
@@ -866,211 +730,27 @@ export class WorkspaceSyncStore {
     folderId: string | null,
     options?: { force?: boolean; signal?: AbortSignal; isPrefetch?: boolean }
   ): Promise<void> {
-    const dirKey = dirKeyForFolder(folderId);
-    const cached = this.directoriesByKey.get(dirKey);
-
-    if (
-      !options?.force &&
-      cached &&
-      !cached.stale &&
-      this.now() - cached.revalidatedAt < DEFAULT_SWR_TTL_MS
-    ) {
-      cached.lastAccessedAt = this.now();
-      return;
-    }
-
-    const existingReq = this.inFlightDirs.get(dirKey);
-    if (existingReq) {
-      return existingReq;
-    }
-
-    let run: Promise<void> | null = null;
-    run = (async () => {
-      if (!options?.isPrefetch) {
-        this.revalidatingCount += 1;
-        this.emit();
-      }
-      try {
-        const nowMs = this.now();
-        if (folderId === null) {
-          const rootsRes = await this.fetchRootFoldersFn(null, options?.signal);
-          for (const f of rootsRes.folders) {
-            this.foldersById.set(f.id, f);
-          }
-          this.rootFolderIds = rootsRes.folders.map((f) => f.id);
-          this.rootNextCursor = rootsRes.nextCursor;
-          this.directoriesByKey.set(ROOT_DIR_KEY, {
-            dirKey: ROOT_DIR_KEY,
-            folderId: null,
-            effectiveRole: 'editor',
-            folderIds: this.rootFolderIds,
-            fileIds: [],
-            nextCursor: rootsRes.nextCursor,
-            breadcrumbs: [],
-            lastAccessedAt: nowMs,
-            revalidatedAt: nowMs,
-            stale: false,
-          });
-        } else {
-          const res = await this.fetchFolderChildrenFn(folderId, null, 50, {
-            includeBreadcrumbs: true,
-            signal: options?.signal,
-          });
-          if (res.folder) {
-            this.foldersById.set(res.folder.id, {
-              ...res.folder,
-              effectiveRole: res.effectiveRole,
-            });
-          }
-          for (const f of res.folders) {
-            this.foldersById.set(f.id, f);
-          }
-          for (const fl of res.files) {
-            this.filesById.set(fl.id, fl);
-          }
-          this.directoriesByKey.set(dirKey, {
-            dirKey,
-            folderId,
-            effectiveRole: res.effectiveRole,
-            folderIds: res.folders.map((f) => f.id),
-            fileIds: res.files.map((fl) => fl.id),
-            nextCursor: res.nextCursor,
-            breadcrumbs: res.breadcrumbs ?? cached?.breadcrumbs ?? [],
-            lastAccessedAt: nowMs,
-            revalidatedAt: nowMs,
-            stale: false,
-          });
-        }
-
-        this.pruneAndSchedulePersist();
-        this.emit();
-      } catch (err) {
-        if ((err as Error)?.name === 'AbortError') return;
-        if (isUnauthorizedError(err)) {
-          await this.purgeCurrentScope();
-          return;
-        }
-        if (!options?.isPrefetch) {
-          throw err;
-        }
-      } finally {
-        if (!options?.isPrefetch) {
-          this.revalidatingCount = Math.max(0, this.revalidatingCount - 1);
-          this.emit();
-        }
-        if (this.inFlightDirs.get(dirKey) === run) {
-          this.inFlightDirs.delete(dirKey);
-        }
-      }
-    })();
-
-    this.inFlightDirs.set(dirKey, run);
-    return run;
+    return ensureDirectoryLoaded(this.directorySyncContext(), folderId, options);
   }
 
   async loadMoreDirectory(folderId: string | null): Promise<void> {
-    const dirKey = dirKeyForFolder(folderId);
-    const current = this.directoriesByKey.get(dirKey);
-    if (!current?.nextCursor) return;
-
-    const nowMs = this.now();
-    if (folderId === null) {
-      const res = await this.fetchRootFoldersFn(current.nextCursor);
-      for (const f of res.folders) {
-        this.foldersById.set(f.id, f);
-      }
-      const nextIds = [...current.folderIds];
-      for (const f of res.folders) {
-        if (!nextIds.includes(f.id)) nextIds.push(f.id);
-      }
-      this.rootFolderIds = nextIds;
-      this.rootNextCursor = res.nextCursor;
-      this.directoriesByKey.set(ROOT_DIR_KEY, {
-        ...current,
-        folderIds: nextIds,
-        nextCursor: res.nextCursor,
-        lastAccessedAt: nowMs,
-      });
-    } else {
-      const res = await this.fetchFolderChildrenFn(folderId, current.nextCursor, 50, {
-        includeBreadcrumbs: false,
-      });
-      for (const f of res.folders) this.foldersById.set(f.id, f);
-      for (const fl of res.files) this.filesById.set(fl.id, fl);
-
-      const nextFolderIds = [...current.folderIds];
-      for (const f of res.folders) {
-        if (!nextFolderIds.includes(f.id)) nextFolderIds.push(f.id);
-      }
-      const nextFileIds = [...current.fileIds];
-      for (const fl of res.files) {
-        if (!nextFileIds.includes(fl.id)) nextFileIds.push(fl.id);
-      }
-      this.directoriesByKey.set(dirKey, {
-        ...current,
-        folderIds: nextFolderIds,
-        fileIds: nextFileIds,
-        nextCursor: res.nextCursor,
-        lastAccessedAt: nowMs,
-      });
-    }
-
-    this.pruneAndSchedulePersist();
-    this.emit();
+    return loadMoreDirectory(this.directorySyncContext(), folderId);
   }
 
-  /** Local cache helpers used by mutations to update store synchronously before/after server ack */
   upsertFileInCache(file: FileItem): void {
-    this.filesById.set(file.id, file);
-    const dirKey = dirKeyForFolder(file.folder_id);
-    const dir = this.directoriesByKey.get(dirKey);
-    if (dir && !dir.fileIds.includes(file.id)) {
-      dir.fileIds = [file.id, ...dir.fileIds];
-    }
-    this.pruneAndSchedulePersist();
-    this.emit();
+    cacheUpsertFileInCache(this.cacheContext(), file);
   }
 
   removeFileFromCache(fileId: string, folderId: string | null): void {
-    this.filesById.delete(fileId);
-    const dir = this.directoriesByKey.get(dirKeyForFolder(folderId));
-    if (dir) {
-      dir.fileIds = removeFromIdList(dir.fileIds, fileId);
-    }
-    this.pruneAndSchedulePersist();
-    this.emit();
+    cacheRemoveFileFromCache(this.cacheContext(), fileId, folderId);
   }
 
   upsertFolderInCache(folder: FolderSummary): void {
-    this.foldersById.set(folder.id, folder);
-    const parentKey = dirKeyForFolder(folder.parent_id);
-    const dir = this.directoriesByKey.get(parentKey);
-    if (dir && !dir.folderIds.includes(folder.id)) {
-      dir.folderIds = [folder.id, ...dir.folderIds];
-    }
-    if (folder.parent_id === null && !this.rootFolderIds.includes(folder.id)) {
-      this.rootFolderIds = [folder.id, ...this.rootFolderIds];
-    }
-    if (folder.is_pinned === 1) {
-      this.pinnedFolderIds = dedupePush(this.pinnedFolderIds, folder.id);
-    } else {
-      this.pinnedFolderIds = removeFromIdList(this.pinnedFolderIds, folder.id);
-    }
-    this.pruneAndSchedulePersist();
-    this.emit();
+    cacheUpsertFolderInCache(this.cacheContext(), folder);
   }
 
   removeFolderFromCache(folder: FolderSummary): void {
-    this.foldersById.delete(folder.id);
-    this.directoriesByKey.delete(folder.id);
-    this.rootFolderIds = removeFromIdList(this.rootFolderIds, folder.id);
-    this.pinnedFolderIds = removeFromIdList(this.pinnedFolderIds, folder.id);
-    const parentDir = this.directoriesByKey.get(dirKeyForFolder(folder.parent_id));
-    if (parentDir) {
-      parentDir.folderIds = removeFromIdList(parentDir.folderIds, folder.id);
-    }
-    this.pruneAndSchedulePersist();
-    this.emit();
+    cacheRemoveFolderFromCache(this.cacheContext(), folder);
   }
 
   /** Complete security purge of memory + IndexedDB + scope hint on logout, 401, or user switch. */
@@ -1104,104 +784,67 @@ export class WorkspaceSyncStore {
     await Promise.allSettled(tasks);
   }
 
-  private emitSecurityRevocation(event: RealtimeSecurityRevocationEvent): void {
+  private emitSecurityRevocation(
+    event: RealtimeSecurityRevocationEvent
+  ): void {
     for (const listener of this.securityRevocationListeners) {
       listener(event);
     }
   }
 
-  private markScopeFoldersStale(
-    scopeFolderIds: readonly string[],
-    markAllOnEmpty = false
-  ): void {
-    if (scopeFolderIds.length === 0) {
-      if (markAllOnEmpty) {
-        this.invalidateAllCachedDirectories();
-      }
-      return;
-    }
-
-    for (const folderId of scopeFolderIds) {
-      const dir = this.directoriesByKey.get(folderId);
-      if (dir) {
-        dir.stale = true;
-      }
-      const folder = this.foldersById.get(folderId);
-      if (folder) {
-        const parentDir = this.directoriesByKey.get(dirKeyForFolder(folder.parent_id));
-        if (parentDir) {
-          parentDir.stale = true;
-        }
-      }
-    }
+  private realtimeContext(): RealtimeContext {
+    const self = this;
+    return {
+      get authStatus() {
+        return self.authStatus;
+      },
+      get user() {
+        return self.user;
+      },
+      enableRealtimeOption: this.enableRealtimeOption,
+      createRealtimeClientFn: this.createRealtimeClientFn,
+      get realtimeClient() {
+        return self.realtimeClient;
+      },
+      setRealtimeClient: (client) => {
+        this.realtimeClient = client;
+      },
+      get realtimeState() {
+        return self.realtimeState;
+      },
+      setRealtimeState: (state) => {
+        this.realtimeState = state;
+      },
+      emit: () => this.emit(),
+      realtimeSignalListeners: this.realtimeSignalListeners,
+      securityRevocationListeners: this.securityRevocationListeners,
+      directoriesByKey: this.directoriesByKey,
+      foldersById: this.foldersById,
+      get activeDirKey() {
+        return self.activeDirKey;
+      },
+      get syncSeq() {
+        return self.syncSeq;
+      },
+      syncDelta: () => this.syncDelta(),
+      purgeCurrentScope: () => this.purgeCurrentScope(),
+      invalidateAllCachedDirectories: () =>
+        this.invalidateAllCachedDirectories(),
+    };
   }
 
   startRealtime(): void {
-    if (this.authStatus !== 'authenticated' || !this.user) return;
-    if (this.enableRealtimeOption === false) return;
-    const hasNativeWs =
-      typeof window !== 'undefined' && typeof WebSocket !== 'undefined';
-    if (!this.createRealtimeClientFn && !hasNativeWs) return;
-
-    if (!this.realtimeClient) {
-      const onSignal = (signal: SyncInvalidationSignal) =>
-        this.handleRealtimeSignal(signal);
-      const onCatchup = () => this.syncDelta();
-      const onStateChange = (state: RealtimeConnectionState) => {
-        if (this.realtimeState !== state) {
-          this.realtimeState = state;
-          this.emit();
-        }
-      };
-
-      this.realtimeClient = this.createRealtimeClientFn
-        ? this.createRealtimeClientFn({ onSignal, onCatchup, onStateChange })
-        : new WorkspaceRealtimeClient({ onSignal, onCatchup, onStateChange });
-    }
-
-    this.realtimeClient.start();
+    startRealtime(this.realtimeContext());
   }
 
   stopRealtime(): void {
-    if (this.realtimeClient) {
-      this.realtimeClient.stop();
-    }
-    if (this.realtimeState !== 'disconnected') {
-      this.realtimeState = 'disconnected';
-    }
+    stopRealtime(this.realtimeContext());
   }
 
-  async handleRealtimeSignal(signal: SyncInvalidationSignal): Promise<void> {
-    if (this.authStatus !== 'authenticated' || !this.user) return;
-
-    for (const listener of this.realtimeSignalListeners) {
-      listener(signal);
-    }
-
-    const revocation = normalizeSecurityRevocationEvent(signal);
-    if (revocation?.kind === 'user.suspended') {
-      this.emitSecurityRevocation(revocation);
-      await this.purgeCurrentScope();
-      return;
-    }
-
-    if (revocation) {
-      this.emitSecurityRevocation(revocation);
-      this.markScopeFoldersStale(
-        signal.scopeFolderIds,
-        revocation.kind === 'permission.revoke'
-      );
-      await this.syncDelta();
-      return;
-    }
-
-    this.markScopeFoldersStale(signal.scopeFolderIds, false);
-    const activeStale = Boolean(this.directoriesByKey.get(this.activeDirKey)?.stale);
-    if (signal.seq === null || signal.seq > this.syncSeq || activeStale) {
-      await this.syncDelta();
-    } else {
-      this.emit();
-    }
+  async handleRealtimeSignal(
+    signal: SyncInvalidationSignal
+  ): Promise<void> {
+    await handleRealtimeSignal(signal, this.realtimeContext());
   }
 
   async flushOutbox(): Promise<void> {
@@ -1209,106 +852,65 @@ export class WorkspaceSyncStore {
   }
 
   async flushPersistence(): Promise<void> {
-    if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
-      this.persistTimer = null;
-    }
-    await this.persistNow();
+    return flushPersistence(this.persistenceContext());
+  }
+
+  private toastContext(): ToastContext {
+    const self = this;
+    return {
+      get toasts() {
+        return self.toasts;
+      },
+      set toasts(value) {
+        self.toasts = value;
+      },
+      get undoStack() {
+        return self.undoStack;
+      },
+      set undoStack(value) {
+        self.undoStack = value;
+      },
+      toastTimers: this.toastTimers,
+      jobPollTimers: this.jobPollTimers,
+      copiedRootsByMutationId: this.copiedRootsByMutationId,
+      cancelledCopyMutationIds: this.cancelledCopyMutationIds,
+      get pendingMutationCount() {
+        return self.pendingMutationCount;
+      },
+      set pendingMutationCount(value) {
+        self.pendingMutationCount = value;
+      },
+      emit: () => this.emit(),
+    };
   }
 
   private clearToastsAndUndo(): void {
-    for (const timer of this.toastTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.toastTimers.clear();
-    for (const timer of this.jobPollTimers) {
-      clearTimeout(timer);
-    }
-    this.jobPollTimers.clear();
-    this.toasts = [];
-    this.undoStack = [];
-    this.copiedRootsByMutationId.clear();
-    this.cancelledCopyMutationIds.clear();
-    this.pendingMutationCount = 0;
+    clearToastsAndUndo(this.toastContext());
   }
 
   dismissToast(id: string): void {
-    const timer = this.toastTimers.get(id);
-    if (timer !== undefined) {
-      clearTimeout(timer);
-      this.toastTimers.delete(id);
-    }
-    if (this.toasts.some((t) => t.id === id)) {
-      this.toasts = this.toasts.filter((t) => t.id !== id);
-      this.emit();
-    }
+    dismissToast(this.toastContext(), id);
   }
 
   pushToast(
     toast: Omit<WorkspaceToastItem, 'id'>,
     ttlMs = 6000
   ): string {
-    const id = makeClientMutationId('toast');
-    const next: WorkspaceToastItem = { id, ...toast };
-    this.toasts = [...this.toasts.slice(-2), next];
-    this.emit();
-
-    if (ttlMs > 0) {
-      const timer = setTimeout(() => {
-        this.toastTimers.delete(id);
-        this.dismissToast(id);
-      }, ttlMs);
-      this.toastTimers.set(id, timer);
-    }
-    return id;
+    return pushToast(this.toastContext(), toast, ttlMs);
   }
 
   async undoLatest(): Promise<boolean> {
-    const entry = this.undoStack.pop();
-    if (!entry) return false;
-    for (const t of this.toasts) {
-      if (t.canUndo) {
-        this.dismissToast(t.id);
-      }
-    }
-    await entry.applyUndo();
-    this.emit();
-    return true;
+    return undoLatest(this.toastContext());
   }
 
   private pushUndo(entry: Omit<UndoAction, 'id'>, toastMessage: string): void {
-    const action: UndoAction = {
-      id: makeClientMutationId('undo'),
-      ...entry,
-    };
-    this.undoStack = [...this.undoStack.slice(-(MAX_UNDO_STACK - 1)), action];
-    this.pushToast({
-      kind: 'undo',
-      message: toastMessage,
-      undoLabel: '元に戻す',
-      canUndo: true,
-    });
+    pushUndo(this.toastContext(), entry, toastMessage);
   }
 
-  getAncestorClassifications(folderId: string | null): ClassificationLabel[] {
-    if (!folderId) return [];
-    const labels: ClassificationLabel[] = [];
-    const dir = this.directoriesByKey.get(dirKeyForFolder(folderId));
-    if (dir) {
-      for (const crumb of dir.breadcrumbs) {
-        labels.push(crumb.classification);
-      }
-    }
-    let cursorId: string | null = folderId;
-    const seen = new Set<string>();
-    while (cursorId && !seen.has(cursorId)) {
-      seen.add(cursorId);
-      const folder = this.foldersById.get(cursorId);
-      if (!folder) break;
-      labels.push(folder.classification);
-      cursorId = folder.parent_id;
-    }
-    return labels;
+  getAncestorClassifications(
+    folderId: string | null
+  ): ClassificationLabel[] {
+    return cacheGetAncestorClassifications(this.cacheContext(), folderId);
   }
 
   optimisticCreateFolder(input: {
@@ -1814,48 +1416,26 @@ export class WorkspaceSyncStore {
     return { ok: true, file: updated };
   }
 
-  isFolderAncestorOf(ancestorId: string, candidateId: string | null): boolean {
-    if (!candidateId) return false;
-    if (ancestorId === candidateId) return true;
-
-    const dir = this.directoriesByKey.get(candidateId);
-    if (dir && dir.breadcrumbs.some((b) => b.id === ancestorId)) {
-      return true;
-    }
-
-    let cursor: string | null = candidateId;
-    const seen = new Set<string>();
-    while (cursor && !seen.has(cursor)) {
-      seen.add(cursor);
-      const folder = this.foldersById.get(cursor);
-      if (!folder) break;
-      if (folder.parent_id === ancestorId) return true;
-      cursor = folder.parent_id;
-    }
-    return false;
+  isFolderAncestorOf(
+    ancestorId: string,
+    candidateId: string | null
+  ): boolean {
+    return cacheIsFolderAncestorOf(
+      this.cacheContext(),
+      ancestorId,
+      candidateId
+    );
   }
 
   private resolveItemEffectiveRole(
     type: 'file' | 'folder',
     item: FolderSummary | FileItem
   ): ResourceRole {
-    if (type === 'folder') {
-      const f = item as FolderSummary;
-      if (f.effectiveRole) return f.effectiveRole;
-      return this.getDirectoryView(f.parent_id).effectiveRole;
-    }
-    const fl = item as FileItem;
-    return this.getDirectoryView(fl.folder_id).effectiveRole;
+    return cacheResolveItemEffectiveRole(this.cacheContext(), type, item);
   }
 
   private markCachedSubtreeStale(rootFolderId: string): void {
-    const rootDir = this.directoriesByKey.get(rootFolderId);
-    if (rootDir) rootDir.stale = true;
-    for (const dir of this.directoriesByKey.values()) {
-      if (dir.breadcrumbs.some((b) => b.id === rootFolderId)) {
-        dir.stale = true;
-      }
-    }
+    cacheMarkCachedSubtreeStale(this.cacheContext(), rootFolderId);
   }
 
   private collectDestNameSets(targetParentId: string | null): {
@@ -1863,12 +1443,7 @@ export class WorkspaceSyncStore {
     folderNames: Set<string>;
     fileNames: Set<string>;
   } {
-    const view = this.getDirectoryView(targetParentId);
-    return {
-      existsInCache: view.existsInCache,
-      folderNames: new Set(view.folders.map((f) => f.name)),
-      fileNames: new Set(view.files.map((fl) => fl.name)),
-    };
+    return cacheCollectDestNameSets(this.cacheContext(), targetParentId);
   }
 
   optimisticMoveItems(input: {
@@ -2310,143 +1885,23 @@ export class WorkspaceSyncStore {
   private async executeOutboxMutation(
     item: OutboxMutationRecord
   ): Promise<OutboxExecutionResult | void> {
-    const resolvedId = this.idAliasMap.get(item.entityId) ?? item.entityId;
-    const p = item.payload;
-
-    switch (item.kind) {
-      case 'folder.create': {
-        const res = await this.createFolderFn({
-          parentId: (p.parentId as string | null) ?? null,
-          name: String(p.name),
-          classification: p.classification as ClassificationLabel | undefined,
-        });
-        const finalFolder =
-          p.isPinned && res.folder.is_pinned !== 1
-            ? (
-                await this.updateFolderFn(res.folder.id, {
-                  isPinned: true,
-                  expectedVersion: res.folder.version,
-                })
-              ).folder
-            : res.folder;
-        return { folder: finalFolder };
-      }
-      case 'folder.patch': {
-        return this.updateFolderFn(resolvedId, {
-          name: typeof p.name === 'string' ? p.name : undefined,
-          isPinned: typeof p.isPinned === 'boolean' ? p.isPinned : undefined,
-          expectedVersion: item.expectedVersion,
-        });
-      }
-      case 'folder.soft_delete': {
-        await this.softDeleteFolderFn(resolvedId, item.expectedVersion);
-        return;
-      }
-      case 'folder.restore': {
-        await this.restoreFolderFn(
-          resolvedId,
-          (p.conflictPolicy as 'fail' | 'rename' | undefined) ?? 'rename'
-        );
-        return;
-      }
-      case 'file.patch': {
-        return this.updateFileMetadataFn(resolvedId, {
-          name: typeof p.name === 'string' ? p.name : undefined,
-          folderId:
-            p.folderId !== undefined
-              ? (p.folderId as string | null)
-              : undefined,
-          expectedVersion: item.expectedVersion,
-        });
-      }
-      case 'file.classification': {
-        if (p.acceptSuggestion === true) {
-          const res = await this.updateFileClassificationFn(resolvedId, {
-            acceptSuggestion: true,
-            expectedVersion: item.expectedVersion,
-          });
-          return { file: res.file };
-        }
-        const res = await this.updateFileClassificationFn(resolvedId, {
-          classification: p.classification as Exclude<ClassificationLabel, 'unset'>,
-          expectedVersion: item.expectedVersion,
-        });
-        return { file: res.file };
-      }
-      case 'folder.move': {
-        const live = this.foldersById.get(resolvedId);
-        const res = await this.moveFolderFn(resolvedId, {
-          targetParentId: (p.targetParentId as string | null) ?? null,
-          expectedVersion:
-            live && !live.optimistic ? live.version : item.expectedVersion,
-        });
-        return { folder: res.folder };
-      }
-      case 'file.move':
-      case 'workspace.batch_move': {
-        const rawRefs = (p.items as WorkspaceBatchItemRef[]) ?? [];
-        const hydratedRefs = rawRefs.map((ref) => {
-          const realId = this.idAliasMap.get(ref.id) ?? ref.id;
-          if (ref.type === 'folder') {
-            const live = this.foldersById.get(realId);
-            return {
-              ...ref,
-              id: realId,
-              expectedVersion:
-                live && !live.optimistic ? live.version : ref.expectedVersion,
-            };
-          }
-          const live = this.filesById.get(realId);
-          return {
-            ...ref,
-            id: realId,
-            expectedVersion:
-              live && !live.optimistic ? live.meta_version : ref.expectedVersion,
-          };
-        });
-        const res: BatchMoveWorkspaceResponse = await this.batchMoveFn({
-          items: hydratedRefs,
-          targetParentId: (p.targetParentId as string | null) ?? null,
-          conflictPolicy:
-            (p.conflictPolicy as WorkspaceConflictPolicy | undefined) ?? 'fail',
-        });
-        return {
-          movedFolders: res.movedFolders,
-          movedFiles: res.movedFiles,
-        };
-      }
-      case 'workspace.copy': {
-        const rawItems =
-          (p.items as Array<{ type: 'file' | 'folder'; id: string }>) ?? [];
-        const mappedItems = rawItems.map((entry) => ({
-          type: entry.type,
-          id: this.idAliasMap.get(entry.id) ?? entry.id,
-        }));
-        const res: CopyWorkspaceResponse = p.duplicateInPlace
-          ? await this.duplicateItemsFn({ items: mappedItems })
-          : await this.copyItemsFn({
-              items: mappedItems,
-              targetParentId: (p.targetParentId as string | null) ?? null,
-              conflictPolicy:
-                (p.conflictPolicy as WorkspaceConflictPolicy | undefined) ??
-                'rename',
-            });
-        return {
-          copiedFolders: res.copiedFolders,
-          copiedFiles: res.copiedFiles,
-          queued: res.queued,
-          jobId: res.jobId,
-        };
-      }
-      case 'file.soft_delete': {
-        await this.softDeleteFileFn(resolvedId, item.expectedVersion);
-        return;
-      }
-      case 'file.restore': {
-        const res = await this.restoreFileFn(resolvedId);
-        return { file: res.file };
-      }
-    }
+    return executeOutboxMutation(item, {
+      idAliasMap: this.idAliasMap,
+      foldersById: this.foldersById,
+      filesById: this.filesById,
+      createFolderFn: this.createFolderFn,
+      updateFolderFn: this.updateFolderFn,
+      softDeleteFolderFn: this.softDeleteFolderFn,
+      restoreFolderFn: this.restoreFolderFn,
+      updateFileMetadataFn: this.updateFileMetadataFn,
+      updateFileClassificationFn: this.updateFileClassificationFn,
+      moveFolderFn: this.moveFolderFn,
+      batchMoveFn: this.batchMoveFn,
+      copyItemsFn: this.copyItemsFn,
+      duplicateItemsFn: this.duplicateItemsFn,
+      softDeleteFileFn: this.softDeleteFileFn,
+      restoreFileFn: this.restoreFileFn,
+    });
   }
 
   private handleOutboxSuccess(
@@ -2530,105 +1985,105 @@ export class WorkspaceSyncStore {
     );
   }
 
+  private persistenceContext(): PersistenceContext {
+    const self = this;
+    return {
+      persistence: this.persistence,
+      maxDirectories: this.maxDirectories,
+      now: this.now,
+      get user() {
+        return self.user;
+      },
+      set user(value) {
+        self.user = value;
+      },
+      get policy() {
+        return self.policy;
+      },
+      set policy(value) {
+        self.policy = value;
+      },
+      get syncSeq() {
+        return self.syncSeq;
+      },
+      set syncSeq(value) {
+        self.syncSeq = value;
+      },
+      get purgedBeforeSeq() {
+        return self.purgedBeforeSeq;
+      },
+      set purgedBeforeSeq(value) {
+        self.purgedBeforeSeq = value;
+      },
+      get rootFolderIds() {
+        return self.rootFolderIds;
+      },
+      set rootFolderIds(value) {
+        self.rootFolderIds = value;
+      },
+      get rootNextCursor() {
+        return self.rootNextCursor;
+      },
+      set rootNextCursor(value) {
+        self.rootNextCursor = value;
+      },
+      get pinnedFolderIds() {
+        return self.pinnedFolderIds;
+      },
+      set pinnedFolderIds(value) {
+        self.pinnedFolderIds = value;
+      },
+      get bootstrapDone() {
+        return self.bootstrapDone;
+      },
+      set bootstrapDone(value) {
+        self.bootstrapDone = value;
+      },
+      get hydratedScopeKey() {
+        return self.hydratedScopeKey;
+      },
+      set hydratedScopeKey(value) {
+        self.hydratedScopeKey = value;
+      },
+      get activeDirectoryNotice() {
+        return self.activeDirectoryNotice;
+      },
+      set activeDirectoryNotice(value) {
+        self.activeDirectoryNotice = value;
+      },
+      get activeDirKey() {
+        return self.activeDirKey;
+      },
+      set activeDirKey(value) {
+        self.activeDirKey = value;
+      },
+      get persistTimer() {
+        return self.persistTimer;
+      },
+      set persistTimer(value) {
+        self.persistTimer = value;
+      },
+      foldersById: this.foldersById,
+      filesById: this.filesById,
+      directoriesByKey: this.directoriesByKey,
+      inFlightDirs: this.inFlightDirs,
+    };
+  }
+
   private resetMemoryOnly(): void {
-    this.foldersById.clear();
-    this.filesById.clear();
-    this.directoriesByKey.clear();
-    this.inFlightDirs.clear();
-    this.user = null;
-    this.policy = null;
-    this.syncSeq = 0;
-    this.purgedBeforeSeq = 0;
-    this.rootFolderIds = [];
-    this.rootNextCursor = null;
-    this.pinnedFolderIds = [];
-    this.bootstrapDone = false;
-    this.hydratedScopeKey = null;
-    this.activeDirectoryNotice = null;
+    resetMemoryOnly(this.persistenceContext());
   }
 
   private invalidateAllCachedDirectories(): void {
-    const keepRoot = this.directoriesByKey.get(ROOT_DIR_KEY);
-    this.directoriesByKey.clear();
-    if (keepRoot) {
-      this.directoriesByKey.set(ROOT_DIR_KEY, {
-        ...keepRoot,
-        stale: true,
-      });
-    }
-    pruneWorkingSetInMemory({
-      directories: this.directoriesByKey,
-      foldersById: this.foldersById,
-      filesById: this.filesById,
-      rootFolderIds: this.rootFolderIds,
-      pinnedFolderIds: this.pinnedFolderIds,
-      activeDirKey: this.activeDirKey,
-      maxDirectories: this.maxDirectories,
-    });
+    invalidateAllCachedDirectories(this.persistenceContext());
   }
 
   private pruneAndSchedulePersist(): void {
-    pruneWorkingSetInMemory({
-      directories: this.directoriesByKey,
-      foldersById: this.foldersById,
-      filesById: this.filesById,
-      rootFolderIds: this.rootFolderIds,
-      pinnedFolderIds: this.pinnedFolderIds,
-      activeDirKey: this.activeDirKey,
-      maxDirectories: this.maxDirectories,
-    });
-
-    if (typeof window === 'undefined' && !this.user) return;
-    if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
-    }
-    this.persistTimer = setTimeout(() => {
-      this.persistTimer = null;
-      void this.persistNow();
-    }, 120);
-  }
-
-  private async persistNow(): Promise<void> {
-    if (!this.user) return;
-    const meta: PersistedMetaRecord = {
-      key: 'state',
-      user: this.user,
-      policy: this.policy,
-      syncSeq: this.syncSeq,
-      purgedBeforeSeq: this.purgedBeforeSeq,
-      rootFolderIds: this.rootFolderIds,
-      rootNextCursor: this.rootNextCursor,
-      pinnedFolderIds: this.pinnedFolderIds,
-      updatedAt: this.now(),
-    };
-
-    await this.persistence.saveSnapshot(this.user.tenantId, this.user.id, {
-      meta,
-      folders: Array.from(this.foldersById.values()).filter((f) => !f.optimistic),
-      files: Array.from(this.filesById.values()).filter(
-        (fl) => !fl.optimistic && fl.upload_state !== 'pending'
-      ),
-      directories: Array.from(this.directoriesByKey.values()),
-    });
+    pruneAndSchedulePersist(this.persistenceContext());
   }
 
   private evictSubtreeFromCache(rootFolderId: string): boolean {
-    let touchedActive = this.activeDirKey === rootFolderId;
-    this.directoriesByKey.delete(rootFolderId);
-    this.foldersById.delete(rootFolderId);
-    this.rootFolderIds = removeFromIdList(this.rootFolderIds, rootFolderId);
-    this.pinnedFolderIds = removeFromIdList(this.pinnedFolderIds, rootFolderId);
-
-    for (const [key, dir] of this.directoriesByKey.entries()) {
-      const inSubtree = dir.breadcrumbs.some((b) => b.id === rootFolderId);
-      if (inSubtree) {
-        if (key === this.activeDirKey) touchedActive = true;
-        this.directoriesByKey.delete(key);
-      } else if (dir.folderIds.includes(rootFolderId)) {
-        dir.folderIds = removeFromIdList(dir.folderIds, rootFolderId);
-      }
-    }
-    return touchedActive;
+    return evictSubtreeFromCache(this.persistenceContext(), rootFolderId);
   }
 
   private applyDeltaChanges(changes: SyncDeltaItem[]): {
