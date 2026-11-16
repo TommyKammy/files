@@ -55,6 +55,8 @@ import {
 } from '@/components/WorkspaceContextMenu';
 import type { InspectorTarget } from '@/components/WorkspaceInspectorDrawer';
 import { WorkspaceInspectorOverlay } from '@/components/WorkspaceInspectorOverlay';
+import { WorkspaceEmptyState } from '@/components/WorkspaceEmptyState';
+import { WorkspaceGridBody } from '@/components/WorkspaceGridBody';
 import { WorkspaceItemCard } from '@/components/WorkspaceItemCard';
 import { WorkspaceItemRow } from '@/components/WorkspaceItemRow';
 import { WorkspaceActionOverlays } from '@/components/WorkspaceActionOverlays';
@@ -73,7 +75,7 @@ import {
 import { WorkspaceSelectionBar } from '@/components/WorkspaceSelectionBar';
 import { WorkspaceSelectionCheckbox } from '@/components/WorkspaceSelectionCheckbox';
 import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
-import { WorkspaceTableHeader } from '@/components/WorkspaceTableHeader';
+import { WorkspaceTableBody } from '@/components/WorkspaceTableBody';
 import { WorkspaceToolbar } from '@/components/WorkspaceToolbar';
 import {
   getDropTargetClassName,
@@ -1709,6 +1711,90 @@ export function WorkspaceFileBrowser() {
           );
         }
 
+        function renderTableRow(
+          row: WorkspaceTableRow,
+          globalIdx: number
+        ) {
+
+                    const rowKey = getWorkspaceRowKey(row);
+                    const file = row.kind === 'file' ? row.file : null;
+                    const folder = row.kind === 'folder' ? row.folder : null;
+                    const isPendingUpload = Boolean(
+                      file &&
+                        (file.upload_state === 'pending' || file.optimistic)
+                    );
+                    const isCut = Boolean(
+                      clipboardState?.mode === 'cut' &&
+                        clipboardStore.isCutPending(
+                          row.kind,
+                          row.kind === 'folder'
+                            ? row.folder.id
+                            : row.file.id
+                        )
+                    );
+                    const isDropEligible = Boolean(
+                      folder && !isTrashView && folder.deleted_at == null
+                    );
+                    const dropClass =
+                      folder && dragCtx.isDragging && isDropEligible
+                        ? getDropTargetClassName(
+                            folder.id,
+                            dragCtx.hoveredTarget
+                          )
+                        : '';
+
+                    return (
+                      <WorkspaceItemRow
+                        key={rowKey}
+                        row={row}
+                        globalIdx={globalIdx}
+                        isFocused={focusedRowKey === rowKey}
+                        isSelected={selectedKeys.has(rowKey)}
+                        rowSelectable={!isTrashView && isRowSelectable(row)}
+                        isTrashView={isTrashView}
+                        isInlineRenaming={inlineRename?.rowKey === rowKey}
+                        isContextMenuOpen={
+                          contextMenu?.row
+                            ? getWorkspaceRowKey(contextMenu.row) === rowKey
+                            : false
+                        }
+                        isCut={isCut}
+                        dropClass={dropClass}
+                        inlineRename={inlineRename}
+                        inlineInputRef={inlineInputRef}
+                        inlineCommittedRef={inlineCommittedRef}
+                        prefetcher={prefetcher}
+                        effectiveRole={effectiveRole}
+                        canEditCurrentFolder={canEditCurrentFolder}
+                        canDownloadCurrentFolder={canDownloadCurrentFolder}
+                        isPrivilegedAdmin={isPrivilegedAdmin}
+                        onCheckboxClick={(e) =>
+                          handleCardCheckboxClick(row, rowKey, e)
+                        }
+                        onPointerDown={(e) =>
+                          handleCardPointerDown(row, e)
+                        }
+                        onSelectRow={selectRowFromPointer}
+                        onOpenRow={openRow}
+                        onOpenContextMenu={openRowContextMenu}
+                        onRestoreFolder={handleRestoreFolder}
+                        onRestoreFile={handleRestoreFile}
+                        onDownloadFile={handleDownloadFile}
+                        onSetInlineRename={setInlineRename}
+                        onCommitInlineRename={commitInlineRename}
+                        onFocusRow={setFocusedRowKey}
+                        onFileUpdated={(updatedFile) => {
+                          setTrashFiles((prev) =>
+                            prev.map((f) =>
+                              f.id === updatedFile.id ? updatedFile : f
+                            )
+                          );
+                        }}
+                        onError={setError}
+                      />
+                    );
+        }
+
         return (
           <div className="flex min-h-screen bg-[#efeff1] text-[#111214]">
           <a
@@ -1897,33 +1983,12 @@ export function WorkspaceFileBrowser() {
               読み込み中...
             </div>
           ) : rows.length === 0 ? (
-            <div
-              className="flex min-h-[240px] flex-col items-center justify-center px-6 py-12 text-center"
+            <WorkspaceEmptyState
+              isTrashView={isTrashView}
+              folderId={folderId}
               onContextMenu={handleBackgroundContextMenu}
               onClick={handleBackgroundEmptyClick}
-            >
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#e7e7ea] bg-[#f9f9fa] text-[#6b6f76]">
-                {isTrashView ? (
-                  <Trash2 className="h-4 w-4" />
-                ) : (
-                  <Folder className="h-4 w-4" />
-                )}
-              </div>
-              <p className="mt-3 text-[0.8125rem] font-medium text-[#111214]">
-                {isTrashView
-                  ? 'ゴミ箱は空です'
-                  : folderId
-                    ? 'このフォルダは空です'
-                    : 'アクセス可能なルートフォルダがありません'}
-              </p>
-              <p className="mt-1 max-w-sm text-[0.6875rem] leading-relaxed text-[#6b6f76]">
-                {isTrashView
-                  ? '削除したアイテムはここに表示されます'
-                  : folderId
-                    ? 'ファイルをドロップするか、上の「ファイルを選択」から追加できます'
-                    : '「新規フォルダ」からワークスペースを作成できます'}
-              </p>
-            </div>
+            />
           ) : (
             <div
               ref={(el) => {
@@ -1942,172 +2007,36 @@ export function WorkspaceFileBrowser() {
               }`}
             >
               {viewMode === 'grid' ? (
-                <div className="p-4">
-                  {virtualWindow.topSpacerPx > 0 && (
-                    <div
-                      aria-hidden="true"
-                      style={{ height: `${virtualWindow.topSpacerPx}px` }}
-                    />
-                  )}
-                  {visibleGridRows.map((chunk, chunkIdx) => {
-                    const baseIdx = (virtualWindow.startIndex + chunkIdx) * GRID_COLUMNS;
-                    return (
-                      <div
-                        key={`grid-row:${virtualWindow.startIndex + chunkIdx}`}
-                        className="mb-3 grid grid-cols-1 gap-3 last:mb-0 sm:grid-cols-2 lg:grid-cols-4"
-                      >
-                        {chunk.map((row, colIdx) =>
-                          renderGridRowCard(row, baseIdx + colIdx)
-                        )}
-                      </div>
-                    );
-                  })}
-                  {virtualWindow.bottomSpacerPx > 0 && (
-                    <div
-                      aria-hidden="true"
-                      style={{ height: `${virtualWindow.bottomSpacerPx}px` }}
-                    />
-                  )}
-                </div>
+                <WorkspaceGridBody
+                  visibleRows={visibleGridRows}
+                  startIndex={virtualWindow.startIndex}
+                  columns={GRID_COLUMNS}
+                  topSpacerPx={virtualWindow.topSpacerPx}
+                  bottomSpacerPx={virtualWindow.bottomSpacerPx}
+                  renderCard={renderGridRowCard}
+                />
               ) : (
-                <table
-                  role="grid"
-                  aria-labelledby="workspace-table-caption"
-                  aria-multiselectable="true"
-                  aria-rowcount={rows.length + 1}
-                  aria-colcount={6}
-                  className="w-full text-left text-xs"
-                >
-                  <caption
-                    id="workspace-table-caption"
-                    className="sr-only"
-                  >
-                    ファイルとフォルダの一覧
-                  </caption>
-                  <WorkspaceTableHeader
-                    isTrashView={isTrashView}
-                    selectableRowKeys={selectableRowKeys}
-                    selectedRowCount={selectedRows.length}
-                    sortBy={sortBy}
-                    sortDir={sortDir}
-                    onToggleSelectAll={() => {
-                      if (selectedRows.length === selectableRowKeys.length) {
-                        setSelectedKeys(new Set());
-                      } else {
-                        setSelectedKeys(new Set(selectableRowKeys));
-                      }
-                    }}
-                    onSort={handleSortHeaderClick}
-                  />
-                <tbody className="divide-y divide-[#f0f0f1]">
-                  {virtualWindow.topSpacerPx > 0 && (
-                    <tr aria-hidden="true">
-                      <td
-                        colSpan={6}
-                        style={{
-                          height: `${virtualWindow.topSpacerPx}px`,
-                          padding: 0,
-                          border: 0,
-                        }}
-                      />
-                    </tr>
-                  )}
-
-                  {visibleRows.map((row, sliceIdx) => {
-                    const globalIdx = virtualWindow.startIndex + sliceIdx;
-                    const rowKey = getWorkspaceRowKey(row);
-                    const file = row.kind === 'file' ? row.file : null;
-                    const folder = row.kind === 'folder' ? row.folder : null;
-                    const isPendingUpload = Boolean(
-                      file &&
-                        (file.upload_state === 'pending' || file.optimistic)
-                    );
-                    const isCut = Boolean(
-                      clipboardState?.mode === 'cut' &&
-                        clipboardStore.isCutPending(
-                          row.kind,
-                          row.kind === 'folder'
-                            ? row.folder.id
-                            : row.file.id
-                        )
-                    );
-                    const isDropEligible = Boolean(
-                      folder && !isTrashView && folder.deleted_at == null
-                    );
-                    const dropClass =
-                      folder && dragCtx.isDragging && isDropEligible
-                        ? getDropTargetClassName(
-                            folder.id,
-                            dragCtx.hoveredTarget
-                          )
-                        : '';
-
-                    return (
-                      <WorkspaceItemRow
-                        key={rowKey}
-                        row={row}
-                        globalIdx={globalIdx}
-                        isFocused={focusedRowKey === rowKey}
-                        isSelected={selectedKeys.has(rowKey)}
-                        rowSelectable={!isTrashView && isRowSelectable(row)}
-                        isTrashView={isTrashView}
-                        isInlineRenaming={inlineRename?.rowKey === rowKey}
-                        isContextMenuOpen={
-                          contextMenu?.row
-                            ? getWorkspaceRowKey(contextMenu.row) === rowKey
-                            : false
-                        }
-                        isCut={isCut}
-                        dropClass={dropClass}
-                        inlineRename={inlineRename}
-                        inlineInputRef={inlineInputRef}
-                        inlineCommittedRef={inlineCommittedRef}
-                        prefetcher={prefetcher}
-                        effectiveRole={effectiveRole}
-                        canEditCurrentFolder={canEditCurrentFolder}
-                        canDownloadCurrentFolder={canDownloadCurrentFolder}
-                        isPrivilegedAdmin={isPrivilegedAdmin}
-                        onCheckboxClick={(e) =>
-                          handleCardCheckboxClick(row, rowKey, e)
-                        }
-                        onPointerDown={(e) =>
-                          handleCardPointerDown(row, e)
-                        }
-                        onSelectRow={selectRowFromPointer}
-                        onOpenRow={openRow}
-                        onOpenContextMenu={openRowContextMenu}
-                        onRestoreFolder={handleRestoreFolder}
-                        onRestoreFile={handleRestoreFile}
-                        onDownloadFile={handleDownloadFile}
-                        onSetInlineRename={setInlineRename}
-                        onCommitInlineRename={commitInlineRename}
-                        onFocusRow={setFocusedRowKey}
-                        onFileUpdated={(updatedFile) => {
-                          setTrashFiles((prev) =>
-                            prev.map((f) =>
-                              f.id === updatedFile.id ? updatedFile : f
-                            )
-                          );
-                        }}
-                        onError={setError}
-                      />
-                    );
-                  })}
-
-                  {virtualWindow.bottomSpacerPx > 0 && (
-                    <tr aria-hidden="true">
-                      <td
-                        colSpan={6}
-                        style={{
-                          height: `${virtualWindow.bottomSpacerPx}px`,
-                          padding: 0,
-                          border: 0,
-                        }}
-                      />
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                <WorkspaceTableBody
+                  rowCount={rows.length}
+                  visibleRows={visibleRows}
+                  startIndex={virtualWindow.startIndex}
+                  topSpacerPx={virtualWindow.topSpacerPx}
+                  bottomSpacerPx={virtualWindow.bottomSpacerPx}
+                  isTrashView={isTrashView}
+                  selectableRowKeys={selectableRowKeys}
+                  selectedRowCount={selectedRows.length}
+                  sortBy={sortBy}
+                  sortDir={sortDir}
+                  onToggleSelectAll={() => {
+                    if (selectedRows.length === selectableRowKeys.length) {
+                      setSelectedKeys(new Set());
+                    } else {
+                      setSelectedKeys(new Set(selectableRowKeys));
+                    }
+                  }}
+                  onSort={handleSortHeaderClick}
+                  renderRow={renderTableRow}
+                />
               )}
             </div>
           )}
