@@ -119,6 +119,8 @@ import { useWorkspaceKeyboard } from '@/lib/use-workspace-keyboard';
 import { useWorkspaceSelection } from '@/lib/use-workspace-selection';
 import { useWorkspaceTrash } from '@/lib/use-workspace-trash';
 import { useWorkspaceUploads } from '@/lib/use-workspace-uploads';
+import { useWorkspaceVirtualization } from '@/lib/use-workspace-virtualization';
+import { describeWorkspaceRow } from '@/lib/workspace-row-presentation';
 import {
   getWorkspaceRowKey,
   isRowControlTarget,
@@ -530,18 +532,15 @@ export function WorkspaceFileBrowser() {
     setSelectionAnchorKey,
   });
 
-  const GRID_COLUMNS = 4;
-  const gridRows = useMemo(
-    () => chunkItemsIntoGridRows(rows, GRID_COLUMNS),
-    [rows]
-  );
+  const {
+    GRID_COLUMNS,
+    gridRows,
+    virtualWindow,
+    visibleRows,
+    visibleGridRows,
+    scrollLinearRowIntoView,
+  } = useWorkspaceVirtualization({ rows, viewMode });
 
-  const virtualItemCount = viewMode === 'grid' ? gridRows.length : rows.length;
-  const virtualWindow = useTableVirtualWindow(virtualItemCount, {
-    rowHeight: viewMode === 'grid' ? 156 : 52,
-    overscan: viewMode === 'grid' ? 4 : 10,
-    threshold: viewMode === 'grid' ? 12 : 40,
-  });
   const {
     previewTarget,
     setPreviewTarget,
@@ -579,31 +578,6 @@ export function WorkspaceFileBrowser() {
     orderedRowKeys,
     virtualWindow,
   });
-
-  const visibleRows = useMemo(
-    () =>
-      viewMode === 'list'
-        ? rows.slice(virtualWindow.startIndex, virtualWindow.endIndex)
-        : [],
-    [viewMode, rows, virtualWindow.startIndex, virtualWindow.endIndex]
-  );
-
-  const visibleGridRows = useMemo(
-    () =>
-      viewMode === 'grid'
-        ? gridRows.slice(virtualWindow.startIndex, virtualWindow.endIndex)
-        : [],
-    [viewMode, gridRows, virtualWindow.startIndex, virtualWindow.endIndex]
-  );
-
-  const scrollLinearRowIntoView = useCallback(
-    (linearIdx: number) => {
-      const targetIdx =
-        viewMode === 'grid' ? Math.floor(linearIdx / GRID_COLUMNS) : linearIdx;
-      virtualWindow.scrollRowIntoView(targetIdx);
-    },
-    [viewMode, virtualWindow]
-  );
 
   const inspectorTarget = useMemo<InspectorTarget | null>(() => {
     if (isTrashView) return null;
@@ -1641,22 +1615,19 @@ export function WorkspaceFileBrowser() {
         }
 
         function renderGridRowCard(row: WorkspaceTableRow, globalIdx: number) {
-          const rowKey = getWorkspaceRowKey(row);
-          const file = row.kind === 'file' ? row.file : null;
-          const folder = row.kind === 'folder' ? row.folder : null;
-          const isPendingUpload = Boolean(
-            file && (file.upload_state === 'pending' || file.optimistic)
-          );
-          const isCut = Boolean(
-            clipboardState?.mode === 'cut' &&
-              clipboardStore.isCutPending(
-                row.kind,
-                row.kind === 'folder' ? row.folder.id : row.file.id
-              )
-          );
-          const isDropEligible = Boolean(
-            folder && !isTrashView && folder.deleted_at == null
-          );
+          const {
+            rowKey,
+            file,
+            folder,
+            isPendingUpload,
+            isCut,
+            isDropEligible,
+          } = describeWorkspaceRow({
+            row,
+            isTrashView,
+            clipboardState,
+            isCutPending: (kind, id) => clipboardStore.isCutPending(kind, id),
+          });
           const dropClass =
             folder && dragCtx.isDragging && isDropEligible
               ? getDropTargetClassName(folder.id, dragCtx.hoveredTarget)
@@ -1705,25 +1676,20 @@ export function WorkspaceFileBrowser() {
           globalIdx: number
         ) {
 
-                    const rowKey = getWorkspaceRowKey(row);
-                    const file = row.kind === 'file' ? row.file : null;
-                    const folder = row.kind === 'folder' ? row.folder : null;
-                    const isPendingUpload = Boolean(
-                      file &&
-                        (file.upload_state === 'pending' || file.optimistic)
-                    );
-                    const isCut = Boolean(
-                      clipboardState?.mode === 'cut' &&
-                        clipboardStore.isCutPending(
-                          row.kind,
-                          row.kind === 'folder'
-                            ? row.folder.id
-                            : row.file.id
-                        )
-                    );
-                    const isDropEligible = Boolean(
-                      folder && !isTrashView && folder.deleted_at == null
-                    );
+                    const {
+                      rowKey,
+                      file,
+                      folder,
+                      isPendingUpload,
+                      isCut,
+                      isDropEligible,
+                    } = describeWorkspaceRow({
+                      row,
+                      isTrashView,
+                      clipboardState,
+                      isCutPending: (kind, id) =>
+                        clipboardStore.isCutPending(kind, id),
+                    });
                     const dropClass =
                       folder && dragCtx.isDragging && isDropEligible
                         ? getDropTargetClassName(
