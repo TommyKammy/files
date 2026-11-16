@@ -82,6 +82,91 @@ describe('RBAC Authorization & Permission Management (TOM-10)', () => {
     ]);
   });
 
+  it('GET /api/permissions exposes advancedRolesEnabled and grant breakdown details', async () => {
+    const testEnv = buildTestEnv();
+
+    // Default (no tenant_policies row) must fail closed.
+    const disabledRes = await app.fetch(
+      new Request(
+        'http://127.0.0.1:8787/api/permissions?targetType=folder&targetId=f-child-p',
+        { headers: devHeaders('perm-member') }
+      ),
+      testEnv
+    );
+    expect(disabledRes.status).toBe(200);
+    const disabledBody = (await disabledRes.json()) as {
+      advancedRolesEnabled: boolean;
+      effectiveRole: string;
+      effectiveBreakdown: Array<Record<string, unknown>>;
+      permissions: Array<Record<string, unknown>>;
+    };
+    expect(disabledBody.advancedRolesEnabled).toBe(false);
+    expect(disabledBody.effectiveRole).toBe('viewer');
+
+    await env.DB.prepare(
+      `INSERT INTO tenant_policies (tenant_id, advanced_roles_enabled)
+       VALUES ('tenant-perm', 1)
+       ON CONFLICT (tenant_id) DO UPDATE SET advanced_roles_enabled = 1`
+    ).run();
+
+    const enabledRes = await app.fetch(
+      new Request(
+        'http://127.0.0.1:8787/api/permissions?targetType=folder&targetId=f-child-p',
+        { headers: devHeaders('perm-member') }
+      ),
+      testEnv
+    );
+    expect(enabledRes.status).toBe(200);
+    const enabledBody = (await enabledRes.json()) as {
+      advancedRolesEnabled: boolean;
+      grantedRoles: string[];
+      effectiveBreakdown: Array<{
+        granteeType: string;
+        granteeId: string;
+        role: string;
+        inherited: boolean;
+        sourceName: string | null;
+        targetId: string;
+      }>;
+      permissions: Array<{
+        granteeType: string;
+        granteeId: string;
+        role: string;
+        inherited: boolean;
+        sourceName: string | null;
+        synthesizedRole: string | null;
+        synthesizedCapabilities: string[];
+      }>;
+    };
+    expect(enabledBody.advancedRolesEnabled).toBe(true);
+    expect(enabledBody.grantedRoles).toContain('viewer');
+
+    const inheritedGroupGrant = enabledBody.permissions.find(
+      (row) =>
+        row.granteeType === 'group' &&
+        row.granteeId === 'grp-perm-viewers' &&
+        row.role === 'viewer'
+    );
+    expect(inheritedGroupGrant?.inherited).toBe(true);
+    expect(inheritedGroupGrant?.sourceName).toBe('Root');
+    expect(inheritedGroupGrant?.synthesizedRole).toBe('viewer');
+    expect(inheritedGroupGrant?.synthesizedCapabilities).toContain(
+      'item.download'
+    );
+
+    const memberBreakdown = enabledBody.effectiveBreakdown.find(
+      (grant) =>
+        grant.granteeType === 'group' &&
+        grant.granteeId === 'grp-perm-viewers'
+    );
+    expect(memberBreakdown).toMatchObject({
+      role: 'viewer',
+      inherited: true,
+      sourceName: 'Root',
+      targetId: 'f-root-p',
+    });
+  });
+
   it('resolves inherited user and group permissions across folder_closures', async () => {
     const memberFileAccess = await resolveTargetAccess(
       env.DB,

@@ -15,11 +15,14 @@ import type { FileItem } from '@/types/files';
 export function FileDropzoneUploader({
   folderId,
   disabled = false,
+  canUploadVersion = true,
   onUploaded,
   onRegisterEnqueueFiles,
 }: {
   folderId: string;
   disabled?: boolean;
+  /** When false (`uploader`, `previewer_uploader`) the policy is pinned to fail. */
+  canUploadVersion?: boolean;
   onUploaded?: (file?: FileItem) => void;
   onRegisterEnqueueFiles?: (fn: ((files: FileList | File[]) => void) | null) => void;
 }) {
@@ -35,6 +38,7 @@ export function FileDropzoneUploader({
   } = useFileDropzoneUploader({
     folderId,
     disabled,
+    canUploadVersion,
     onUploaded,
     onRegisterEnqueueFiles,
   });
@@ -96,19 +100,34 @@ export function FileDropzoneUploader({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          <select
-            aria-label="同名ファイル衝突時のポリシー"
-            value={conflictPolicy}
-            onChange={(e) =>
-              setConflictPolicy(e.target.value as 'fail' | 'new_version')
-            }
-            disabled={disabled}
-            className="h-7 rounded-md border border-[#e1e1e4] bg-white px-2 text-[0.6875rem] text-[#55565a] focus:border-[#5e6ad2] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5e6ad2]/40"
-          >
-            <option value="fail">同名ファイル: エラー通知</option>
-            <option value="new_version">同名ファイル: 新バージョン追記</option>
-          </select>
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 sm:w-auto">
+          <div className="flex w-full min-w-0 flex-col gap-0.5 sm:w-auto">
+            <select
+              aria-label="同名ファイル衝突時のポリシー"
+              aria-describedby={
+                !canUploadVersion ? 'upload-conflict-policy-note' : undefined
+              }
+              value={conflictPolicy}
+              onChange={(e) =>
+                setConflictPolicy(e.target.value as 'fail' | 'new_version')
+              }
+              disabled={disabled || !canUploadVersion}
+              className="h-7 max-w-full rounded-md border border-[#e1e1e4] bg-white px-2 text-[0.6875rem] text-[#55565a] focus:border-[#5e6ad2] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5e6ad2]/40 disabled:cursor-not-allowed disabled:bg-[#f4f4f5] disabled:text-[#8a8d94]"
+            >
+              <option value="fail">同名ファイル: エラー通知</option>
+              <option value="new_version" disabled={!canUploadVersion}>
+                同名ファイル: 新バージョン追記
+              </option>
+            </select>
+            {!canUploadVersion && (
+              <p
+                id="upload-conflict-policy-note"
+                className="max-w-56 text-[0.625rem] leading-4 text-[#8a5a00]"
+              >
+                ※ 新規アップロードのみ可（既存ファイルの上書き不可）
+              </p>
+            )}
+          </div>
 
           <input
             ref={fileInputRef}

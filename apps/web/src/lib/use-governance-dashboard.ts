@@ -45,6 +45,18 @@ export function useGovernanceDashboard() {
   const [sharedLinks, setSharedLinks] = useState<AdminSharedLinkRow[]>([]);
   const [policy, setPolicy] = useState<TenantPolicyRow | null>(null);
   const [policySaving, setPolicySaving] = useState(false);
+  const [advancedRolesSaving, setAdvancedRolesSaving] = useState(false);
+  const [advancedRolesError, setAdvancedRolesError] = useState<string | null>(
+    null
+  );
+  const [advancedRolesNotice, setAdvancedRolesNotice] = useState<string | null>(
+    null
+  );
+  const advancedRolesDirtyRef = useRef(false);
+
+  function setAdvancedRolesDirty(dirty: boolean) {
+    advancedRolesDirtyRef.current = dirty;
+  }
 
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [auditCursor, setAuditCursor] = useState<{
@@ -95,7 +107,11 @@ export function useGovernanceDashboard() {
         setSuggestions(aiRes.suggestions);
         setSelectedIds(new Set());
         setSharedLinks(linksRes.links);
-        setPolicy(policyRes.policy);
+        // Never clobber an in-progress advanced-role switch with a background
+        // realtime refresh (`admin.policy_updated` fires `loadAll({ silent })`).
+        if (!advancedRolesDirtyRef.current) {
+          setPolicy(policyRes.policy);
+        }
         setAuditLogs(logsRes.logs);
         setAuditCursor(logsRes.nextCursor);
       } catch (err) {
@@ -323,6 +339,41 @@ export function useGovernanceDashboard() {
     }
   }
 
+  /**
+   * Dedicated advanced-role policy save. Updates only
+   * `advanced_roles_enabled` so a pending edit in the shared links policy form
+   * is never silently overwritten.
+   */
+  async function handleAdvancedRolesUpdate(nextEnabled: boolean) {
+    if (advancedRolesSaving) return false;
+    setAdvancedRolesSaving(true);
+    setAdvancedRolesError(null);
+    setAdvancedRolesNotice(null);
+    try {
+      const res = await updateAdminPolicies({
+        advancedRolesEnabled: nextEnabled,
+      });
+      advancedRolesDirtyRef.current = false;
+      setPolicy(res.policy);
+      void syncStore.bootstrap({ force: true });
+      setAdvancedRolesNotice(
+        nextEnabled
+          ? '高度ロール (Uploader / Previewer + Uploader / Viewer + Uploader) を有効化しました。フォルダ権限画面で付与できます。'
+          : '高度ロールを無効化しました。新規付与はブロックされますが、既存の付与は保持されます。'
+      );
+      return true;
+    } catch (err) {
+      setAdvancedRolesError(
+        err instanceof ApiClientError
+          ? err.message
+          : '高度ロール設定の更新に失敗しました'
+      );
+      return false;
+    } finally {
+      setAdvancedRolesSaving(false);
+    }
+  }
+
   async function handleLoadMoreLogs() {
     if (!auditCursor || auditLoadingMore) return;
     setAuditLoadingMore(true);
@@ -362,6 +413,10 @@ export function useGovernanceDashboard() {
     sharedLinks,
     policy,
     policySaving,
+    advancedRolesSaving,
+    advancedRolesError,
+    advancedRolesNotice,
+    setAdvancedRolesDirty,
     auditLogs,
     auditCursor,
     auditActionFilter,
@@ -378,6 +433,7 @@ export function useGovernanceDashboard() {
     handleSingleApprove,
     handleEmergencyRevoke,
     handlePolicySubmit,
+    handleAdvancedRolesUpdate,
     handleLoadMoreLogs,
   };
 }

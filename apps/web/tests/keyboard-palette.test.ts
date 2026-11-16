@@ -395,6 +395,9 @@ test('buildPaletteCommands exposes Phase 6 clipboard, inspector, and view comman
     isAdmin: false,
     isWorkspace: true,
     hasTargetItem: true,
+    canCreateFolder: true,
+    canInspectTarget: true,
+    canMoveCopyTarget: true,
     canClassifyTarget: true,
     canShareTarget: true,
     canTrashTarget: true,
@@ -421,6 +424,9 @@ test('buildPaletteCommands exposes Phase 6 clipboard, inspector, and view comman
     isAdmin: false,
     isWorkspace: true,
     hasTargetItem: true,
+    canCreateFolder: false,
+    canInspectTarget: true,
+    canMoveCopyTarget: false,
     canClassifyTarget: false,
     canShareTarget: false,
     canTrashTarget: false,
@@ -436,4 +442,26 @@ test('buildPaletteCommands exposes Phase 6 clipboard, inspector, and view comman
   assert.equal(previewerIds.includes('cmd:duplicate'), false);
   assert.equal(previewerIds.includes('cmd:toggle-inspector'), true);
   assert.equal(previewerIds.includes('cmd:toggle-view'), true);
+
+  // Uploader is upload-only: no move/copy, share, trash, classify or inspector.
+  const uploaderIds = buildPaletteCommands({
+    isAdmin: false,
+    isWorkspace: true,
+    hasTargetItem: true,
+    canCreateFolder: true,
+    canInspectTarget: false,
+    canMoveCopyTarget: false,
+    canClassifyTarget: false,
+    canShareTarget: false,
+    canTrashTarget: false,
+    canCopyTarget: false,
+    canCutTarget: false,
+    canPasteClipboard: false,
+    canDuplicateTarget: false,
+  }).map((c) => c.id);
+  assert.equal(uploaderIds.includes('cmd:new-folder'), true);
+  assert.equal(uploaderIds.includes('cmd:move-copy'), false);
+  assert.equal(uploaderIds.includes('cmd:toggle-inspector'), false);
+  assert.equal(uploaderIds.includes('cmd:share'), false);
+  assert.equal(uploaderIds.includes('cmd:trash'), false);
 });

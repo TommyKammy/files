@@ -11,7 +11,7 @@ export function useWorkspaceUploads({
   user,
   isTrashView,
   currentFolder,
-  canEditCurrentFolder,
+  canUploadNew,
   clipboardStore,
   syncStore,
   handlePasteClipboard,
@@ -20,7 +20,7 @@ export function useWorkspaceUploads({
   user: AuthUser | null;
   isTrashView: boolean;
   currentFolder: FolderSummary | null;
-  canEditCurrentFolder: boolean;
+  canUploadNew: boolean;
   clipboardStore: WorkspaceClipboardStore;
   syncStore: WorkspaceSyncStore;
   handlePasteClipboard: () => void;
@@ -38,7 +38,7 @@ export function useWorkspaceUploads({
       if (!files || files.length === 0) return;
       if (
         !currentFolder ||
-        !canEditCurrentFolder ||
+        !canUploadNew ||
         !pasteEnqueueFilesRef.current
       ) {
         syncStore.pushToast({
@@ -56,7 +56,7 @@ export function useWorkspaceUploads({
         });
       }
     },
-    [currentFolder, canEditCurrentFolder, syncStore]
+    [currentFolder, canUploadNew, syncStore]
   );
 
   useEffect(() => {
@@ -80,7 +80,7 @@ export function useWorkspaceUploads({
         lastOsPasteAtRef.current = performance.now();
         if (
           !currentFolder ||
-          !canEditCurrentFolder ||
+          !canUploadNew ||
           !pasteEnqueueFilesRef.current
         ) {
           syncStore.pushToast({
@@ -121,7 +121,7 @@ export function useWorkspaceUploads({
     user,
     isTrashView,
     currentFolder,
-    canEditCurrentFolder,
+    canUploadNew,
     clipboardStore,
     syncStore,
     handlePasteClipboard,

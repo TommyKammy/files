@@ -1,5 +1,5 @@
 import type {
-  PermissionEntry,
+  PermissionsListResponse,
   PrincipalCandidate,
   PublicShareMeta,
   PublicShareUrlResponse,
@@ -14,7 +14,7 @@ import {
 export function listPermissions(
   targetType: 'folder' | 'file',
   targetId: string
-): Promise<{ permissions: PermissionEntry[] }> {
+): Promise<PermissionsListResponse> {
   const params = new URLSearchParams({ targetType, targetId });
   return apiFetch(`/api/permissions?${params.toString()}`);
 }

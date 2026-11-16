@@ -15,7 +15,7 @@ export function useWorkspaceTrashActions({
   isTrashView,
   selectedRows,
   focusedRow,
-  canEditRow,
+  canDeleteRow,
   folderId,
   effectiveRole,
   setError,
@@ -27,7 +27,7 @@ export function useWorkspaceTrashActions({
   isTrashView: boolean;
   selectedRows: WorkspaceTableRow[];
   focusedRow: WorkspaceTableRow | null;
-  canEditRow: (row: WorkspaceTableRow) => boolean;
+  canDeleteRow: (row: WorkspaceTableRow) => boolean;
   folderId: string | null;
   effectiveRole: ResourceRole;
   setError: (message: string | null) => void;
@@ -49,7 +49,7 @@ export function useWorkspaceTrashActions({
     let moved = 0;
     let firstError: string | null = null;
     for (const row of targets) {
-      if (!canEditRow(row)) continue;
+      if (!canDeleteRow(row)) continue;
       if (row.kind === 'folder') {
         const res = syncStore.optimisticSoftDeleteFolder(row.folder);
         if (res.ok) moved += 1;
@@ -82,7 +82,7 @@ export function useWorkspaceTrashActions({
     isTrashView,
     selectedRows,
     focusedRow,
-    canEditRow,
+    canDeleteRow,
     syncStore,
     folderId,
     effectiveRole,

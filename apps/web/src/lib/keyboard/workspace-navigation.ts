@@ -23,6 +23,7 @@ export interface WorkspaceNavigationContext {
   selectionAnchorKey: string | null;
   focusedRowKey: string | null;
   canDownloadCurrentFolder: boolean;
+  canInspectCurrentFolder: boolean;
   setSelectedKeys: Dispatch<SetStateAction<Set<string>>>;
   setFocusedRowKey: (key: string | null) => void;
   setSelectionAnchorKey: (key: string | null) => void;
@@ -194,7 +195,7 @@ export function handleWorkspaceNavigationKey(
   }
 
   if (lower === 'i') {
-    if (ctx.isTrashView) return false;
+    if (ctx.isTrashView || !ctx.canInspectCurrentFolder) return false;
     e.preventDefault();
     ctx.setInspectorOpen((prev) => !prev);
     return true;

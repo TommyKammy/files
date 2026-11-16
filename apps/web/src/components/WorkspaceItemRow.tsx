@@ -48,7 +48,7 @@ export function WorkspaceItemRow({
   inlineCommittedRef,
   prefetcher,
   effectiveRole,
-  canEditCurrentFolder,
+  canClassify,
   canDownloadCurrentFolder,
   isPrivilegedAdmin,
   onCheckboxClick,
@@ -81,7 +81,7 @@ export function WorkspaceItemRow({
   inlineCommittedRef: React.MutableRefObject<string | null>;
   prefetcher: IntentPrefetcher;
   effectiveRole: ResourceRole;
-  canEditCurrentFolder: boolean;
+  canClassify: boolean;
   canDownloadCurrentFolder: boolean;
   isPrivilegedAdmin: boolean;
   onCheckboxClick: (event: MouseEvent<HTMLButtonElement>) => void;
@@ -320,7 +320,7 @@ export function WorkspaceItemRow({
             canEdit={
               !isTrashView &&
               !isPendingUpload &&
-              (canEditCurrentFolder || isPrivilegedAdmin)
+              (canClassify || isPrivilegedAdmin)
             }
             effectiveRole={effectiveRole}
             isPrivilegedAdmin={isPrivilegedAdmin}

@@ -26,9 +26,18 @@ export function WorkspaceMainHeader({
   sortBy,
   sortDir,
   selectedRows,
-  canEditCurrentFolder,
+  canCreateFolder,
+  canRenameCurrentFolder,
+  canShareCurrentFolder,
   canManageCurrentFolderPerms,
+  canInspectCurrentFolder,
   isPrivilegedAdmin,
+  canCopySelection,
+  canCutSelection,
+  canDuplicateSelection,
+  canMoveCopySelection,
+  canClassifySelection,
+  canTrashSelection,
   viewMode,
   inspectorOpen,
   onNewFolder,
@@ -57,9 +66,18 @@ export function WorkspaceMainHeader({
   sortBy: WorkspaceSortField;
   sortDir: WorkspaceSortDirection;
   selectedRows: WorkspaceTableRow[];
-  canEditCurrentFolder: boolean;
+  canCreateFolder: boolean;
+  canRenameCurrentFolder: boolean;
+  canShareCurrentFolder: boolean;
   canManageCurrentFolderPerms: boolean;
+  canInspectCurrentFolder: boolean;
   isPrivilegedAdmin: boolean;
+  canCopySelection: boolean;
+  canCutSelection: boolean;
+  canDuplicateSelection: boolean;
+  canMoveCopySelection: boolean;
+  canClassifySelection: boolean;
+  canTrashSelection: boolean;
   viewMode: 'list' | 'grid';
   inspectorOpen: boolean;
   onNewFolder: () => void;
@@ -123,8 +141,11 @@ export function WorkspaceMainHeader({
         <WorkspaceToolbar
           isTrashView={isTrashView}
           hasSelection={!isTrashView && selectedRows.length > 0}
-          canEditCurrentFolder={canEditCurrentFolder}
+          canCreateFolder={canCreateFolder}
+          canRenameCurrentFolder={canRenameCurrentFolder}
+          canShareCurrentFolder={canShareCurrentFolder}
           canManageCurrentFolderPerms={canManageCurrentFolderPerms}
+          canInspectCurrentFolder={canInspectCurrentFolder}
           currentFolder={currentFolder}
           viewMode={viewMode}
           inspectorOpen={inspectorOpen}
@@ -141,7 +162,12 @@ export function WorkspaceMainHeader({
         {!isTrashView && selectedRows.length > 0 && (
           <WorkspaceSelectionBar
             selectedRows={selectedRows}
-            canEditCurrentFolder={canEditCurrentFolder}
+            canCopySelection={canCopySelection}
+            canCutSelection={canCutSelection}
+            canDuplicateSelection={canDuplicateSelection}
+            canMoveCopySelection={canMoveCopySelection}
+            canClassifySelection={canClassifySelection}
+            canTrashSelection={canTrashSelection}
             isPrivilegedAdmin={isPrivilegedAdmin}
             onCopy={onCopy}
             onCut={onCut}

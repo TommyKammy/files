@@ -32,6 +32,7 @@ export function FolderTreeContextMenu({
   anchor,
   folder,
   canShare,
+  canCopyLink,
   canManagePermissions,
   canMove,
   canPin,
@@ -43,6 +44,7 @@ export function FolderTreeContextMenu({
   anchor: { x: number; y: number };
   folder: FolderSummary;
   canShare: boolean;
+  canCopyLink: boolean;
   canManagePermissions: boolean;
   canMove: boolean;
   canPin: boolean;
@@ -80,7 +82,7 @@ export function FolderTreeContextMenu({
         id: 'copyLink',
         label: 'リンクをコピー',
         icon: <Link2 className="h-3.5 w-3.5" />,
-        enabled: true,
+        enabled: canCopyLink,
       },
       {
         id: 'permissions',
@@ -151,6 +153,7 @@ export function FolderTreeContextMenu({
     ];
   }, [
     canShare,
+    canCopyLink,
     canManagePermissions,
     canMove,
     canPin,

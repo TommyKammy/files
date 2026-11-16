@@ -32,6 +32,7 @@ export function useWorkspaceDialogs({
   sortedFiles,
   files,
   isTrashView,
+  canPreviewCurrentFolder,
   canDownloadCurrentFolder,
   effectiveRole,
   isPrivilegedAdmin,
@@ -46,6 +47,7 @@ export function useWorkspaceDialogs({
   sortedFiles: FileItem[];
   files: FileItem[];
   isTrashView: boolean;
+  canPreviewCurrentFolder: boolean;
   canDownloadCurrentFolder: boolean;
   effectiveRole: ResourceRole;
   isPrivilegedAdmin: boolean;
@@ -121,7 +123,8 @@ export function useWorkspaceDialogs({
       if (
         file.optimistic ||
         file.upload_state === 'pending' ||
-        isTrashView
+        isTrashView ||
+        !canPreviewCurrentFolder
       ) {
         return;
       }
@@ -138,7 +141,7 @@ export function useWorkspaceDialogs({
         canDownload: canDownloadCurrentFolder,
       });
     },
-    [canDownloadCurrentFolder, isTrashView, setFocusedRowKey]
+    [canPreviewCurrentFolder, canDownloadCurrentFolder, isTrashView, setFocusedRowKey]
   );
 
   const openVersionHistoryForFile = useCallback(

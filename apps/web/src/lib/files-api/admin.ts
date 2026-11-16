@@ -75,6 +75,7 @@ export function updateAdminPolicies(payload: {
   trashRetentionDays?: number;
   aiClassificationMode?: AiClassificationMode;
   aiAutoApplyThreshold?: number | null;
+  advancedRolesEnabled?: boolean;
 }): Promise<{ policy: TenantPolicyRow }> {
   return apiFetch('/api/admin/policies', {
     method: 'PATCH',

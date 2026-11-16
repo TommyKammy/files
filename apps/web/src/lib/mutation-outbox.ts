@@ -1,8 +1,7 @@
-import {
-  hasRoleAtLeast,
-  isClassificationFloorViolated,
-} from '@/lib/formatters';
+import { ROLE_CAPABILITIES, canAccess } from '@/lib/capabilities';
+import { isClassificationFloorViolated } from '@/lib/formatters';
 import type {
+  Capability,
   ClassificationLabel,
   FileItem,
   FolderSummary,
@@ -24,6 +23,33 @@ export type GuardrailFailure = {
 
 export type GuardrailResult = { ok: true } | GuardrailFailure;
 
+/**
+ * Capability guard for optimistic mutations. The role fallback is expanded
+ * through the shared capability matrix, never a linear rank.
+ */
+export function checkCapabilityGuard(
+  effectiveRole: ResourceRole | undefined | null,
+  requiredCapability: Capability,
+  options?: { isPrivilegedAdmin?: boolean; allowAdminOverride?: boolean }
+): GuardrailResult {
+  if (options?.allowAdminOverride && options?.isPrivilegedAdmin) {
+    return { ok: true };
+  }
+  if (!canAccess(effectiveRole, requiredCapability)) {
+    return {
+      ok: false,
+      code: 'FORBIDDEN_ROLE',
+      message: 'この操作に必要な権限がありません',
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Compatibility helper for call sites that only know a required role.
+ * Implemented as capability containment (all capabilities of the required
+ * role), so orthogonal roles can never pass via a numeric rank.
+ */
 export function checkRoleGuard(
   effectiveRole: ResourceRole | undefined | null,
   requiredRole: ResourceRole,
@@ -32,12 +58,14 @@ export function checkRoleGuard(
   if (options?.allowAdminOverride && options?.isPrivilegedAdmin) {
     return { ok: true };
   }
-  if (!hasRoleAtLeast(effectiveRole, requiredRole)) {
-    return {
-      ok: false,
-      code: 'FORBIDDEN_ROLE',
-      message: `この操作には ${requiredRole} 以上の権限が必要です`,
-    };
+  for (const capability of ROLE_CAPABILITIES[requiredRole]) {
+    if (!canAccess(effectiveRole, capability)) {
+      return {
+        ok: false,
+        code: 'FORBIDDEN_ROLE',
+        message: `この操作には ${requiredRole} 以上の権限が必要です`,
+      };
+    }
   }
   return { ok: true };
 }

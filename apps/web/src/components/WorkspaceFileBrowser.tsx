@@ -23,6 +23,7 @@ import { WorkspaceManagementModals } from '@/components/WorkspaceManagementModal
 import { WorkspaceMainHeader } from '@/components/WorkspaceMainHeader';
 import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
+import { WorkspacePermissionBanner } from '@/components/WorkspacePermissionBanner';
 import { WorkspaceTrashFilters } from '@/components/WorkspaceTrashFilters';
 import { WorkspaceUtilityOverlays } from '@/components/WorkspaceUtilityOverlays';
 import { VersionHistoryModal } from '@/components/VersionHistoryModal';
@@ -36,7 +37,7 @@ import {
 } from '@/components/WorkspaceDragPortal';
 import { type DragWorkspaceItem } from '@/lib/drag-drop-controller';
 import { ApiClientError, getFileContentUrl } from '@/lib/files-api';
-import { hasRoleAtLeast } from '@/lib/formatters';
+import { canAccess, capabilitiesForRole } from '@/lib/capabilities';
 import { IntentPrefetcher } from '@/lib/intent-prefetch';
 import { getWorkspaceSyncStore } from '@/lib/sync-store';
 import { useMarqueeSelection } from '@/lib/use-marquee-selection';
@@ -58,7 +59,10 @@ import {
   getWorkspaceClipboardStore,
   useWorkspaceClipboard,
 } from '@/lib/workspace-clipboard';
-import { resolveContextSelection } from '@/lib/workspace-actions';
+import {
+  buildContextMenuCapabilities,
+  resolveContextSelection,
+} from '@/lib/workspace-actions';
 import {
   getTrashEmptyState,
   nextTrashSortForField,
@@ -70,12 +74,22 @@ import {
   type WorkspaceSortField,
 } from '@/lib/workspace-sort-and-view';
 import type {
+  Capability,
   FileItem,
   FolderSummary,
   ResourceRole,
   SearchResultItem,
   TrashItem,
 } from '@/types/files';
+
+function collectRowCapabilities(
+  row: WorkspaceTableRow,
+  folderCapabilities: Capability[] | undefined
+): Capability[] | undefined {
+  return row.kind === 'folder'
+    ? row.folder.capabilities ?? folderCapabilities
+    : folderCapabilities;
+}
 
 function collectDragItemsForRow(
   row: WorkspaceTableRow,
@@ -278,15 +292,56 @@ export function WorkspaceFileBrowser() {
     openFileOrEditor({ id: item.id });
   }
 
-  const canEditCurrentFolder = currentFolder
-    ? hasRoleAtLeast(effectiveRole, 'editor')
-    : true;
-  const canDownloadCurrentFolder = currentFolder
-    ? hasRoleAtLeast(effectiveRole, 'viewer')
-    : true;
+  const currentCapabilities =
+    directory.capabilities ?? capabilitiesForRole(effectiveRole);
+  const currentAccess = {
+    capabilities: directory.capabilities,
+    effectiveRole,
+  };
+  const canPreviewCurrentFolder =
+    !currentFolder || canAccess(currentAccess, 'item.preview');
+  const canDownloadCurrentFolder =
+    !currentFolder || canAccess(currentAccess, 'item.download');
+  const canCreateFolder =
+    !currentFolder || canAccess(currentAccess, 'folder.create');
+  const canRenameCurrentFolder =
+    !currentFolder || canAccess(currentAccess, 'folder.rename');
+  const canDeleteCurrentFolder =
+    !currentFolder || canAccess(currentAccess, 'folder.delete');
   const canManageCurrentFolderPerms = currentFolder
-    ? hasRoleAtLeast(effectiveRole, 'co_owner')
+    ? canAccess(currentAccess, 'permission.manage')
     : false;
+  const canShareCurrentFolder = currentFolder
+    ? canAccess(currentAccess, 'share_link.create')
+    : false;
+  const canManageCurrentFolderLinks = currentFolder
+    ? canAccess(currentAccess, 'share_link.manage')
+    : false;
+  const canUploadNew = currentFolder
+    ? canAccess(currentAccess, 'item.upload_new')
+    : false;
+  const canUploadVersion = currentFolder
+    ? canAccess(currentAccess, 'item.upload_version')
+    : false;
+  const canClassifyCurrentFolder = currentFolder
+    ? canAccess(currentAccess, 'classification.edit')
+    : false;
+  const canInspectCurrentFolder = canPreviewCurrentFolder;
+  const showRoleBanner =
+    !isTrashView &&
+    Boolean(currentFolder) &&
+    (effectiveRole === 'uploader' ||
+      effectiveRole === 'previewer_uploader' ||
+      effectiveRole === 'viewer_uploader' ||
+      effectiveRole === 'previewer');
+
+  /**
+   * Upload-only roles never receive file rows from `/children`, but an
+   * optimistic upload briefly inserts one locally. Filter again so the UI can
+   * never expose a file the server intentionally hides.
+   */
+  const visibleFiles =
+    isTrashView || canPreviewCurrentFolder ? files : [];
   const isPrivilegedAdmin =
     user?.role === 'sys_admin' || user?.role === 'sec_admin';
   const showTrashDeleterFilter =
@@ -338,12 +393,12 @@ export function WorkspaceFileBrowser() {
     () =>
       sortWorkspaceFoldersAndFiles({
         folders,
-        files,
+        files: visibleFiles,
         sortBy,
         sortDir,
         isTrashView,
       }),
-    [folders, files, sortBy, sortDir, isTrashView]
+    [folders, visibleFiles, sortBy, sortDir, isTrashView]
   );
 
   const rows = useMemo<WorkspaceTableRow[]>(
@@ -455,8 +510,9 @@ export function WorkspaceFileBrowser() {
     openVersionHistoryForFile,
   } = useWorkspaceDialogs({
     sortedFiles,
-    files,
+    files: visibleFiles,
     isTrashView,
+    canPreviewCurrentFolder,
     canDownloadCurrentFolder,
     effectiveRole,
     isPrivilegedAdmin,
@@ -485,6 +541,9 @@ export function WorkspaceFileBrowser() {
     const targetEffectiveRole = targetIsFolder
       ? target.folder.effectiveRole ?? effectiveRole
       : effectiveRole;
+    const targetCaps = targetIsFolder
+      ? target.folder.capabilities ?? currentCapabilities
+      : currentCapabilities;
     setActiveModal({
       kind: 'share',
       targetType: target.kind,
@@ -493,7 +552,14 @@ export function WorkspaceFileBrowser() {
       classification: targetIsFolder
         ? target.folder.classification
         : target.file.classification,
-      canEdit: hasRoleAtLeast(targetEffectiveRole, 'editor'),
+      canEdit: canAccess(
+        { capabilities: targetCaps, effectiveRole: targetEffectiveRole },
+        'share_link.create'
+      ),
+      canManageLinks: canAccess(
+        { capabilities: targetCaps, effectiveRole: targetEffectiveRole },
+        'share_link.manage'
+      ),
     });
   }
 
@@ -508,21 +574,73 @@ export function WorkspaceFileBrowser() {
       targetId: targetIsFolder ? target.folder.id : target.file.id,
       targetName: targetIsFolder ? target.folder.name : target.file.name,
       effectiveRole: targetEffectiveRole,
+      targetCapabilities: targetIsFolder
+        ? target.folder.capabilities ?? currentCapabilities
+        : currentCapabilities,
     });
   }
 
-  const canEditRow = useCallback(
-    (row: WorkspaceTableRow): boolean => {
-      if (isTrashView) return false;
-      if (row.kind === 'folder') {
-        return row.folder.effectiveRole
-          ? hasRoleAtLeast(row.folder.effectiveRole, 'editor')
-          : canEditCurrentFolder;
-      }
-      return isRowSelectable(row) && canEditCurrentFolder;
-    },
-    [isTrashView, canEditCurrentFolder]
+  const rowAccess = useCallback(
+    (row: WorkspaceTableRow) => ({
+      capabilities: collectRowCapabilities(row, directory.capabilities),
+      effectiveRole:
+        row.kind === 'folder'
+          ? row.folder.effectiveRole ?? effectiveRole
+          : effectiveRole,
+    }),
+    [directory.capabilities, effectiveRole]
   );
+
+  const canRenameRow = useCallback(
+    (row: WorkspaceTableRow): boolean => {
+      if (isTrashView || !isRowSelectable(row)) return false;
+      return canAccess(
+        rowAccess(row),
+        row.kind === 'folder' ? 'folder.rename' : 'item.rename'
+      );
+    },
+    [isTrashView, rowAccess]
+  );
+
+  const canDeleteRow = useCallback(
+    (row: WorkspaceTableRow): boolean => {
+      if (isTrashView || !isRowSelectable(row)) return false;
+      return canAccess(
+        rowAccess(row),
+        row.kind === 'folder' ? 'folder.delete' : 'item.delete'
+      );
+    },
+    [isTrashView, rowAccess]
+  );
+
+  const canShareRow = useCallback(
+    (row: WorkspaceTableRow): boolean => {
+      if (isTrashView || !isRowSelectable(row)) return false;
+      return canAccess(rowAccess(row), 'share_link.create');
+    },
+    [isTrashView, rowAccess]
+  );
+
+  const canManageLinksRow = useCallback(
+    (row: WorkspaceTableRow): boolean => {
+      if (isTrashView || !isRowSelectable(row)) return false;
+      return canAccess(rowAccess(row), 'share_link.manage');
+    },
+    [isTrashView, rowAccess]
+  );
+
+  const canClassifyRow = useCallback(
+    (row: WorkspaceTableRow): boolean => {
+      if (isTrashView || row.kind !== 'file' || !isRowSelectable(row)) {
+        return false;
+      }
+      return canAccess(rowAccess(row), 'classification.edit');
+    },
+    [isTrashView, rowAccess]
+  );
+
+  // Compatibility alias used by hooks that gate inline rename only.
+  const canEditRow = canRenameRow;
 
   const requestRestoreTrashFolder = useCallback(
     (folder: FolderSummary) => {
@@ -616,12 +734,14 @@ export function WorkspaceFileBrowser() {
     isTrashView,
     folderId,
     effectiveRole,
-    canEditCurrentFolder,
     isPrivilegedAdmin,
     selectedRows,
     focusedRow,
     error,
-    canEditRow,
+    canDeleteRow,
+    canShareRow,
+    canManageLinksRow,
+    canClassifyRow,
     setError,
     setSelectedKeys,
     setSelectionAnchorKey,
@@ -632,12 +752,57 @@ export function WorkspaceFileBrowser() {
     onRequestRestoreFile: requestRestoreTrashFile,
   });
 
-  const openFileOrEditor = useCallback((file: { id: string }) => {
-    window.open(
-      `/workspace/file/${encodeURIComponent(file.id)}`,
-      '_blank'
-    );
-  }, []);
+  const selectionCapabilities = useMemo(
+    () =>
+      buildContextMenuCapabilities({
+        targets: selectedRows,
+        primaryRow: selectedRows[0] ?? null,
+        currentFolderId: folderId,
+        folderRole: effectiveRole,
+        folderCapabilities: directory.capabilities,
+        isPrivilegedAdmin,
+        isSysAdmin,
+        hasClipboardItems: Boolean(
+          clipboardState && clipboardState.items.length > 0
+        ),
+        clipboardHasFiles: Boolean(
+          clipboardState?.items.some((item) => item.type === 'file')
+        ),
+        resolveRowRole,
+        resolveRowCapabilities: (row) =>
+          collectRowCapabilities(row, directory.capabilities),
+      }),
+    [
+      selectedRows,
+      folderId,
+      effectiveRole,
+      directory.capabilities,
+      isPrivilegedAdmin,
+      isSysAdmin,
+      clipboardState,
+      resolveRowRole,
+    ]
+  );
+
+  const openFileOrEditor = useCallback(
+    (file: { id: string; capabilities?: Capability[] }) => {
+      const access = {
+        capabilities: file.capabilities ?? directory.capabilities,
+        effectiveRole,
+      };
+      if (!canAccess(access, 'item.preview')) {
+        setError(
+          '現在のロールではファイルのプレビュー・ダウンロードを開けません。投稿専用 (Uploader) の場合、アップロードしたファイルは一覧に表示されません。'
+        );
+        return;
+      }
+      window.open(
+        `/workspace/file/${encodeURIComponent(file.id)}`,
+        '_blank'
+      );
+    },
+    [directory.capabilities, effectiveRole, setError]
+  );
 
   const openRow = useCallback(
     (row: WorkspaceTableRow) => {
@@ -700,7 +865,7 @@ export function WorkspaceFileBrowser() {
     syncStore,
     virtualWindow,
     folders,
-    files,
+    files: visibleFiles,
     effectiveRole,
     setFocusedRowKey,
     setError,
@@ -708,7 +873,7 @@ export function WorkspaceFileBrowser() {
 
   const handleApproveSingleAi = useCallback(
     (file: FileItem): { ok: boolean; error?: string } => {
-      if (!canEditCurrentFolder && !isPrivilegedAdmin) {
+      if (!canClassifyCurrentFolder && !isPrivilegedAdmin) {
         const message = 'AI分類提案を承認する権限がありません';
         setError(message);
         return { ok: false, error: message };
@@ -723,7 +888,7 @@ export function WorkspaceFileBrowser() {
       }
       return res;
     },
-    [canEditCurrentFolder, isPrivilegedAdmin, syncStore, effectiveRole]
+    [canClassifyCurrentFolder, isPrivilegedAdmin, syncStore, effectiveRole]
   );
 
   const handleBulkApproveAi = useCallback(() => {
@@ -732,7 +897,7 @@ export function WorkspaceFileBrowser() {
       .map((r) => r.file)
       .filter((f) => f.ai_suggested_label != null);
     if (candidates.length === 0) return;
-    if (!canEditCurrentFolder && !isPrivilegedAdmin) {
+    if (!canClassifyCurrentFolder && !isPrivilegedAdmin) {
       setError('AI分類提案を承認する権限がありません');
       return;
     }
@@ -753,7 +918,7 @@ export function WorkspaceFileBrowser() {
     setSelectedKeys(new Set());
   }, [
     selectedRows,
-    canEditCurrentFolder,
+    canClassifyCurrentFolder,
     isPrivilegedAdmin,
     syncStore,
     effectiveRole,
@@ -855,7 +1020,7 @@ export function WorkspaceFileBrowser() {
     user,
     isTrashView,
     currentFolder,
-    canEditCurrentFolder,
+    canUploadNew,
     clipboardStore,
     syncStore,
     handlePasteClipboard,
@@ -867,7 +1032,10 @@ export function WorkspaceFileBrowser() {
       folderId,
       effectiveRole,
       selectedRows,
-      canEditRow,
+      canRenameRow,
+      canDeleteRow,
+      canShareRow,
+      canManageLinksRow,
       resolveRowRole,
       handleTogglePin,
       setActiveModal,
@@ -914,6 +1082,7 @@ export function WorkspaceFileBrowser() {
     router,
     clipboardStore,
     canDownloadCurrentFolder,
+    canInspectCurrentFolder,
     lastOsPasteAtRef,
     lastVirtualPasteAtRef,
     setShortcutsHelpOpen,
@@ -943,10 +1112,10 @@ export function WorkspaceFileBrowser() {
     focusedRow,
     selectedRows,
     isTrashView,
-    canEditCurrentFolder,
     isPrivilegedAdmin,
     isSysAdmin,
     effectiveRole,
+    folderCapabilities: directory.capabilities,
     canEditRow,
     resolveRowRole,
     getShortcutTargets,
@@ -1128,7 +1297,7 @@ export function WorkspaceFileBrowser() {
                         inlineCommittedRef={inlineCommittedRef}
                         prefetcher={prefetcher}
                         effectiveRole={effectiveRole}
-                        canEditCurrentFolder={canEditCurrentFolder}
+                        canClassify={canClassifyCurrentFolder}
                         canDownloadCurrentFolder={canDownloadCurrentFolder}
                         isPrivilegedAdmin={isPrivilegedAdmin}
                         onCheckboxClick={(e) =>
@@ -1189,9 +1358,18 @@ export function WorkspaceFileBrowser() {
           sortBy={listSortBy}
           sortDir={listSortDir}
           selectedRows={selectedRows}
-          canEditCurrentFolder={canEditCurrentFolder}
+          canCreateFolder={canCreateFolder}
+          canRenameCurrentFolder={canRenameCurrentFolder}
+          canShareCurrentFolder={canShareCurrentFolder}
           canManageCurrentFolderPerms={canManageCurrentFolderPerms}
+          canInspectCurrentFolder={canInspectCurrentFolder}
           isPrivilegedAdmin={isPrivilegedAdmin}
+          canCopySelection={selectionCapabilities.canCopy}
+          canCutSelection={selectionCapabilities.canCut}
+          canDuplicateSelection={selectionCapabilities.canDuplicate}
+          canMoveCopySelection={selectionCapabilities.canMoveCopy}
+          canClassifySelection={selectionCapabilities.canClassify}
+          canTrashSelection={selectionCapabilities.canTrash}
           viewMode={viewMode}
           inspectorOpen={inspectorOpen}
           onNewFolder={() => {
@@ -1213,7 +1391,7 @@ export function WorkspaceFileBrowser() {
               kind: 'fileRequest',
               folderId: currentFolder.id,
               folderName: currentFolder.name,
-              canEdit: canEditCurrentFolder,
+              canEdit: canRenameCurrentFolder,
             });
           }}
           onOpenShare={() => {
@@ -1224,7 +1402,8 @@ export function WorkspaceFileBrowser() {
               targetId: currentFolder.id,
               targetName: currentFolder.name,
               classification: currentFolder.classification,
-              canEdit: canEditCurrentFolder,
+              canEdit: canShareCurrentFolder,
+              canManageLinks: canManageCurrentFolderLinks,
             });
           }}
           onOpenPermissions={() => {
@@ -1235,6 +1414,7 @@ export function WorkspaceFileBrowser() {
               targetId: currentFolder.id,
               targetName: currentFolder.name,
               effectiveRole,
+              targetCapabilities: currentCapabilities,
             });
           }}
           onToggleViewMode={handleToggleViewMode}
@@ -1298,6 +1478,13 @@ export function WorkspaceFileBrowser() {
           onDismissNotice={() => syncStore.clearActiveDirectoryNotice()}
         />
 
+        {showRoleBanner && (
+          <WorkspacePermissionBanner
+            role={effectiveRole}
+            capabilities={directory.capabilities}
+          />
+        )}
+
         <WorkspacePinnedFolders
           isTrashView={isTrashView}
           folderId={folderId}
@@ -1312,9 +1499,10 @@ export function WorkspaceFileBrowser() {
           }
         />
 
-        {!isTrashView && currentFolder && canEditCurrentFolder && (
+        {!isTrashView && currentFolder && canUploadNew && (
           <FileDropzoneUploader
             folderId={currentFolder.id}
+            canUploadVersion={canUploadVersion}
             onRegisterEnqueueFiles={(fn) => {
               pasteEnqueueFilesRef.current = fn;
             }}
@@ -1332,6 +1520,7 @@ export function WorkspaceFileBrowser() {
           isInitialLoading={isInitialLoading}
           isTrashView={isTrashView}
           folderId={folderId}
+          uploadOnly={!isTrashView && effectiveRole === 'uploader'}
           rowCount={rows.length}
           visibleRows={visibleRows}
           visibleGridRows={visibleGridRows}
@@ -1405,10 +1594,7 @@ export function WorkspaceFileBrowser() {
         target={inspectorTarget}
         breadcrumbs={breadcrumbs}
         effectiveRole={effectiveRole}
-        canEditCurrentFolder={canEditCurrentFolder}
-        canDownloadCurrentFolder={canDownloadCurrentFolder}
-        canManageCurrentFolderPerms={canManageCurrentFolderPerms}
-        isPrivilegedAdmin={isPrivilegedAdmin}
+        capabilities={directory.capabilities}
         syncStore={syncStore}
         onClose={() => setInspectorOpen(false)}
         onPreview={openFileOrEditor}
@@ -1455,9 +1641,12 @@ export function WorkspaceFileBrowser() {
         selectedRows={selectedRows}
         folderId={folderId ?? null}
         effectiveRole={effectiveRole}
+        folderCapabilities={directory.capabilities}
         currentFolder={currentFolder}
         viewMode={viewMode}
-        canEditCurrentFolder={canEditCurrentFolder}
+        canCreateFolder={canCreateFolder}
+        canUploadNew={canUploadNew}
+        canPaste={selectionCapabilities.canPaste}
         isPrivilegedAdmin={isPrivilegedAdmin}
         isSysAdmin={isSysAdmin}
         clipboardState={clipboardState}
@@ -1522,6 +1711,7 @@ export function WorkspaceFileBrowser() {
         <VersionHistoryModal
           file={versionHistoryTarget.target}
           effectiveRole={effectiveRole}
+          capabilities={directory.capabilities}
           canDownload={canDownloadCurrentFolder}
           returnFocus={versionHistoryTarget.returnFocus}
           onFileUpdated={(file) => syncStore.upsertFileInCache(file)}

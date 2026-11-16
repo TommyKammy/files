@@ -24,6 +24,7 @@ export function SharePopover({
   targetName,
   classification,
   canEdit,
+  canManageLinks = canEdit,
   onClose,
 }: {
   targetType: 'file' | 'folder';
@@ -31,6 +32,8 @@ export function SharePopover({
   targetName: string;
   classification: ClassificationLabel;
   canEdit: boolean;
+  /** `share_link.manage`; false makes every new link display-only. */
+  canManageLinks?: boolean;
   onClose: () => void;
 }) {
   const {
@@ -61,6 +64,7 @@ export function SharePopover({
     targetId,
     classification,
     canEdit,
+    canManageLinks,
   });
 
   return (
@@ -101,6 +105,22 @@ export function SharePopover({
                   <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                   <span>
                     機密ラベル ({classification}) のリソースでは社外匿名共有 (Public) はガードレールにより禁止されています。
+                  </span>
+                </div>
+              )}
+
+              {!canManageLinks && (
+                <div
+                  id="share-display-only-note"
+                  className="flex items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[0.6875rem] text-indigo-800"
+                >
+                  <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-600" />
+                  <span>
+                    Viewer + Uploader などの投稿系ロールが作成する共有リンクは
+                    <span className="font-semibold">
+                      表示専用（ダウンロード不可・動的透かし付き）
+                    </span>
+                    です。ダウンロード許可は付与できません。
                   </span>
                 </div>
               )}
@@ -226,21 +246,31 @@ export function SharePopover({
                   <input
                     name="canDownload"
                     type="checkbox"
-                    checked={canDownload}
+                    checked={canManageLinks ? canDownload : false}
                     onChange={(e) => setCanDownload(e.target.checked)}
-                    className="rounded border-slate-300 text-blue-600"
+                    disabled={!canManageLinks}
+                    aria-describedby={
+                      !canManageLinks ? 'share-display-only-note' : undefined
+                    }
+                    className="rounded border-slate-300 text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                   />
-                  <span>ダウンロードを許可する</span>
+                  <span className={!canManageLinks ? 'text-slate-500' : ''}>
+                    ダウンロードを許可する
+                  </span>
                 </label>
 
                 <label className="inline-flex items-center gap-2">
                   <input
                     name="requireWatermark"
                     type="checkbox"
-                    checked={requireWatermark}
+                    checked={
+                      canManageLinks ? requireWatermark : true
+                    }
                     onChange={(e) => setRequireWatermark(e.target.checked)}
-                    disabled={classification === 'confidential'}
-                    className="rounded border-slate-300 text-blue-600"
+                    disabled={
+                      classification === 'confidential' || !canManageLinks
+                    }
+                    className="rounded border-slate-300 text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                   />
                   <span>動的透かし (Watermark) を強制</span>
                 </label>
@@ -264,7 +294,13 @@ export function SharePopover({
               有効な共有リンク ({links.length})
             </div>
 
-            {loading ? (
+            {!canManageLinks ? (
+              <div className="rounded-lg border border-slate-200 py-5 text-center text-xs text-slate-500">
+                共有リンクの一覧・失効には
+                <span className="font-mono"> share_link.manage </span>
+                権限が必要です。新規リンクの発行のみ可能です。
+              </div>
+            ) : loading ? (
               <div className="py-6 text-center text-xs text-slate-500">
                 読み込み中...
               </div>
@@ -308,7 +344,7 @@ export function SharePopover({
                       </div>
                     </div>
 
-                    {canEdit && (
+                    {canManageLinks && (
                       <button
                         type="button"
                         onClick={() => handleRevoke(link.id)}

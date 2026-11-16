@@ -48,7 +48,12 @@ function BulkActionButton({
 
 export function WorkspaceSelectionBar({
   selectedRows,
-  canEditCurrentFolder,
+  canCopySelection,
+  canCutSelection,
+  canDuplicateSelection,
+  canMoveCopySelection,
+  canClassifySelection,
+  canTrashSelection,
   isPrivilegedAdmin,
   onCopy,
   onCut,
@@ -60,7 +65,12 @@ export function WorkspaceSelectionBar({
   onClear,
 }: {
   selectedRows: WorkspaceTableRow[];
-  canEditCurrentFolder: boolean;
+  canCopySelection: boolean;
+  canCutSelection: boolean;
+  canDuplicateSelection: boolean;
+  canMoveCopySelection: boolean;
+  canClassifySelection: boolean;
+  canTrashSelection: boolean;
   isPrivilegedAdmin: boolean;
   onCopy: () => void;
   onCut: () => void;
@@ -85,31 +95,39 @@ export function WorkspaceSelectionBar({
       <span className="shrink-0 font-semibold">
         {selectedRows.length} 件選択中
       </span>
-      <BulkActionButton
-        label="コピー"
-        shortcut="⌘C"
-        icon={<Copy className="h-3.5 w-3.5 text-slate-500" />}
-        onClick={onCopy}
-      />
-      <BulkActionButton
-        label="切り取り"
-        shortcut="⌘X"
-        icon={<Scissors className="h-3.5 w-3.5 text-slate-500" />}
-        onClick={onCut}
-      />
-      <BulkActionButton
-        label="複製"
-        shortcut="⌘D"
-        icon={<Clipboard className="h-3.5 w-3.5 text-slate-500" />}
-        onClick={onDuplicate}
-      />
-      <BulkActionButton
-        label="移動 / コピー"
-        shortcut="m"
-        icon={<FolderInput className="h-3.5 w-3.5 text-blue-600" />}
-        onClick={onMoveCopy}
-      />
-      {hasAiSuggestion && (canEditCurrentFolder || isPrivilegedAdmin) && (
+      {canCopySelection && (
+        <BulkActionButton
+          label="コピー"
+          shortcut="⌘C"
+          icon={<Copy className="h-3.5 w-3.5 text-slate-500" />}
+          onClick={onCopy}
+        />
+      )}
+      {canCutSelection && (
+        <BulkActionButton
+          label="切り取り"
+          shortcut="⌘X"
+          icon={<Scissors className="h-3.5 w-3.5 text-slate-500" />}
+          onClick={onCut}
+        />
+      )}
+      {canDuplicateSelection && (
+        <BulkActionButton
+          label="複製"
+          shortcut="⌘D"
+          icon={<Clipboard className="h-3.5 w-3.5 text-slate-500" />}
+          onClick={onDuplicate}
+        />
+      )}
+      {canMoveCopySelection && (
+        <BulkActionButton
+          label="移動 / コピー"
+          shortcut="m"
+          icon={<FolderInput className="h-3.5 w-3.5 text-blue-600" />}
+          onClick={onMoveCopy}
+        />
+      )}
+      {hasAiSuggestion && (canClassifySelection || isPrivilegedAdmin) && (
         <BulkActionButton
           label="AI提案を一括承認"
           icon={<Sparkles className="h-3.5 w-3.5" />}
@@ -117,7 +135,7 @@ export function WorkspaceSelectionBar({
           onClick={onBulkApproveAi}
         />
       )}
-      {hasFiles && (canEditCurrentFolder || isPrivilegedAdmin) && (
+      {hasFiles && (canClassifySelection || isPrivilegedAdmin) && (
         <BulkActionButton
           label="機密変更"
           shortcut="c"
@@ -125,12 +143,14 @@ export function WorkspaceSelectionBar({
           onClick={onClassify}
         />
       )}
-      <BulkActionButton
-        label="ゴミ箱"
-        variant="danger"
-        icon={<Trash2 className="h-3.5 w-3.5" />}
-        onClick={onTrash}
-      />
+      {canTrashSelection && (
+        <BulkActionButton
+          label="ゴミ箱"
+          variant="danger"
+          icon={<Trash2 className="h-3.5 w-3.5" />}
+          onClick={onTrash}
+        />
+      )}
       <button
         type="button"
         onClick={onClear}

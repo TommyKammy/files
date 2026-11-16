@@ -14,14 +14,12 @@ import {
   X,
 } from 'lucide-react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
-import {
-  formatBytes,
-  formatDateTime,
-  hasRoleAtLeast,
-} from '@/lib/formatters';
+import { canAccess } from '@/lib/capabilities';
+import { formatBytes, formatDateTime } from '@/lib/formatters';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import type {
   BreadcrumbItem,
+  Capability,
   FileItem,
   FileLockInfo,
   FolderSummary,
@@ -35,10 +33,15 @@ export type InspectorTarget =
 export function WorkspaceInspectorDrawer({
   target,
   effectiveRole,
+  capabilities,
   breadcrumbs,
-  canEdit,
+  canPreview,
   canDownload,
+  canClassify,
+  canShare,
+  canManageLinks,
   canManagePerms,
+  canVersionHistory,
   isPrivilegedAdmin,
   lock,
   syncStore,
@@ -53,10 +56,15 @@ export function WorkspaceInspectorDrawer({
 }: {
   target: InspectorTarget;
   effectiveRole: ResourceRole;
+  capabilities?: Capability[];
   breadcrumbs: BreadcrumbItem[];
-  canEdit: boolean;
+  canPreview: boolean;
   canDownload: boolean;
+  canClassify: boolean;
+  canShare: boolean;
+  canManageLinks: boolean;
   canManagePerms: boolean;
+  canVersionHistory: boolean;
   isPrivilegedAdmin: boolean;
   lock?: FileLockInfo | null;
   syncStore: WorkspaceSyncStore;
@@ -95,7 +103,13 @@ export function WorkspaceInspectorDrawer({
     return null;
   })();
 
-  const canCopyItem = isPrivilegedAdmin || hasRoleAtLeast(itemRole, 'viewer');
+  const targetAccess = {
+    capabilities:
+      isFolder ? target.folder.capabilities ?? capabilities : capabilities,
+    effectiveRole: itemRole,
+  };
+  const canCopyItem =
+    isPrivilegedAdmin || canAccess(targetAccess, 'item.download');
 
   return (
     <aside
@@ -188,7 +202,7 @@ export function WorkspaceInspectorDrawer({
                 {target.file.ai_reason}
               </p>
             )}
-            {(canEdit || isPrivilegedAdmin) && (
+            {(canClassify || isPrivilegedAdmin) && (
               <button
                 type="button"
                 onClick={() => onApproveAi(target.file)}
@@ -251,7 +265,7 @@ export function WorkspaceInspectorDrawer({
         <h3 className="text-[0.6875rem] font-semibold uppercase tracking-wide text-slate-500">
           クイック操作
         </h3>
-        {!isFolder && (
+        {!isFolder && canPreview && (
           <button
             type="button"
             onClick={() => onPreview(target.file)}
@@ -261,7 +275,7 @@ export function WorkspaceInspectorDrawer({
             <span>プレビュー (Enter / Space)</span>
           </button>
         )}
-        {!isFolder && hasRoleAtLeast(itemRole, 'previewer') && (
+        {!isFolder && canVersionHistory && (
           <button
             type="button"
             data-testid="inspector-open-version-history"
@@ -284,7 +298,7 @@ export function WorkspaceInspectorDrawer({
             <span>ダウンロード (d)</span>
           </button>
         )}
-        {!isFolder && (canEdit || isPrivilegedAdmin) && (
+        {!isFolder && (canClassify || isPrivilegedAdmin) && (
           <button
             type="button"
             onClick={() => onOpenClassification(target.file)}
@@ -294,7 +308,7 @@ export function WorkspaceInspectorDrawer({
             <span>機密区分を変更 (c)</span>
           </button>
         )}
-        {canEdit && (
+        {canShare && (
           <button
             type="button"
             onClick={() => onOpenShare(target)}
@@ -303,6 +317,11 @@ export function WorkspaceInspectorDrawer({
             <Link2 className="h-3.5 w-3.5 text-blue-600" />
             <span>共有リンク設定 (s)</span>
           </button>
+        )}
+        {canManageLinks && !canShare && (
+          <p className="px-1 text-[0.625rem] text-slate-500">
+            共有リンクの管理には share_link.manage 権限が必要です。
+          </p>
         )}
         {canManagePerms && (
           <button

@@ -3,18 +3,22 @@
 import { useMemo } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { WorkspacePaletteActions } from '@/lib/palette-actions';
-import { hasRoleAtLeast } from '@/lib/formatters';
+import { canAccess } from '@/lib/capabilities';
 import type { WorkspaceTableRow } from '@/lib/workspace-table-row';
-import type { ResourceRole, WorkspaceClipboardState } from '@/types/files';
+import type {
+  Capability,
+  ResourceRole,
+  WorkspaceClipboardState,
+} from '@/types/files';
 
 export function useWorkspacePaletteActions({
   focusedRow,
   selectedRows,
   isTrashView,
-  canEditCurrentFolder,
   isPrivilegedAdmin,
   isSysAdmin,
   effectiveRole,
+  folderCapabilities,
   canEditRow,
   resolveRowRole,
   getShortcutTargets,
@@ -35,10 +39,10 @@ export function useWorkspacePaletteActions({
   focusedRow: WorkspaceTableRow | null;
   selectedRows: WorkspaceTableRow[];
   isTrashView: boolean;
-  canEditCurrentFolder: boolean;
   isPrivilegedAdmin: boolean;
   isSysAdmin: boolean;
   effectiveRole: ResourceRole;
+  folderCapabilities?: Capability[];
   canEditRow: (row: WorkspaceTableRow) => boolean;
   resolveRowRole: (row: WorkspaceTableRow) => ResourceRole;
   getShortcutTargets: () => WorkspaceTableRow[];
@@ -59,35 +63,91 @@ export function useWorkspacePaletteActions({
   setInspectorOpen: Dispatch<SetStateAction<boolean>>;
   setShortcutsHelpOpen: Dispatch<SetStateAction<boolean>>;
 }) {
-  return useMemo<WorkspacePaletteActions>(
-    () => ({
+  return useMemo<WorkspacePaletteActions>(() => {
+    const rowAccess = (row: WorkspaceTableRow) => ({
+      capabilities:
+        row.kind === 'folder' ? row.folder.capabilities : folderCapabilities,
+      effectiveRole: resolveRowRole(row),
+    });
+    const targets = getShortcutTargets();
+    const primary = focusedRow ?? selectedRows[0] ?? null;
+
+    return {
       hasTargetItem: Boolean(focusedRow || selectedRows.length > 0),
+      canCreateFolder:
+        !isTrashView &&
+        (isSysAdmin ||
+          canAccess(
+            { capabilities: folderCapabilities, effectiveRole },
+            'folder.create'
+          )),
+      canInspectTarget:
+        !isTrashView &&
+        Boolean(primary) &&
+        (isSysAdmin || canAccess(rowAccess(primary!), 'item.preview')),
+      canMoveCopyTarget:
+        !isTrashView &&
+        targets.some(
+          (row) =>
+            isSysAdmin ||
+            canAccess(rowAccess(row), 'item.download') ||
+            canAccess(
+              rowAccess(row),
+              row.kind === 'folder' ? 'folder.move' : 'item.move'
+            )
+        ),
       canClassifyTarget:
-        !isTrashView && (canEditCurrentFolder || isPrivilegedAdmin),
+        !isTrashView &&
+        targets.some(
+          (row) =>
+            row.kind === 'file' &&
+            (isPrivilegedAdmin ||
+              canAccess(rowAccess(row), 'classification.edit'))
+        ),
       canShareTarget:
         !isTrashView &&
-        Boolean((focusedRow && canEditRow(focusedRow)) || selectedRows[0]),
+        Boolean(primary) &&
+        (isSysAdmin || canAccess(rowAccess(primary!), 'share_link.create')),
       canTrashTarget:
         !isTrashView &&
-        (selectedRows.length > 0 ||
-          (focusedRow !== null && canEditRow(focusedRow))),
+        targets.length > 0 &&
+        targets.every(
+          (row) =>
+            isSysAdmin ||
+            canAccess(
+              rowAccess(row),
+              row.kind === 'folder' ? 'folder.delete' : 'item.delete'
+            )
+        ),
       canCopyTarget:
         !isTrashView &&
-        getShortcutTargets().some(
-          (r) => isSysAdmin || hasRoleAtLeast(resolveRowRole(r), 'viewer')
+        targets.some(
+          (r) => isSysAdmin || canAccess(rowAccess(r), 'item.download')
         ),
       canCutTarget:
         !isTrashView &&
-        getShortcutTargets().some(
-          (r) => isSysAdmin || hasRoleAtLeast(resolveRowRole(r), 'editor')
+        targets.some(
+          (r) =>
+            isSysAdmin ||
+            canAccess(
+              rowAccess(r),
+              r.kind === 'folder' ? 'folder.move' : 'item.move'
+            )
         ),
       canPasteClipboard:
         !isTrashView &&
-        Boolean(clipboardState && clipboardState.items.length > 0),
+        Boolean(clipboardState && clipboardState.items.length > 0) &&
+        (isSysAdmin ||
+          canAccess(
+            { capabilities: folderCapabilities, effectiveRole },
+            'item.upload_new'
+          )),
       canDuplicateTarget:
         !isTrashView &&
-        getShortcutTargets().length > 0 &&
-        (isSysAdmin || hasRoleAtLeast(effectiveRole, 'viewer')),
+        targets.length > 0 &&
+        (isSysAdmin ||
+          (canAccess({ capabilities: folderCapabilities }, 'item.upload_new') &&
+            targets.every((row) => canAccess(rowAccess(row), 'item.download')))),
       onCommand: (cmdId) => {
         switch (cmdId) {
           case 'cmd:new-folder':
@@ -128,15 +188,15 @@ export function useWorkspacePaletteActions({
             break;
         }
       },
-    }),
-    [
+    };
+  }, [
       focusedRow,
       selectedRows,
       isTrashView,
-      canEditCurrentFolder,
       isPrivilegedAdmin,
       isSysAdmin,
       effectiveRole,
+      folderCapabilities,
       canEditRow,
       resolveRowRole,
       getShortcutTargets,

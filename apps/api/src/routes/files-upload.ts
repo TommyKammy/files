@@ -193,6 +193,7 @@ filesUploadRoutes.get('/:id/content-url', async (c) => {
     fileId,
     intent,
     versionId: null,
+    forceWatermark: !can(authorized.access.capabilities, 'item.download'),
   });
   if (!delivered.ok) {
     return c.json(delivered.body, delivered.status);

@@ -17,7 +17,10 @@ export function useWorkspaceContextMenuActions({
   folderId,
   effectiveRole,
   selectedRows,
-  canEditRow,
+  canRenameRow,
+  canDeleteRow,
+  canShareRow,
+  canManageLinksRow,
   resolveRowRole,
   handleTogglePin,
   setActiveModal,
@@ -48,7 +51,10 @@ export function useWorkspaceContextMenuActions({
   folderId: string | null;
   effectiveRole: ResourceRole;
   selectedRows: WorkspaceTableRow[];
-  canEditRow: (row: WorkspaceTableRow) => boolean;
+  canRenameRow: (row: WorkspaceTableRow) => boolean;
+  canDeleteRow: (row: WorkspaceTableRow) => boolean;
+  canShareRow: (row: WorkspaceTableRow) => boolean;
+  canManageLinksRow: (row: WorkspaceTableRow) => boolean;
   resolveRowRole: (row: WorkspaceTableRow) => ResourceRole;
   handleTogglePin: (folder: FolderSummary) => void;
   setActiveModal: Dispatch<SetStateAction<ActiveModal | null>>;
@@ -192,7 +198,7 @@ export function useWorkspaceContextMenuActions({
           }
           break;
         case 'rename':
-          if (primary) {
+          if (primary && canRenameRow(primary)) {
             const idx = orderedRowKeys.indexOf(getWorkspaceRowKey(primary));
             if (idx >= 0) startInlineRename(primary, idx);
           }
@@ -240,7 +246,8 @@ export function useWorkspaceContextMenuActions({
               primary.kind === 'folder'
                 ? primary.folder.classification
                 : primary.file.classification,
-            canEdit: canEditRow(primary),
+            canEdit: canShareRow(primary),
+            canManageLinks: canManageLinksRow(primary),
           });
           break;
         case 'pin':
@@ -278,7 +285,7 @@ export function useWorkspaceContextMenuActions({
           break;
         case 'trash':
           for (const r of targets) {
-            if (!canEditRow(r)) continue;
+            if (!canDeleteRow(r)) continue;
             if (r.kind === 'folder') {
               syncStore.optimisticSoftDeleteFolder(r.folder);
             } else {
@@ -307,7 +314,10 @@ export function useWorkspaceContextMenuActions({
       handleOpenMoveCopyModal,
       onOpenWopiEditor,
       onOpenVersionHistory,
-      canEditRow,
+      canRenameRow,
+      canDeleteRow,
+      canShareRow,
+      canManageLinksRow,
       handleTogglePin,
       resolveRowRole,
       syncStore,

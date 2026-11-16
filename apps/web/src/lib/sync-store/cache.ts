@@ -5,6 +5,7 @@ import {
 } from '@/lib/keyboard-shortcuts';
 import type {
   BreadcrumbItem,
+  Capability,
   ClassificationLabel,
   FileItem,
   FolderSummary,
@@ -19,6 +20,7 @@ export interface DirectoryViewModel {
   isStale: boolean;
   folder: FolderSummary | null;
   effectiveRole: ResourceRole;
+  capabilities?: Capability[];
   folders: FolderSummary[];
   files: FileItem[];
   breadcrumbs: BreadcrumbItem[];
@@ -69,6 +71,9 @@ export function getDirectoryView(
       effectiveRole: folderId
         ? ctx.foldersById.get(folderId)?.effectiveRole ?? 'viewer'
         : 'editor',
+      capabilities: folderId
+        ? ctx.foldersById.get(folderId)?.capabilities
+        : undefined,
       folders: [],
       files: [],
       breadcrumbs: [],
@@ -94,6 +99,7 @@ export function getDirectoryView(
     isStale: Boolean(record.stale),
     folder: folderId ? ctx.foldersById.get(folderId) ?? null : null,
     effectiveRole: record.effectiveRole,
+    capabilities: record.capabilities,
     folders,
     files,
     breadcrumbs: record.breadcrumbs,

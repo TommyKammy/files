@@ -15,6 +15,7 @@ import {
 } from '@/lib/workspace-actions';
 import type {
   AuthUser,
+  Capability,
   FolderSummary,
   ResourceRole,
   WorkspaceClipboardState,
@@ -46,9 +47,12 @@ export function WorkspaceActionOverlays({
   selectedRows,
   folderId,
   effectiveRole,
+  folderCapabilities,
   currentFolder,
   viewMode,
-  canEditCurrentFolder,
+  canCreateFolder,
+  canUploadNew,
+  canPaste,
   isPrivilegedAdmin,
   isSysAdmin,
   clipboardState,
@@ -69,9 +73,12 @@ export function WorkspaceActionOverlays({
   selectedRows: ContextRowTarget[];
   folderId: string | null;
   effectiveRole: ResourceRole;
+  folderCapabilities?: Capability[];
   currentFolder: FolderSummary | null;
   viewMode: 'list' | 'grid';
-  canEditCurrentFolder: boolean;
+  canCreateFolder: boolean;
+  canUploadNew: boolean;
+  canPaste: boolean;
   isPrivilegedAdmin: boolean;
   isSysAdmin: boolean;
   clipboardState: WorkspaceClipboardState | null;
@@ -101,6 +108,7 @@ export function WorkspaceActionOverlays({
           primaryRow: contextMenu.row,
           currentFolderId: folderId,
           folderRole: effectiveRole,
+          folderCapabilities,
           isPrivilegedAdmin,
           isSysAdmin,
           hasClipboardItems: Boolean(clip && clip.items.length > 0),
@@ -108,6 +116,10 @@ export function WorkspaceActionOverlays({
             clip?.items.some((i) => i.type === 'file')
           ),
           resolveRowRole,
+          resolveRowCapabilities: (row) =>
+            row.kind === 'folder'
+              ? row.folder.capabilities ?? folderCapabilities
+              : folderCapabilities,
         });
         const pasteDestId =
           !capabilities.isMulti && contextMenu.row.kind === 'folder'
@@ -138,14 +150,10 @@ export function WorkspaceActionOverlays({
       {backgroundMenu && !isTrashView && (
         <WorkspaceBackgroundMenu
           anchor={{ x: backgroundMenu.x, y: backgroundMenu.y }}
-          canCreate={canEditCurrentFolder || isPrivilegedAdmin}
-          canUpload={Boolean(currentFolder) && canEditCurrentFolder}
-          canUploadFolder={Boolean(currentFolder) && canEditCurrentFolder}
-          canPaste={Boolean(
-            clipboardState &&
-              clipboardState.items.length > 0 &&
-              (canEditCurrentFolder || isPrivilegedAdmin)
-          )}
+          canCreate={canCreateFolder || isPrivilegedAdmin}
+          canUpload={Boolean(currentFolder) && canUploadNew}
+          canUploadFolder={Boolean(currentFolder) && canUploadNew}
+          canPaste={canPaste}
           clipboardCount={clipboardState?.items.length ?? 0}
           viewMode={viewMode}
           returnFocus={backgroundMenu.trigger}

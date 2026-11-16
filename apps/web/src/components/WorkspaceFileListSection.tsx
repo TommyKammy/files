@@ -48,6 +48,7 @@ export function WorkspaceFileListSection({
   isInitialLoading,
   isTrashView,
   folderId,
+  uploadOnly,
   rowCount,
   visibleRows,
   visibleGridRows,
@@ -79,6 +80,7 @@ export function WorkspaceFileListSection({
   isInitialLoading: boolean;
   isTrashView: boolean;
   folderId: string | null;
+  uploadOnly: boolean;
   rowCount: number;
   visibleRows: WorkspaceTableRow[];
   visibleGridRows: WorkspaceTableRow[][];
@@ -155,6 +157,7 @@ export function WorkspaceFileListSection({
             <WorkspaceEmptyState
               isTrashView={isTrashView}
               folderId={folderId}
+              uploadOnly={uploadOnly}
               trashFilterActive={trashFilterActive}
               onClearTrashFilters={onClearTrashFilters}
               onContextMenu={onBackgroundContextMenu}

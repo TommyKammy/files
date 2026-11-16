@@ -14,6 +14,35 @@ export type ResourceRole =
   | 'previewer'
   | 'uploader';
 
+/** Capability matrix shared with `apps/api/src/services/capabilities.ts`. */
+export type Capability =
+  | 'folder.list'
+  | 'folder.traverse'
+  | 'folder.create'
+  | 'folder.rename'
+  | 'folder.move'
+  | 'folder.delete'
+  | 'folder.delete_root'
+  | 'folder.settings'
+  | 'item.preview'
+  | 'item.download'
+  | 'item.upload_new'
+  | 'item.upload_version'
+  | 'item.edit_content'
+  | 'item.rename'
+  | 'item.move'
+  | 'item.delete'
+  | 'metadata.edit'
+  | 'classification.edit'
+  | 'permission.view'
+  | 'permission.invite'
+  | 'permission.manage'
+  | 'share_link.create'
+  | 'share_link.manage'
+  | 'trash.restore'
+  | 'trash.purge'
+  | 'owner.transfer';
+
 export type UserRole = 'sys_admin' | 'sec_admin' | 'member';
 
 export type ShareAccessScope =
@@ -66,6 +95,7 @@ export interface FolderSummary {
   purgeAt?: string;
   daysRemaining?: number;
   effectiveRole?: ResourceRole;
+  capabilities?: Capability[];
   optimistic?: boolean;
 }
 
@@ -95,11 +125,13 @@ export interface FileItem {
   upload_progress?: number;
   optimistic?: boolean;
   effectiveRole?: ResourceRole;
+  capabilities?: Capability[];
 }
 
 export interface FolderChildrenResponse {
   folder: FolderSummary | null;
   effectiveRole: ResourceRole;
+  capabilities?: Capability[];
   folders: FolderSummary[];
   files: FileItem[];
   nextCursor: string | null;
@@ -412,6 +444,8 @@ export interface BreadcrumbItem {
   name: string;
   classification: ClassificationLabel;
   depth: number;
+  effectiveRole?: ResourceRole;
+  capabilities?: Capability[];
 }
 
 export interface SearchResultItem {
@@ -428,6 +462,15 @@ export interface SearchResultItem {
   updatedAt: string;
 }
 
+export interface EffectiveBreakdownGrant {
+  granteeType: 'user' | 'group';
+  granteeId: string;
+  role: ResourceRole;
+  inherited: boolean;
+  sourceName: string | null;
+  targetId: string;
+}
+
 export interface PermissionEntry {
   id: string;
   targetType: 'folder' | 'file';
@@ -441,6 +484,27 @@ export interface PermissionEntry {
   sourceName: string | null;
   grantedBy: string;
   createdAt: string;
+  /** Non-linear composition when one grantee holds several rows. */
+  synthesizedRole?: ResourceRole | null;
+  synthesizedCapabilities?: Capability[];
+}
+
+export interface PermissionsListResponse {
+  targetType: 'folder' | 'file';
+  targetId: string;
+  effectiveRole: ResourceRole | null;
+  capabilities: Capability[];
+  grantedRoles: ResourceRole[];
+  advancedRolesEnabled: boolean;
+  effectiveBreakdown: EffectiveBreakdownGrant[];
+  permissions: PermissionEntry[];
+}
+
+export interface FileViewerInfo {
+  file: FileItem;
+  effectiveRole: ResourceRole;
+  capabilities?: Capability[];
+  canDownload: boolean;
 }
 
 export interface PrincipalCandidate {
@@ -592,6 +656,8 @@ export interface TenantPolicyRow {
   trash_retention_days: number;
   ai_classification_mode: AiClassificationMode;
   ai_auto_apply_threshold: number | null;
+  advanced_roles_enabled?: number;
+  advancedRolesEnabled?: boolean;
   updated_by: string | null;
   updated_at: string;
 }
@@ -784,6 +850,7 @@ export interface WopiSessionResponse {
   mimeType: string;
   classification: 'unset' | 'confidential' | 'internal' | 'public';
   role: ResourceRole;
+  capabilities?: Capability[];
   canWrite: boolean;
   readOnly: boolean;
   readOnlyReason: 'desktop_lock' | 'dlp' | 'permission' | null;

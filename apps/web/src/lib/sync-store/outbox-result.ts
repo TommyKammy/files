@@ -87,6 +87,7 @@ export function applyOutboxSuccess(
         ctx.upsertFolderInCache({
           ...folder,
           effectiveRole: folder.effectiveRole ?? existing?.effectiveRole,
+          capabilities: folder.capabilities ?? existing?.capabilities,
           optimistic: false,
         });
         ctx.markCachedSubtreeStale(folder.id);
@@ -255,6 +256,7 @@ export function applyOutboxSuccess(
     ctx.upsertFolderInCache({
       ...result.folder,
       effectiveRole: result.folder.effectiveRole ?? existing?.effectiveRole,
+      capabilities: result.folder.capabilities ?? existing?.capabilities,
       optimistic: false,
     });
   } else if (result?.file) {

@@ -1,5 +1,5 @@
 import { isClassificationFloorViolated } from '@/lib/formatters';
-import { checkRoleGuard, type MutationOutbox } from '@/lib/mutation-outbox';
+import { checkCapabilityGuard, type MutationOutbox } from '@/lib/mutation-outbox';
 import type { DirectoryViewModel } from '@/lib/sync-store/cache';
 import type { UndoAction } from '@/lib/sync-store/toasts';
 import type {
@@ -46,7 +46,7 @@ export function optimisticCreateFolder(
   }
 
   const parentRole = ctx.getDirectoryView(input.parentId).effectiveRole;
-  const roleCheck = checkRoleGuard(parentRole, 'editor');
+  const roleCheck = checkCapabilityGuard(parentRole, 'folder.create');
   if (!roleCheck.ok) {
     return { ok: false, error: roleCheck.message };
   }
@@ -80,7 +80,11 @@ export function optimisticCreateFolder(
     is_pinned: input.isPinned ? 1 : 0,
     version: 1,
     updated_at: nowIso,
-    effectiveRole: 'owner',
+    // The new folder inherits its parent's grant set. Never assume `owner`
+    // for a client-created placeholder: an Uploader must not gain rename,
+    // delete, share or permission actions while the optimistic row exists.
+    effectiveRole: parentRole,
+    capabilities: parentView.capabilities,
     optimistic: true,
   };
 
@@ -122,7 +126,7 @@ export function optimisticRenameFolder(
 
   const parentView = ctx.getDirectoryView(folder.parent_id);
   const effectiveRole = folder.effectiveRole ?? parentView.effectiveRole;
-  const roleCheck = checkRoleGuard(effectiveRole, 'editor');
+  const roleCheck = checkCapabilityGuard(effectiveRole, 'folder.rename');
   if (!roleCheck.ok) {
     return { ok: false, error: roleCheck.message };
   }
@@ -189,7 +193,7 @@ export function optimisticToggleFolderPin(
 ): { ok: boolean; error?: string } {
   const parentView = ctx.getDirectoryView(folder.parent_id);
   const effectiveRole = folder.effectiveRole ?? parentView.effectiveRole;
-  const roleCheck = checkRoleGuard(effectiveRole, 'editor');
+  const roleCheck = checkCapabilityGuard(effectiveRole, 'folder.rename');
   if (!roleCheck.ok) {
     return { ok: false, error: roleCheck.message };
   }
@@ -244,7 +248,7 @@ export function optimisticSoftDeleteFolder(
 ): { ok: boolean; error?: string } {
   const parentView = ctx.getDirectoryView(folder.parent_id);
   const effectiveRole = folder.effectiveRole ?? parentView.effectiveRole;
-  const roleCheck = checkRoleGuard(effectiveRole, 'editor');
+  const roleCheck = checkCapabilityGuard(effectiveRole, 'folder.delete');
   if (!roleCheck.ok) {
     return { ok: false, error: roleCheck.message };
   }

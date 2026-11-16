@@ -10,7 +10,8 @@ import {
   DROP_HOVER_PREFETCH_DELAY_MS,
   evaluateDropTarget,
 } from '@/lib/drag-drop-controller';
-import { hasRoleAtLeast, pickStricterClassification } from '@/lib/formatters';
+import { canAccess } from '@/lib/capabilities';
+import { pickStricterClassification } from '@/lib/formatters';
 import { keyboardScopes } from '@/lib/keyboard-shortcuts';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import type { ClassificationLabel, ResourceRole } from '@/types/files';
@@ -310,15 +311,19 @@ export function useWorkspaceDragSession({
       if (event.button !== 0 || items.length === 0) return;
       if (shouldIgnoreDragStart(event.target)) return;
 
-      const hasEditable = items.some(
-        (it) =>
-          isSysAdminRef.current ||
-          hasRoleAtLeast(
+      const hasEditable = items.some((it) => {
+        if (isSysAdminRef.current) return true;
+        const target = {
+          capabilities: it.capabilities,
+          effectiveRole:
             it.effectiveRole ??
-              syncStore.getDirectoryView(it.parentId).effectiveRole,
-            'editor'
-          )
-      );
+            syncStore.getDirectoryView(it.parentId).effectiveRole,
+        };
+        return canAccess(
+          target,
+          it.type === 'folder' ? 'folder.move' : 'item.move'
+        );
+      });
       if (!hasEditable) return;
 
       cleanupCandidateRef.current?.();

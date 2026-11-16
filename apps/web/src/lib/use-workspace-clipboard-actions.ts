@@ -3,7 +3,7 @@
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { DragWorkspaceItem } from '@/lib/drag-drop-controller';
-import { hasRoleAtLeast } from '@/lib/formatters';
+import { canAccess } from '@/lib/capabilities';
 import type { WorkspaceClipboardStore } from '@/lib/workspace-clipboard';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import {
@@ -79,7 +79,15 @@ export function useWorkspaceClipboardActions({
       if (targets.length === 0) return;
       const blocked = targets.some(
         (r) =>
-          !isSysAdmin && !hasRoleAtLeast(resolveRowRole(r), 'viewer')
+          !isSysAdmin &&
+          !canAccess(
+            {
+              capabilities:
+                r.kind === 'folder' ? r.folder.capabilities : undefined,
+              effectiveRole: resolveRowRole(r),
+            },
+            'item.download'
+          )
       );
       if (blocked) {
         syncStore.pushToast({
@@ -116,7 +124,15 @@ export function useWorkspaceClipboardActions({
       if (targets.length === 0) return;
       const blocked = targets.some(
         (r) =>
-          !isSysAdmin && !hasRoleAtLeast(resolveRowRole(r), 'editor')
+          !isSysAdmin &&
+          !canAccess(
+            {
+              capabilities:
+                r.kind === 'folder' ? r.folder.capabilities : undefined,
+              effectiveRole: resolveRowRole(r),
+            },
+            r.kind === 'folder' ? 'folder.move' : 'item.move'
+          )
       );
       if (blocked) {
         syncStore.pushToast({
@@ -244,6 +260,28 @@ export function useWorkspaceClipboardActions({
         });
         return;
       }
+      const canMoveOrCopy = targets.every((row) => {
+        const access = {
+          capabilities:
+            row.kind === 'folder' ? row.folder.capabilities : undefined,
+          effectiveRole: resolveRowRole(row),
+        };
+        return (
+          isSysAdmin ||
+          canAccess(access, 'item.download') ||
+          canAccess(
+            access,
+            row.kind === 'folder' ? 'folder.move' : 'item.move'
+          )
+        );
+      });
+      if (!canMoveOrCopy) {
+        syncStore.pushToast({
+          kind: 'error',
+          message: 'このロールでは移動・コピーを実行できません',
+        });
+        return;
+      }
       setMoveCopyModal({
         items: targets.map((r) => toDragWorkspaceItem(r, effectiveRole)),
         modeHint,
@@ -254,6 +292,8 @@ export function useWorkspaceClipboardActions({
       getShortcutTargets,
       syncStore,
       effectiveRole,
+      isSysAdmin,
+      resolveRowRole,
       setMoveCopyModal,
     ]
   );

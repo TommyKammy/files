@@ -10,13 +10,8 @@ import { getFileViewerInfo } from '@/lib/files-api';
 import { formatBytes } from '@/lib/formatters';
 import { useSecurePreview } from '@/lib/use-secure-preview';
 import { isWopiEditableFile, type WopiEditorFile } from '@/lib/wopi';
-import type { FileItem, ResourceRole } from '@/types/files';
-
-interface FileViewerInfo {
-  file: FileItem;
-  effectiveRole: ResourceRole;
-  canDownload: boolean;
-}
+import { canAccess } from '@/lib/capabilities';
+import type { FileViewerInfo } from '@/types/files';
 
 export function FileViewerPage({ fileId }: { fileId: string }) {
   const router = useRouter();
@@ -79,6 +74,35 @@ export function FileViewerPage({ fileId }: { fileId: string }) {
           </h1>
           <p className="mt-1 max-w-md text-xs text-slate-600">
             {error ?? 'ファイルが見つかりません'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={closeViewer}
+          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-700"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          ワークスペースへ戻る
+        </button>
+      </div>
+    );
+  }
+
+  const access = {
+    capabilities: info.capabilities,
+    effectiveRole: info.effectiveRole,
+  };
+  if (!canAccess(access, 'item.preview')) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#efeff1] p-6 text-center">
+        <AlertTriangle className="h-9 w-9 text-amber-500" />
+        <div>
+          <h1 className="text-base font-semibold text-slate-900">
+            このファイルを開く権限がありません
+          </h1>
+          <p className="mt-1 max-w-md text-xs text-slate-600">
+            現在のロールではプレビュー・ダウンロードを利用できません。Uploader
+            は新規アップロード専用です。
           </p>
         </div>
         <button

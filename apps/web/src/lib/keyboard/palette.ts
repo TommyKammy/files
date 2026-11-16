@@ -51,6 +51,9 @@ export function buildPaletteCommands(options: {
   isAdmin: boolean;
   isWorkspace: boolean;
   hasTargetItem: boolean;
+  canCreateFolder?: boolean;
+  canInspectTarget?: boolean;
+  canMoveCopyTarget?: boolean;
   canClassifyTarget: boolean;
   canShareTarget: boolean;
   canTrashTarget: boolean;
@@ -62,13 +65,23 @@ export function buildPaletteCommands(options: {
   const commands: PaletteCommand[] = [];
 
   if (options.isWorkspace) {
-    if (options.hasTargetItem) {
+    if (options.hasTargetItem && options.canMoveCopyTarget) {
       commands.push({
         id: 'cmd:move-copy',
         label: '選択項目をフォルダへ移動 / コピー...',
         description: 'ツリーピッカーを開いて移動または Zero-Copy 複製を行います',
         shortcutHint: 'm',
         keywords: ['move', 'copy', 'folder', '移動', 'コピー', 'フォルダ'],
+        category: 'action',
+      });
+    }
+    if (options.canCreateFolder) {
+      commands.push({
+        id: 'cmd:new-folder',
+        label: '新しいフォルダを作成',
+        description: '現在のディレクトリにフォルダを作成します',
+        shortcutHint: 'n',
+        keywords: ['new', 'folder', 'create', '新規', 'フォルダ'],
         category: 'action',
       });
     }
@@ -112,21 +125,16 @@ export function buildPaletteCommands(options: {
         category: 'action',
       });
     }
-    commands.push({
-      id: 'cmd:new-folder',
-      label: '新規フォルダを作成',
-      description: '現在のディレクトリにフォルダを作成します',
-      keywords: ['new', 'folder', 'create', '新規', 'フォルダ'],
-      category: 'action',
-    });
-    commands.push({
-      id: 'cmd:toggle-inspector',
-      label: '詳細インスペクタを開閉',
-      description: 'DLP継承元・権限・バージョン詳細パネルを表示/非表示にします',
-      shortcutHint: 'i',
-      keywords: ['inspector', 'details', '詳細', 'インスペクタ'],
-      category: 'action',
-    });
+    if (options.canInspectTarget) {
+      commands.push({
+        id: 'cmd:toggle-inspector',
+        label: '詳細インスペクタを開閉',
+        description: 'DLP継承元・権限・バージョン詳細パネルを表示/非表示にします',
+        shortcutHint: 'i',
+        keywords: ['inspector', 'details', '詳細', 'インスペクタ'],
+        category: 'action',
+      });
+    }
     commands.push({
       id: 'cmd:toggle-view',
       label: 'リスト / グリッド表示を切替',

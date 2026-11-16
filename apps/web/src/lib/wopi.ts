@@ -10,7 +10,8 @@ const WOPI_EDITABLE_EXTENSIONS = new Set([
   'odt',
   'fodt',
   'rtf',
-  'txt',
+  // Plain text stays in the DLP watermark/read-only viewer: it needs no
+  // Collabora round-trip and must remain previewable without Collabora.
   'xls',
   'xlsx',
   'xlt',

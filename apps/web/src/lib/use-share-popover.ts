@@ -18,11 +18,13 @@ export function useSharePopover({
   targetId,
   classification,
   canEdit,
+  canManageLinks = canEdit,
 }: {
   targetType: 'file' | 'folder';
   targetId: string;
   classification: ClassificationLabel;
   canEdit: boolean;
+  canManageLinks?: boolean;
 }) {
   const publicRestricted =
     classification === 'confidential' || classification === 'unset';
@@ -33,9 +35,11 @@ export function useSharePopover({
   const [accessScope, setAccessScope] = useState<ShareAccessScope>(
     publicRestricted ? 'company_only' : 'public'
   );
-  const [canDownload, setCanDownload] = useState(true);
+  // `viewer_uploader` may create links but cannot manage them: the server
+  // forces `can_download = 0` and a watermark. Mirror that in the form.
+  const [canDownload, setCanDownload] = useState(canManageLinks);
   const [requireWatermark, setRequireWatermark] = useState(
-    classification === 'confidential'
+    classification === 'confidential' || !canManageLinks
   );
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -47,6 +51,11 @@ export function useSharePopover({
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
 
   async function reloadLinks() {
+    if (!canManageLinks) {
+      setLinks([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -84,8 +93,8 @@ export function useSharePopover({
         targetType,
         targetId,
         accessScope,
-        canDownload,
-        requireWatermark,
+        canDownload: canManageLinks ? canDownload : false,
+        requireWatermark: canManageLinks ? requireWatermark : true,
         password: password.trim() || undefined,
         expiresInDays,
         maxDownloads:
@@ -113,6 +122,7 @@ export function useSharePopover({
   }
 
   async function handleRevoke(linkId: string) {
+    if (!canManageLinks) return;
     setError(null);
     try {
       await revokeSharedLink(linkId);

@@ -348,6 +348,7 @@ function isUnauthorizedError(err: unknown): boolean {
             dirKey,
             folderId,
             effectiveRole: res.effectiveRole,
+            capabilities: res.capabilities,
             folderIds: res.folders.map((f) => f.id),
             fileIds: res.files.map((fl) => fl.id),
             nextCursor: res.nextCursor,

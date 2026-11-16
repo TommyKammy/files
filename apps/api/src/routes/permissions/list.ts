@@ -1,6 +1,16 @@
 import { Hono } from 'hono';
-import { getAuthenticatedUser, resolveTargetAccess } from '../../services/authorization';
-import { can } from '../../services/capabilities';
+import {
+  areAdvancedRolesEnabled,
+  getAuthenticatedUser,
+  resolveTargetAccess,
+} from '../../services/authorization';
+import {
+  can,
+  filterFileTargetRoles,
+  isAdvancedResourceRole,
+  synthesizeEffectiveAccess,
+} from '../../services/capabilities';
+import type { ResourceRole } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
   PermissionListRow,
@@ -95,9 +105,62 @@ export function registerPermissionListRoute(routes: Hono<OidcHonoEnv>) {
       ];
     }
 
-    const rows = await c.env.DB.prepare(sql)
-      .bind(...bindings)
-      .all<PermissionListRow>();
+    const [rows, advancedRolesEnabled, membershipRows] = await Promise.all([
+      c.env.DB.prepare(sql).bind(...bindings).all<PermissionListRow>(),
+      areAdvancedRolesEnabled(c.env.DB, user.tenantId),
+      c.env.DB.prepare(
+        'SELECT group_id FROM group_members WHERE user_id = ?'
+      )
+        .bind(user.id)
+        .all<{ group_id: string }>(),
+    ]);
+
+    const myGroupIds = new Set(
+      membershipRows.results.map((row) => row.group_id)
+    );
+
+    /**
+     * One grantee can hold several rows (direct + inherited, user + group).
+     * Compose them non-linearly so the UI can show `Viewer + Uploader` instead
+     * of whichever single row happened to sort first.
+     */
+    const rolesByGrantee = new Map<string, ResourceRole[]>();
+    for (const row of rows.results) {
+      const key = `${row.grantee_type}:${row.grantee_id}`;
+      const roles = rolesByGrantee.get(key) ?? [];
+      roles.push(row.role);
+      rolesByGrantee.set(key, roles);
+    }
+    const synthesizedByGrantee = new Map<
+      string,
+      ReturnType<typeof synthesizeEffectiveAccess>
+    >();
+    for (const [key, roles] of rolesByGrantee) {
+      const applicableRoles =
+        targetType === 'file' ? filterFileTargetRoles(roles) : roles;
+      synthesizedByGrantee.set(
+        key,
+        synthesizeEffectiveAccess(applicableRoles)
+      );
+    }
+
+    const effectiveBreakdown = rows.results
+      .filter(
+        (row) =>
+          // Advanced roles are folder-only and never contribute to file access.
+          (targetType !== 'file' || !isAdvancedResourceRole(row.role)) &&
+          (row.grantee_type === 'user'
+            ? row.grantee_id === user.id
+            : myGroupIds.has(row.grantee_id))
+      )
+      .map((row) => ({
+        granteeType: row.grantee_type,
+        granteeId: row.grantee_id,
+        role: row.role,
+        inherited: row.is_inherited === 1,
+        sourceName: row.source_name,
+        targetId: row.target_id,
+      }));
 
     return c.json({
       targetType,
@@ -105,20 +168,28 @@ export function registerPermissionListRoute(routes: Hono<OidcHonoEnv>) {
       effectiveRole: access.effectiveRole,
       capabilities: access.capabilities,
       grantedRoles: access.grantedRoles,
-      permissions: rows.results.map((r) => ({
-        id: r.id,
-        targetType: r.target_type,
-        targetId: r.target_id,
-        granteeType: r.grantee_type,
-        granteeId: r.grantee_id,
-        granteeName: r.grantee_name,
-        granteeEmail: r.grantee_email,
-        role: r.role,
-        inherited: r.is_inherited === 1,
-        sourceName: r.source_name,
-        grantedBy: r.granted_by,
-        createdAt: r.created_at,
-      })),
+      advancedRolesEnabled,
+      effectiveBreakdown,
+      permissions: rows.results.map((r) => {
+        const key = `${r.grantee_type}:${r.grantee_id}`;
+        const synthesized = synthesizedByGrantee.get(key);
+        return {
+          id: r.id,
+          targetType: r.target_type,
+          targetId: r.target_id,
+          granteeType: r.grantee_type,
+          granteeId: r.grantee_id,
+          granteeName: r.grantee_name,
+          granteeEmail: r.grantee_email,
+          role: r.role,
+          inherited: r.is_inherited === 1,
+          sourceName: r.source_name,
+          grantedBy: r.granted_by,
+          createdAt: r.created_at,
+          synthesizedRole: synthesized?.effectiveRole ?? null,
+          synthesizedCapabilities: synthesized?.capabilities ?? [],
+        };
+      }),
     });
   });
 

@@ -1,8 +1,6 @@
-import {
-  hasRoleAtLeast,
-  pickStricterClassification,
-} from '@/lib/formatters';
-import type { ClassificationLabel, ResourceRole } from '@/types/files';
+import { canAccess } from '@/lib/capabilities';
+import { pickStricterClassification } from '@/lib/formatters';
+import type { Capability, ClassificationLabel, ResourceRole } from '@/types/files';
 
 export const DRAG_THRESHOLD_PX = 6;
 export const DROP_HOVER_PREFETCH_DELAY_MS = 100;
@@ -18,6 +16,7 @@ export interface DragWorkspaceItem {
   parentId: string | null;
   classification: ClassificationLabel;
   effectiveRole?: ResourceRole;
+  capabilities?: Capability[];
 }
 
 export interface DropTargetEvaluation {
@@ -32,9 +31,11 @@ export interface EvaluateDropTargetInput {
   targetClassification: ClassificationLabel;
   targetAncestorClassifications?: ClassificationLabel[];
   targetEffectiveRole?: ResourceRole;
+  targetCapabilities?: Capability[];
   isSysAdmin?: boolean;
   isAncestorOf: (ancestorId: string, candidateId: string | null) => boolean;
   resolveItemRole: (item: DragWorkspaceItem) => ResourceRole;
+  resolveItemCapabilities?: (item: DragWorkspaceItem) => Capability[] | undefined;
 }
 
 /**
@@ -50,10 +51,21 @@ export function evaluateDropTarget(
     targetClassification,
     targetAncestorClassifications = [],
     targetEffectiveRole = 'editor',
+    targetCapabilities,
     isSysAdmin = false,
     isAncestorOf,
     resolveItemRole,
+    resolveItemCapabilities,
   } = input;
+
+  const itemAccess = (item: DragWorkspaceItem) => ({
+    capabilities: resolveItemCapabilities?.(item) ?? item.capabilities,
+    effectiveRole: resolveItemRole(item),
+  });
+  const targetAccess = {
+    capabilities: targetCapabilities,
+    effectiveRole: targetEffectiveRole,
+  };
 
   if (dragItems.length === 0) {
     return { allowed: false, promotesToConfidential: false };
@@ -70,7 +82,11 @@ export function evaluateDropTarget(
   }
 
   // Destination folder write check (root promotions checked per-folder below)
-  if (targetFolderId !== null && !isSysAdmin && !hasRoleAtLeast(targetEffectiveRole, 'editor')) {
+  if (
+    targetFolderId !== null &&
+    !isSysAdmin &&
+    !canAccess(targetAccess, 'folder.create')
+  ) {
     return {
       allowed: false,
       reason: '移動先フォルダへの書き込み権限 (Editor 以上) がありません',
@@ -87,8 +103,7 @@ export function evaluateDropTarget(
           promotesToConfidential: false,
         };
       }
-      const role = resolveItemRole(item);
-      if (!isSysAdmin && !hasRoleAtLeast(role, 'editor')) {
+      if (!isSysAdmin && !canAccess(itemAccess(item), 'folder.move')) {
         return {
           allowed: false,
           reason: '移動には Editor 以上の権限が必要です',
@@ -96,7 +111,7 @@ export function evaluateDropTarget(
         };
       }
       if (targetFolderId === null && item.parentId !== null) {
-        if (!isSysAdmin && !hasRoleAtLeast(role, 'owner')) {
+        if (!isSysAdmin && !canAccess(itemAccess(item), 'owner.transfer')) {
           return {
             allowed: false,
             reason: 'ルートへ移動するには Owner 権限が必要です',
@@ -112,8 +127,7 @@ export function evaluateDropTarget(
           promotesToConfidential: false,
         };
       }
-      const role = resolveItemRole(item);
-      if (!isSysAdmin && !hasRoleAtLeast(role, 'editor')) {
+      if (!isSysAdmin && !canAccess(itemAccess(item), 'item.move')) {
         return {
           allowed: false,
           reason: '移動には Editor 以上の権限が必要です',

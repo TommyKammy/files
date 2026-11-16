@@ -147,7 +147,12 @@ export function WopiEditorFrame({
           <div className="truncate text-sm font-semibold text-slate-900">
             {file.name}
           </div>
-          <div className="text-[0.6875rem] text-slate-500">
+          <div
+            data-testid="wopi-session-status"
+            data-can-write={session?.canWrite ? 'true' : 'false'}
+            data-read-only={session?.readOnly ? 'true' : 'false'}
+            className="text-[0.6875rem] text-slate-500"
+          >
             {session?.readOnly
               ? session.readOnlyReason === 'desktop_lock'
                 ? '閲覧専用（Files Drive 編集中）'

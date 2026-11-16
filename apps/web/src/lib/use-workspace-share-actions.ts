@@ -16,8 +16,9 @@ export function useWorkspaceShareActions({
   isTrashView,
   selectedRows,
   focusedRow,
-  canEditRow,
-  canEditCurrentFolder,
+  canShareRow,
+  canManageLinksRow,
+  canClassifyRow,
   isPrivilegedAdmin,
   setActiveModal,
   setClassificationPicker,
@@ -26,8 +27,9 @@ export function useWorkspaceShareActions({
   isTrashView: boolean;
   selectedRows: WorkspaceTableRow[];
   focusedRow: WorkspaceTableRow | null;
-  canEditRow: (row: WorkspaceTableRow) => boolean;
-  canEditCurrentFolder: boolean;
+  canShareRow: (row: WorkspaceTableRow) => boolean;
+  canManageLinksRow: (row: WorkspaceTableRow) => boolean;
+  canClassifyRow: (row: WorkspaceTableRow) => boolean;
   isPrivilegedAdmin: boolean;
   setActiveModal: Dispatch<SetStateAction<ActiveModal | null>>;
   setClassificationPicker: Dispatch<
@@ -38,10 +40,10 @@ export function useWorkspaceShareActions({
     if (isTrashView) return;
     const row = focusedRow ?? selectedRows[0] ?? null;
     if (!row) return;
-    if (!canEditRow(row)) {
+    if (!canShareRow(row)) {
       syncStore.pushToast({
         kind: 'error',
-        message: '共有リンクの作成には編集者以上の権限が必要です',
+        message: '共有リンクの作成権限がありません',
       });
       return;
     }
@@ -53,6 +55,7 @@ export function useWorkspaceShareActions({
         targetName: row.folder.name,
         classification: row.folder.classification,
         canEdit: true,
+        canManageLinks: canManageLinksRow(row),
       });
     } else {
       setActiveModal({
@@ -62,13 +65,15 @@ export function useWorkspaceShareActions({
         targetName: row.file.name,
         classification: row.file.classification,
         canEdit: true,
+        canManageLinks: canManageLinksRow(row),
       });
     }
   }, [
     isTrashView,
     focusedRow,
     selectedRows,
-    canEditRow,
+    canShareRow,
+    canManageLinksRow,
     syncStore,
     setActiveModal,
   ]);
@@ -97,7 +102,18 @@ export function useWorkspaceShareActions({
       return;
     }
 
-    if (!canEditCurrentFolder && !isPrivilegedAdmin) {
+    if (
+      !isPrivilegedAdmin &&
+      !targetFiles.every((file) => {
+        const row = selectedRows.find(
+          (candidate) =>
+            candidate.kind === 'file' && candidate.file.id === file.id
+        ) ?? (focusedRow?.kind === 'file' && focusedRow.file.id === file.id
+          ? focusedRow
+          : null);
+        return row ? canClassifyRow(row) : false;
+      })
+    ) {
       syncStore.pushToast({
         kind: 'error',
         message: '機密区分を変更する権限がありません',
@@ -118,7 +134,7 @@ export function useWorkspaceShareActions({
     selectedRows,
     focusedRow,
     syncStore,
-    canEditCurrentFolder,
+    canClassifyRow,
     isPrivilegedAdmin,
     setClassificationPicker,
   ]);

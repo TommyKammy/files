@@ -99,6 +99,9 @@ export function useCommandPalette({
         isWorkspace:
           activeView === 'workspace' && Boolean(workspaceActions),
         hasTargetItem: Boolean(workspaceActions?.hasTargetItem),
+        canCreateFolder: Boolean(workspaceActions?.canCreateFolder),
+        canInspectTarget: Boolean(workspaceActions?.canInspectTarget),
+        canMoveCopyTarget: Boolean(workspaceActions?.canMoveCopyTarget),
         canClassifyTarget: Boolean(workspaceActions?.canClassifyTarget),
         canShareTarget: Boolean(workspaceActions?.canShareTarget),
         canTrashTarget: Boolean(workspaceActions?.canTrashTarget),

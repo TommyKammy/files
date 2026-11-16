@@ -1,4 +1,11 @@
-import type { ClassificationLabel, ResourceRole } from '@/types/files';
+import type { ClassificationLabel } from '@/types/files';
+
+export {
+  CAPABILITY_CHIPS,
+  ROLE_CAPABILITY_CHIPS,
+  ROLE_GROUPS,
+  ROLE_META,
+} from '@/lib/capabilities';
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
@@ -76,51 +83,6 @@ export const CLASSIFICATION_META: Record<
     barClass: 'bg-slate-300',
   },
 };
-
-export const ROLE_META: Record<ResourceRole, { label: string; description: string }> = {
-  owner: { label: 'Owner', description: 'すべての権限' },
-  co_owner: { label: 'Co-Owner', description: '編集 + 権限管理（Owner除く）' },
-  editor: { label: 'Editor', description: '作成・更新・共有設定可' },
-  viewer_uploader: {
-    label: 'Viewer + Uploader',
-    description: '閲覧・DL・編集 + 新規/新版アップロード',
-  },
-  previewer_uploader: {
-    label: 'Previewer + Uploader',
-    description: '画面プレビュー + 新規アップロード（DL・既存版更新は不可）',
-  },
-  viewer: { label: 'Viewer', description: '閲覧・ダウンロード可' },
-  previewer: { label: 'Previewer', description: '画面プレビューのみ（DL不可）' },
-  uploader: {
-    label: 'Uploader',
-    description: '新規アップロード専用（閲覧・DL・プレビュー不可）',
-  },
-};
-
-/**
- * Legacy UI ordering used by `hasRoleAtLeast`. The 8 roles are not totally
- * ordered, so the fractional ranks only encode the subset relations the UI
- * needs (`editor+`, `viewer+`, `previewer+`); authorization itself is decided
- * by the API's capability array.
- */
-const ROLE_ORDER: Record<ResourceRole, number> = {
-  uploader: 0.5,
-  previewer: 1,
-  previewer_uploader: 1.5,
-  viewer: 2,
-  viewer_uploader: 2.5,
-  editor: 3,
-  co_owner: 4,
-  owner: 5,
-};
-
-export function hasRoleAtLeast(
-  role: ResourceRole | undefined | null,
-  required: ResourceRole
-): boolean {
-  if (!role) return false;
-  return ROLE_ORDER[role] >= ROLE_ORDER[required];
-}
 
 const CLASSIFICATION_SEVERITY: Record<ClassificationLabel, number> = {
   confidential: 3,

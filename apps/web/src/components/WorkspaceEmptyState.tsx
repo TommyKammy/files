@@ -5,6 +5,7 @@ import { Folder, SearchX, Trash2 } from 'lucide-react';
 export function WorkspaceEmptyState({
   isTrashView,
   folderId,
+  uploadOnly = false,
   trashFilterActive = false,
   onClearTrashFilters,
   onContextMenu,
@@ -12,6 +13,7 @@ export function WorkspaceEmptyState({
 }: {
   isTrashView: boolean;
   folderId: string | null;
+  uploadOnly?: boolean;
   trashFilterActive?: boolean;
   onClearTrashFilters?: () => void;
   onContextMenu: (event: React.MouseEvent) => void;
@@ -39,18 +41,22 @@ export function WorkspaceEmptyState({
           ? '条件に一致するアイテムがありません'
           : isTrashView
             ? 'ゴミ箱は空です'
-            : folderId
-              ? 'このフォルダは空です'
-              : 'アクセス可能なルートフォルダがありません'}
+            : uploadOnly
+              ? 'Uploader 権限のためファイルは非表示です'
+              : folderId
+                ? 'このフォルダは空です'
+                : 'アクセス可能なルートフォルダがありません'}
       </p>
       <p className="mt-1 max-w-sm text-[0.6875rem] leading-relaxed text-[#6b6f76]">
         {filteredTrashEmpty
           ? '検索語やフィルタを変更するか、条件をクリアしてください'
           : isTrashView
             ? '削除したアイテムはここに表示されます'
-            : folderId
-              ? 'ファイルをドロップするか、上の「ファイルを選択」から追加できます'
-              : '「新規フォルダ」からワークスペースを作成できます'}
+            : uploadOnly
+              ? 'アップロード専用のため、既存ファイルの一覧・プレビュー・ダウンロードは表示されません。上のアップロード欄から新しいファイルを追加できます。'
+              : folderId
+                ? 'ファイルをドロップするか、上の「ファイルを選択」から追加できます'
+                : '「新規フォルダ」からワークスペースを作成できます'}
       </p>
       {filteredTrashEmpty && onClearTrashFilters && (
         <button

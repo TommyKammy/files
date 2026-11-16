@@ -25,19 +25,30 @@ interface UploadQueueItem {
 export function useFileDropzoneUploader({
   folderId,
   disabled = false,
+  canUploadVersion = true,
   onUploaded,
   onRegisterEnqueueFiles,
 }: {
   folderId: string;
   disabled?: boolean;
+  canUploadVersion?: boolean;
   onUploaded?: (file?: FileItem) => void;
   onRegisterEnqueueFiles?: (
     fn: ((files: FileList | File[]) => void) | null
   ) => void;
 }) {
   const [dragging, setDragging] = useState(false);
-  const [conflictPolicy, setConflictPolicy] = useState<'fail' | 'new_version'>(
-    'fail'
+  const [conflictPolicyState, setConflictPolicyState] = useState<
+    'fail' | 'new_version'
+  >('fail');
+
+  // Roles without `item.upload_version` must never send `new_version`.
+  const conflictPolicy = canUploadVersion ? conflictPolicyState : 'fail';
+  const setConflictPolicy = useCallback(
+    (next: 'fail' | 'new_version') => {
+      setConflictPolicyState(canUploadVersion ? next : 'fail');
+    },
+    [canUploadVersion]
   );
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);

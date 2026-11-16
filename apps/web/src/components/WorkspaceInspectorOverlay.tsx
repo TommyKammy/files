@@ -4,10 +4,11 @@ import {
   WorkspaceInspectorDrawer,
   type InspectorTarget,
 } from '@/components/WorkspaceInspectorDrawer';
-import { hasRoleAtLeast } from '@/lib/formatters';
+import { canAccess } from '@/lib/capabilities';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import type {
   BreadcrumbItem,
+  Capability,
   FileItem,
   FileLockInfo,
   ResourceRole,
@@ -19,10 +20,7 @@ export function WorkspaceInspectorOverlay({
   target,
   breadcrumbs,
   effectiveRole,
-  canEditCurrentFolder,
-  canDownloadCurrentFolder,
-  canManageCurrentFolderPerms,
-  isPrivilegedAdmin,
+  capabilities,
   lock,
   syncStore,
   onClose,
@@ -39,10 +37,7 @@ export function WorkspaceInspectorOverlay({
   target: InspectorTarget | null;
   breadcrumbs: BreadcrumbItem[];
   effectiveRole: ResourceRole;
-  canEditCurrentFolder: boolean;
-  canDownloadCurrentFolder: boolean;
-  canManageCurrentFolderPerms: boolean;
-  isPrivilegedAdmin: boolean;
+  capabilities?: Capability[];
   lock?: FileLockInfo | null;
   syncStore: WorkspaceSyncStore;
   onClose: () => void;
@@ -63,28 +58,30 @@ export function WorkspaceInspectorOverlay({
     target.kind === 'folder'
       ? target.folder.effectiveRole ?? effectiveRole
       : effectiveRole;
-  const targetCanEdit =
+  const targetCapabilities =
     target.kind === 'folder'
-      ? hasRoleAtLeast(targetRole, 'editor')
-      : canEditCurrentFolder;
-  const targetCanDownload =
-    target.kind === 'folder'
-      ? hasRoleAtLeast(targetRole, 'viewer')
-      : canDownloadCurrentFolder;
-  const targetCanManagePerms =
-    target.kind === 'folder'
-      ? hasRoleAtLeast(targetRole, 'co_owner')
-      : canManageCurrentFolderPerms;
+      ? target.folder.capabilities ?? capabilities
+      : capabilities;
+  const access = {
+    capabilities: targetCapabilities,
+    effectiveRole: targetRole,
+  };
+  if (!canAccess(access, 'item.preview')) return null;
 
   return (
     <WorkspaceInspectorDrawer
       target={target}
       effectiveRole={targetRole}
+      capabilities={targetCapabilities}
       breadcrumbs={breadcrumbs}
-      canEdit={targetCanEdit}
-      canDownload={targetCanDownload}
-      canManagePerms={targetCanManagePerms}
-      isPrivilegedAdmin={isPrivilegedAdmin}
+      canPreview={canAccess(access, 'item.preview')}
+      canDownload={canAccess(access, 'item.download')}
+      canClassify={canAccess(access, 'classification.edit')}
+      canShare={canAccess(access, 'share_link.create')}
+      canManageLinks={canAccess(access, 'share_link.manage')}
+      canManagePerms={canAccess(access, 'permission.manage')}
+      canVersionHistory={canAccess(access, 'item.preview')}
+      isPrivilegedAdmin={false}
       lock={lock}
       syncStore={syncStore}
       onClose={onClose}

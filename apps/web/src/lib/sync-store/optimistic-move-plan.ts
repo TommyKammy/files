@@ -1,5 +1,5 @@
 import { allocateCopyDisplayName, getExtensionFromName } from '@/lib/formatters';
-import { checkRoleGuard } from '@/lib/mutation-outbox';
+import { checkCapabilityGuard } from '@/lib/mutation-outbox';
 import type {
   ClassificationLabel,
   FileItem,
@@ -155,7 +155,7 @@ export function planOptimisticMove(
 
   const destNames = ctx.getDestinationNames(targetParentId);
   if (destNames.existsInCache) {
-    const destRole = checkRoleGuard(ctx.destinationRole, 'editor', {
+    const destRole = checkCapabilityGuard(ctx.destinationRole, 'folder.create', {
         isPrivilegedAdmin: ctx.userRole === 'sys_admin',
         allowAdminOverride: true,
       }
@@ -195,7 +195,7 @@ export function planOptimisticMove(
       };
     }
     const role = ctx.resolveItemEffectiveRole('folder', folder);
-    const roleCheck = checkRoleGuard(role, 'editor', {
+    const roleCheck = checkCapabilityGuard(role, 'folder.move', {
       isPrivilegedAdmin: ctx.userRole === 'sys_admin',
       allowAdminOverride: true,
     });
@@ -208,7 +208,7 @@ export function planOptimisticMove(
       };
     }
     if (targetParentId === null && folder.parent_id !== null) {
-      const rootOwnerCheck = checkRoleGuard(role, 'owner', {
+      const rootOwnerCheck = checkCapabilityGuard(role, 'owner.transfer', {
         isPrivilegedAdmin: ctx.userRole === 'sys_admin',
         allowAdminOverride: true,
       });
@@ -250,7 +250,7 @@ export function planOptimisticMove(
       continue;
     }
     const role = ctx.resolveItemEffectiveRole('file', file);
-    const roleCheck = checkRoleGuard(role, 'editor', {
+    const roleCheck = checkCapabilityGuard(role, 'item.move', {
       isPrivilegedAdmin: ctx.userRole === 'sys_admin',
       allowAdminOverride: true,
     });

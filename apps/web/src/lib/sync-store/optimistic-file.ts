@@ -1,4 +1,4 @@
-import { checkClassificationFloorGuard, checkRoleGuard, type MutationOutbox } from '@/lib/mutation-outbox';
+import { checkCapabilityGuard, checkClassificationFloorGuard, type MutationOutbox } from '@/lib/mutation-outbox';
 import { getExtensionFromName } from '@/lib/formatters';
 import type { DirectoryViewModel } from '@/lib/sync-store/cache';
 import type { UndoAction } from '@/lib/sync-store/toasts';
@@ -49,7 +49,7 @@ export function optimisticRenameFile(
     return { ok: true };
   }
 
-  const roleCheck = checkRoleGuard(effectiveRole, 'editor');
+  const roleCheck = checkCapabilityGuard(effectiveRole, 'item.rename');
   if (!roleCheck.ok) {
     return { ok: false, error: roleCheck.message };
   }
@@ -124,7 +124,7 @@ export function optimisticSoftDeleteFile(
   if (file.upload_state === 'pending' || file.optimistic) {
     return { ok: false, error: 'アップロード完了後に削除できます' };
   }
-  const roleCheck = checkRoleGuard(effectiveRole, 'editor');
+  const roleCheck = checkCapabilityGuard(effectiveRole, 'item.delete');
   if (!roleCheck.ok) {
     return { ok: false, error: roleCheck.message };
   }
@@ -214,7 +214,7 @@ export function optimisticUpdateFileClassification(
     options?.isPrivilegedAdmin ??
     (ctx.userRole === 'sec_admin' || ctx.userRole === 'sys_admin');
 
-  const roleCheck = checkRoleGuard(role, 'editor', {
+  const roleCheck = checkCapabilityGuard(role, 'classification.edit', {
     isPrivilegedAdmin: isAdmin,
     allowAdminOverride: true,
   });

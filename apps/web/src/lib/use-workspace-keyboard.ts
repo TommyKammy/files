@@ -44,6 +44,7 @@ export interface WorkspaceKeyboardContext {
   router: ReturnType<typeof useRouter>;
   clipboardStore: WorkspaceClipboardStore;
   canDownloadCurrentFolder: boolean;
+  canInspectCurrentFolder: boolean;
   lastOsPasteAtRef: { current: number };
   lastVirtualPasteAtRef: { current: number };
   setShortcutsHelpOpen: Dispatch<SetStateAction<boolean>>;
@@ -94,6 +95,7 @@ export function useWorkspaceKeyboard(ctx: WorkspaceKeyboardContext) {
     router,
     clipboardStore,
     canDownloadCurrentFolder,
+    canInspectCurrentFolder,
     lastOsPasteAtRef,
     lastVirtualPasteAtRef,
     setShortcutsHelpOpen,
@@ -280,6 +282,7 @@ export function useWorkspaceKeyboard(ctx: WorkspaceKeyboardContext) {
         selectionAnchorKey,
         focusedRowKey,
         canDownloadCurrentFolder,
+        canInspectCurrentFolder,
         setSelectedKeys,
         setFocusedRowKey,
         setSelectionAnchorKey,
@@ -325,6 +328,7 @@ export function useWorkspaceKeyboard(ctx: WorkspaceKeyboardContext) {
     openShareFromTarget,
     trashSelectedOrFocused,
     canDownloadCurrentFolder,
+    canInspectCurrentFolder,
     clipboardStore,
     getShortcutTargets,
     handleCopyTargets,

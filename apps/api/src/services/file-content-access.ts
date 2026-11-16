@@ -69,6 +69,8 @@ export interface FileContentDeliveryInput {
   intent: ContentIntent;
   /** `null` signs the file's current version; otherwise signs the given historical version. */
   versionId: string | null;
+  /** Preview-only roles (no `item.download`) are always watermarked. */
+  forceWatermark?: boolean;
 }
 
 export interface FileContentDeliveryBody {
@@ -105,7 +107,7 @@ interface ContentTargetRow {
 export async function deliverFileContent(
   input: FileContentDeliveryInput
 ): Promise<FileContentDeliveryResult> {
-  const { env, user, fileId, intent, versionId } = input;
+  const { env, user, fileId, intent, versionId, forceWatermark = false } = input;
 
   const row = await env.DB.prepare(
     `SELECT fl.name,
@@ -151,7 +153,9 @@ export async function deliverFileContent(
     contentType,
   });
 
-  const requireWatermark = row.classification === 'confidential' && row.require_wm === 1;
+  const requireWatermark =
+    forceWatermark ||
+    (row.classification === 'confidential' && row.require_wm === 1);
   const nowIso = new Date().toISOString();
 
   await env.DB.batch([

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { FolderTreeMenuAction } from '@/components/FolderTreeContextMenu';
+import { canAccess } from '@/lib/capabilities';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import type { FolderSummary, ResourceRole } from '@/types/files';
 
@@ -128,6 +129,16 @@ export function useFolderTree({
       const folder = contextMenu?.folder;
       if (!folder) return;
       const role = resolveFolderRole(folder);
+      const access = {
+        capabilities:
+          folder.capabilities ??
+          syncStore.getDirectoryView(folder.id).capabilities,
+        effectiveRole: role,
+      };
+      const deny = (message: string) => {
+        syncStore.pushToast({ kind: 'error', message });
+        setContextMenu(null);
+      };
 
       switch (action) {
         case 'open':
@@ -141,9 +152,17 @@ export function useFolderTree({
           );
           break;
         case 'share':
+          if (!canAccess(access, 'share_link.create')) {
+            deny('共有リンクを作成する権限がありません');
+            break;
+          }
           setShareTarget(folder);
           break;
         case 'copyLink': {
+          if (!canAccess(access, 'item.preview')) {
+            deny('リンクをコピーする権限がありません');
+            break;
+          }
           const url = `${window.location.origin}/workspace?folderId=${encodeURIComponent(folder.id)}`;
           void navigator.clipboard
             .writeText(url)
@@ -162,12 +181,24 @@ export function useFolderTree({
           break;
         }
         case 'permissions':
+          if (!canAccess(access, 'permission.manage')) {
+            deny('権限を管理する権限がありません');
+            break;
+          }
           setPermissionsTarget({ folder, role });
           break;
         case 'move':
+          if (!canAccess(access, 'folder.move')) {
+            deny('フォルダを移動する権限がありません');
+            break;
+          }
           setMoveTarget(folder);
           break;
         case 'pin': {
+          if (!canAccess(access, 'folder.rename')) {
+            deny('ピン留めを変更する権限がありません');
+            break;
+          }
           const res = syncStore.optimisticToggleFolderPin(folder);
           if (!res.ok) {
             syncStore.pushToast({
@@ -185,6 +216,10 @@ export function useFolderTree({
           });
           break;
         case 'trash': {
+          if (!canAccess(access, 'folder.delete')) {
+            deny('フォルダを削除する権限がありません');
+            break;
+          }
           const res = syncStore.optimisticSoftDeleteFolder(folder);
           if (!res.ok) {
             syncStore.pushToast({

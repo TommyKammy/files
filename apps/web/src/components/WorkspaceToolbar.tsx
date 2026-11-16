@@ -16,8 +16,11 @@ import type { FolderSummary } from '@/types/files';
 export function WorkspaceToolbar({
   isTrashView,
   hasSelection,
-  canEditCurrentFolder,
+  canCreateFolder,
+  canRenameCurrentFolder,
+  canShareCurrentFolder,
   canManageCurrentFolderPerms,
+  canInspectCurrentFolder,
   currentFolder,
   viewMode,
   inspectorOpen,
@@ -32,8 +35,11 @@ export function WorkspaceToolbar({
 }: {
   isTrashView: boolean;
   hasSelection: boolean;
-  canEditCurrentFolder: boolean;
+  canCreateFolder: boolean;
+  canRenameCurrentFolder: boolean;
+  canShareCurrentFolder: boolean;
   canManageCurrentFolderPerms: boolean;
+  canInspectCurrentFolder: boolean;
   currentFolder: FolderSummary | null;
   viewMode: 'list' | 'grid';
   inspectorOpen: boolean;
@@ -56,7 +62,7 @@ export function WorkspaceToolbar({
     >
       {!isTrashView && (
         <>
-          {canEditCurrentFolder && (
+          {canCreateFolder && (
             <button
               type="button"
               onClick={onNewFolder}
@@ -67,11 +73,10 @@ export function WorkspaceToolbar({
             </button>
           )}
 
-          {currentFolder && canEditCurrentFolder && (
-            <>
-              <button
-                type="button"
-                onClick={() => onTogglePin(currentFolder)}
+          {currentFolder && canRenameCurrentFolder && (
+            <button
+              type="button"
+              onClick={() => onTogglePin(currentFolder)}
                 className={`inline-flex items-center gap-1.5 h-7 rounded-md border px-2.5 text-[0.75rem] font-medium transition ${
                   currentFolder.is_pinned === 1
                     ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
@@ -87,27 +92,30 @@ export function WorkspaceToolbar({
                 />
                 <span>
                   {currentFolder.is_pinned === 1 ? 'ピン留め中' : 'ピン留め'}
-                </span>
-              </button>
+              </span>
+            </button>
+          )}
 
-              <button
-                type="button"
-                onClick={onOpenFileRequest}
-                className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
-              >
-                <Inbox className="h-3.5 w-3.5 text-indigo-600" />
-                <span>ファイル収集</span>
-              </button>
+          {currentFolder && canRenameCurrentFolder && (
+            <button
+              type="button"
+              onClick={onOpenFileRequest}
+              className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
+            >
+              <Inbox className="h-3.5 w-3.5 text-indigo-600" />
+              <span>ファイル収集</span>
+            </button>
+          )}
 
-              <button
-                type="button"
-                onClick={onOpenShare}
-                className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
-              >
-                <Link2 className="h-3.5 w-3.5 text-blue-600" />
-                <span>フォルダ共有</span>
-              </button>
-            </>
+          {currentFolder && canShareCurrentFolder && (
+            <button
+              type="button"
+              onClick={onOpenShare}
+              className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
+            >
+              <Link2 className="h-3.5 w-3.5 text-blue-600" />
+              <span>フォルダ共有</span>
+            </button>
           )}
 
           {currentFolder && canManageCurrentFolderPerms && (
@@ -138,7 +146,7 @@ export function WorkspaceToolbar({
         <span>{viewMode === 'grid' ? 'リスト' : 'グリッド'}</span>
       </button>
 
-      {!isTrashView && (
+      {!isTrashView && canInspectCurrentFolder && (
         <button
           type="button"
           title="詳細インスペクタ (i)"

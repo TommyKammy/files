@@ -1,7 +1,5 @@
-import {
-  hasRoleAtLeast,
-  pickStricterClassification,
-} from '@/lib/formatters';
+import { canAccess } from '@/lib/capabilities';
+import { pickStricterClassification } from '@/lib/formatters';
 import type {
   ClassificationLabel,
   ResourceRole,
@@ -200,7 +198,7 @@ export function evaluateTrashRestoreDestination(input: {
     if (
       context.type === 'folder' &&
       context.item.parentId !== null &&
-      !hasRoleAtLeast(itemEffectiveRole, 'owner') &&
+      !canAccess(itemEffectiveRole, 'owner.transfer') &&
       !isSysAdmin
     ) {
       return {
@@ -212,7 +210,13 @@ export function evaluateTrashRestoreDestination(input: {
     return { allowed: true, circular: false };
   }
 
-  if (!isSysAdmin && !hasRoleAtLeast(targetEffectiveRole, 'editor')) {
+  if (
+    !isSysAdmin &&
+    !canAccess(
+      targetEffectiveRole,
+      context.type === 'folder' ? 'folder.create' : 'item.upload_new'
+    )
+  ) {
     return {
       allowed: false,
       circular: false,

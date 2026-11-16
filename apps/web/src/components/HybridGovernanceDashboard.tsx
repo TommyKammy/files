@@ -7,6 +7,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import Link from 'next/link';
+import { AccessControlSettingsSection } from '@/components/admin/AccessControlSettingsSection';
 import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
 import { AdminTrashSection } from '@/components/admin/AdminTrashSection';
 import { AuditLogSection } from '@/components/admin/AuditLogSection';
@@ -33,6 +34,10 @@ export function HybridGovernanceDashboard() {
     sharedLinks,
     policy,
     policySaving,
+    advancedRolesSaving,
+    advancedRolesError,
+    advancedRolesNotice,
+    setAdvancedRolesDirty,
     auditLogs,
     auditCursor,
     auditActionFilter,
@@ -49,6 +54,7 @@ export function HybridGovernanceDashboard() {
     handleSingleApprove,
     handleEmergencyRevoke,
     handlePolicySubmit,
+    handleAdvancedRolesUpdate,
     handleLoadMoreLogs,
   } = useGovernanceDashboard();
 
@@ -180,6 +186,15 @@ export function HybridGovernanceDashboard() {
           onBulkApprove={handleBulkApprove}
           onSingleApprove={handleSingleApprove}
           onToggleSelection={toggleSelection}
+        />
+
+        <AccessControlSettingsSection
+          policy={policy}
+          saving={advancedRolesSaving}
+          error={advancedRolesError}
+          notice={advancedRolesNotice}
+          onSave={handleAdvancedRolesUpdate}
+          onDirtyChange={setAdvancedRolesDirty}
         />
 
         <SharedLinksPolicySection

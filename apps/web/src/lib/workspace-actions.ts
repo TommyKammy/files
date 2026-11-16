@@ -2,13 +2,12 @@ import {
   type DragWorkspaceItem,
   type DropTargetEvaluation,
 } from '@/lib/drag-drop-controller';
-import {
-  hasRoleAtLeast,
-  pickStricterClassification,
-} from '@/lib/formatters';
+import { canAccess, isAdvancedResourceRole } from '@/lib/capabilities';
+import { pickStricterClassification } from '@/lib/formatters';
 import { selectKeyRange, toggleKeySelection } from '@/lib/keyboard-shortcuts';
 import { isWopiEditableFile } from '@/lib/wopi';
 import type {
+  Capability,
   ClassificationLabel,
   FileItem,
   FolderSummary,
@@ -31,9 +30,11 @@ export interface EvaluateCopyTargetInput {
   targetClassification: ClassificationLabel;
   targetAncestorClassifications?: ClassificationLabel[];
   targetEffectiveRole?: ResourceRole;
+  targetCapabilities?: Capability[];
   isSysAdmin?: boolean;
   isAncestorOf: (ancestorId: string, candidateId: string | null) => boolean;
   resolveItemRole: (item: DragWorkspaceItem) => ResourceRole;
+  resolveItemCapabilities?: (item: DragWorkspaceItem) => Capability[] | undefined;
 }
 
 /**
@@ -49,18 +50,28 @@ export function evaluateCopyDestination(
     targetClassification,
     targetAncestorClassifications = [],
     targetEffectiveRole = 'editor',
+    targetCapabilities,
     isSysAdmin = false,
     isAncestorOf,
     resolveItemRole,
+    resolveItemCapabilities,
   } = input;
 
   if (items.length === 0) {
     return { allowed: false, promotesToConfidential: false };
   }
 
+  const itemAccess = (item: DragWorkspaceItem) => ({
+    capabilities: resolveItemCapabilities?.(item) ?? item.capabilities,
+    effectiveRole: resolveItemRole(item),
+  });
+  const targetAccess = {
+    capabilities: targetCapabilities,
+    effectiveRole: targetEffectiveRole,
+  };
+
   for (const item of items) {
-    const role = resolveItemRole(item);
-    if (!isSysAdmin && !hasRoleAtLeast(role, 'viewer')) {
+    if (!isSysAdmin && !canAccess(itemAccess(item), 'item.download')) {
       return {
         allowed: false,
         reason: 'Previewer 権限のアイテムはコピーできません (DLP 保護)',
@@ -90,7 +101,7 @@ export function evaluateCopyDestination(
   if (
     targetFolderId !== null &&
     !isSysAdmin &&
-    !hasRoleAtLeast(targetEffectiveRole, 'editor')
+    !canAccess(targetAccess, 'item.upload_new')
   ) {
     return {
       allowed: false,
@@ -236,101 +247,157 @@ export function buildContextMenuCapabilities(options: {
   primaryRow: ContextRowTarget | null;
   currentFolderId: string | null;
   folderRole: ResourceRole;
+  folderCapabilities?: Capability[];
   isPrivilegedAdmin: boolean;
   isSysAdmin: boolean;
   hasClipboardItems: boolean;
   clipboardHasFiles: boolean;
   resolveRowRole: (row: ContextRowTarget) => ResourceRole;
+  resolveRowCapabilities?: (row: ContextRowTarget) => Capability[] | undefined;
 }): ContextMenuCapabilities {
   const {
     targets,
     primaryRow,
     currentFolderId,
     folderRole,
+    folderCapabilities,
     isPrivilegedAdmin,
     isSysAdmin,
     hasClipboardItems,
     clipboardHasFiles,
     resolveRowRole,
+    resolveRowCapabilities,
   } = options;
 
   const isMulti = targets.length > 1;
-  const targetRoles = targets.map(resolveRowRole);
-  const allViewerPlus =
+  const rowAccess = (row: ContextRowTarget) => ({
+    capabilities:
+      resolveRowCapabilities?.(row) ??
+      (row.kind === 'folder' ? row.folder.capabilities : row.file.capabilities) ??
+      (row.kind === 'file' ? folderCapabilities : undefined),
+    effectiveRole:
+      row.kind === 'folder'
+        ? row.folder.effectiveRole ?? resolveRowRole(row)
+        : resolveRowRole(row),
+  });
+  const currentAccess = {
+    capabilities: folderCapabilities,
+    effectiveRole: folderRole,
+  };
+
+  const targetCaps = (capability: Capability) =>
     targets.length > 0 &&
-    (isSysAdmin || targetRoles.every((r) => hasRoleAtLeast(r, 'viewer')));
-  const allEditorPlus =
+    targets.every((target) => canAccess(rowAccess(target), capability));
+  const targetCapsByKind = (
+    folderCapability: Capability,
+    fileCapability: Capability
+  ) =>
     targets.length > 0 &&
-    (isSysAdmin || targetRoles.every((r) => hasRoleAtLeast(r, 'editor')));
+    targets.every((target) =>
+      canAccess(
+        rowAccess(target),
+        target.kind === 'folder' ? folderCapability : fileCapability
+      )
+    );
 
   const primaryIsFolder = primaryRow?.kind === 'folder';
   const primaryIsFile = primaryRow?.kind === 'file';
-  const primaryRole = primaryRow ? resolveRowRole(primaryRow) : folderRole;
+  const primaryAccess = primaryRow
+    ? rowAccess(primaryRow)
+    : currentAccess;
+  const hasPrimary = Boolean(primaryRow);
 
-  const pasteDestRole =
-    !isMulti && primaryIsFolder && primaryRow.kind === 'folder'
-      ? primaryRole
-      : folderRole;
+  const pasteTarget = !isMulti && primaryIsFolder ? primaryRow : null;
+  const pasteDestAccess = pasteTarget
+    ? rowAccess(pasteTarget)
+    : currentAccess;
   const pasteDestIsRoot = !isMulti && primaryIsFolder ? false : currentFolderId === null;
-  const canWritePasteDest =
-    isSysAdmin || hasRoleAtLeast(pasteDestRole, 'editor');
+  const canWritePasteDest = isSysAdmin || canAccess(pasteDestAccess, 'item.upload_new');
   const canPaste =
     hasClipboardItems &&
     canWritePasteDest &&
     !(pasteDestIsRoot && clipboardHasFiles);
 
-  const canWriteCurrentOrParents =
-    allEditorPlus && (currentFolderId === null || isSysAdmin || hasRoleAtLeast(folderRole, 'editor'));
-
   const hasAnyFile = targets.some((t) => t.kind === 'file');
 
   return {
     isMulti,
-    canOpen: !isMulti && Boolean(primaryRow),
+    canOpen:
+      !isMulti &&
+      hasPrimary &&
+      (primaryIsFolder
+        ? canAccess(primaryAccess, 'folder.list')
+        : canAccess(primaryAccess, 'item.preview')),
     canWopiOpen:
       !isMulti &&
       primaryRow?.kind === 'file' &&
       isWopiEditableFile(primaryRow.file) &&
-      (isSysAdmin || hasRoleAtLeast(primaryRole, 'previewer')),
+      (isSysAdmin || canAccess(primaryAccess, 'item.preview')),
     canDownload:
       !isMulti &&
       primaryIsFile &&
-      (isSysAdmin || hasRoleAtLeast(primaryRole, 'viewer')),
-    canRename: !isMulti && Boolean(primaryRow) && (isSysAdmin || hasRoleAtLeast(primaryRole, 'editor')),
-    canCopy: allViewerPlus,
-    canCut: allEditorPlus,
+      (isSysAdmin || canAccess(primaryAccess, 'item.download')),
+    canRename:
+      !isMulti &&
+      hasPrimary &&
+      (isSysAdmin ||
+        canAccess(
+          primaryAccess,
+          primaryIsFolder ? 'folder.rename' : 'item.rename'
+        )),
+    canCopy: targetCaps('item.download'),
+    canCut: targetCapsByKind('folder.move', 'item.move'),
     canPaste,
     canDuplicate:
-      allViewerPlus &&
+      targets.length > 0 &&
       (isSysAdmin ||
-        targets.every((t) =>
-          t.kind === 'folder' && currentFolderId === null
-            ? hasRoleAtLeast(resolveRowRole(t), 'editor')
-            : canWriteCurrentOrParents || hasRoleAtLeast(folderRole, 'editor')
-        )),
-    canMoveCopy: targets.length > 0 && (allViewerPlus || allEditorPlus),
+        (targetCaps('item.download') &&
+          canAccess(pasteDestAccess, 'item.upload_new'))),
+    canMoveCopy:
+      targets.length > 0 &&
+      (targetCapsByKind('folder.move', 'item.move') ||
+        targetCaps('item.download')),
     canClassify:
       hasAnyFile &&
-      (isPrivilegedAdmin || hasRoleAtLeast(folderRole, 'editor')),
+      (isPrivilegedAdmin ||
+        targets.every(
+          (target) =>
+            target.kind === 'file' &&
+            canAccess(rowAccess(target), 'classification.edit')
+        )),
     canShare:
       !isMulti &&
-      Boolean(primaryRow) &&
-      (isSysAdmin || hasRoleAtLeast(primaryRole, 'editor')),
-    canCopyLink: !isMulti && Boolean(primaryRow),
+      hasPrimary &&
+      (isSysAdmin || canAccess(primaryAccess, 'share_link.create')),
+    canCopyLink:
+      !isMulti &&
+      hasPrimary &&
+      (isSysAdmin ||
+        (!isAdvancedResourceRole(primaryAccess.effectiveRole) &&
+          canAccess(primaryAccess, 'item.preview'))),
     canPin:
       !isMulti &&
       primaryIsFolder &&
-      (isSysAdmin || hasRoleAtLeast(primaryRole, 'editor')),
+      (isSysAdmin || canAccess(primaryAccess, 'folder.rename')),
     canPermissions:
       !isMulti &&
-      Boolean(primaryRow) &&
-      (isSysAdmin || hasRoleAtLeast(primaryRole, 'co_owner')),
-    canTrash: allEditorPlus,
-    canInspector: !isMulti && Boolean(primaryRow),
+      hasPrimary &&
+      (isSysAdmin || canAccess(primaryAccess, 'permission.manage')),
+    canTrash:
+      targets.length > 0 &&
+      targets.every((target) =>
+        target.kind === 'folder'
+          ? isSysAdmin || canAccess(rowAccess(target), 'folder.delete')
+          : isSysAdmin || canAccess(rowAccess(target), 'item.delete')
+      ),
+    canInspector:
+      !isMulti &&
+      hasPrimary &&
+      (isSysAdmin || canAccess(primaryAccess, 'item.preview')),
     canVersionHistory:
       !isMulti &&
       primaryIsFile &&
-      hasRoleAtLeast(primaryRole, 'previewer'),
+      (isSysAdmin || canAccess(primaryAccess, 'item.preview')),
   };
 }
 

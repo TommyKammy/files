@@ -1,9 +1,11 @@
 import type {
   BatchMoveWorkspaceResponse,
   BreadcrumbItem,
+  Capability,
   ClassificationLabel,
   CopyWorkspaceResponse,
   FileItem,
+  FileViewerInfo,
   FolderChildrenResponse,
   FolderSummary,
   ResourceRole,
@@ -34,6 +36,7 @@ export function listRootFolders(
   signal?: AbortSignal
 ): Promise<{
   folders: FolderSummary[];
+  capabilities?: Capability[];
   nextCursor: string | null;
 }> {
   const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
@@ -59,6 +62,8 @@ export function listFolderChildren(
 
 export function getFolderBreadcrumbs(folderId: string): Promise<{
   breadcrumbs: BreadcrumbItem[];
+  effectiveRole?: ResourceRole;
+  capabilities?: Capability[];
 }> {
   return apiFetch(`/api/folders/${encodeURIComponent(folderId)}/breadcrumbs`);
 }
@@ -253,11 +258,7 @@ export function getTrashRestoreContext(
 }
 
 
-export function getFileViewerInfo(fileId: string): Promise<{
-  file: FileItem;
-  effectiveRole: ResourceRole;
-  canDownload: boolean;
-}> {
+export function getFileViewerInfo(fileId: string): Promise<FileViewerInfo> {
   return apiFetch(`/api/files/${encodeURIComponent(fileId)}`);
 }
 

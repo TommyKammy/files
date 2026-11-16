@@ -6,6 +6,7 @@ import { ModalShell } from '@/components/ModalShell';
 import { PermissionsModal } from '@/components/PermissionsModal';
 import { SharePopover } from '@/components/SharePopover';
 import type {
+  Capability,
   ClassificationLabel,
   FileItem,
   FolderSummary,
@@ -19,6 +20,7 @@ export type ActiveModal =
       targetId: string;
       targetName: string;
       effectiveRole: ResourceRole;
+      targetCapabilities?: Capability[];
     }
   | {
       kind: 'share';
@@ -27,6 +29,7 @@ export type ActiveModal =
       targetName: string;
       classification: ClassificationLabel;
       canEdit: boolean;
+      canManageLinks?: boolean;
     }
   | {
       kind: 'fileRequest';
@@ -65,6 +68,7 @@ export function WorkspaceManagementModals({
           targetId={activeModal.targetId}
           targetName={activeModal.targetName}
           effectiveRole={activeModal.effectiveRole}
+          targetCapabilities={activeModal.targetCapabilities}
           onClose={onClose}
         />
       )}
@@ -76,6 +80,7 @@ export function WorkspaceManagementModals({
           targetName={activeModal.targetName}
           classification={activeModal.classification}
           canEdit={activeModal.canEdit}
+          canManageLinks={activeModal.canManageLinks}
           onClose={onClose}
         />
       )}

@@ -1,5 +1,8 @@
 export interface WorkspacePaletteActions {
   hasTargetItem: boolean;
+  canCreateFolder?: boolean;
+  canInspectTarget?: boolean;
+  canMoveCopyTarget?: boolean;
   canClassifyTarget: boolean;
   canShareTarget: boolean;
   canTrashTarget: boolean;

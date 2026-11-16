@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { getAuthenticatedUser } from '../../services/authorization';
+import { can } from '../../services/capabilities';
 import {
   authorizeFileContentAccess,
   contentIntentFromQuery,
@@ -53,6 +54,7 @@ export function registerFileVersionContentUrlRoute(routes: Hono<OidcHonoEnv>) {
       fileId,
       intent,
       versionId,
+      forceWatermark: !can(authorized.access.capabilities, 'item.download'),
     });
     if (!delivered.ok) {
       return c.json(delivered.body, delivered.status);

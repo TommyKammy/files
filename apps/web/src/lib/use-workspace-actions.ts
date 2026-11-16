@@ -28,12 +28,14 @@ export function useWorkspaceActions({
   isTrashView,
   folderId,
   effectiveRole,
-  canEditCurrentFolder,
   isPrivilegedAdmin,
   selectedRows,
   focusedRow,
   error,
-  canEditRow,
+  canDeleteRow,
+  canShareRow,
+  canManageLinksRow,
+  canClassifyRow,
   setError,
   setSelectedKeys,
   setSelectionAnchorKey,
@@ -49,12 +51,14 @@ export function useWorkspaceActions({
   isTrashView: boolean;
   folderId: string | null;
   effectiveRole: ResourceRole;
-  canEditCurrentFolder: boolean;
   isPrivilegedAdmin: boolean;
   selectedRows: WorkspaceTableRow[];
   focusedRow: WorkspaceTableRow | null;
   error: string | null;
-  canEditRow: (row: WorkspaceTableRow) => boolean;
+  canDeleteRow: (row: WorkspaceTableRow) => boolean;
+  canShareRow: (row: WorkspaceTableRow) => boolean;
+  canManageLinksRow: (row: WorkspaceTableRow) => boolean;
+  canClassifyRow: (row: WorkspaceTableRow) => boolean;
   setError: (message: string | null) => void;
   setSelectedKeys: Dispatch<SetStateAction<Set<string>>>;
   setSelectionAnchorKey: (key: string | null) => void;
@@ -120,7 +124,7 @@ export function useWorkspaceActions({
     isTrashView,
     selectedRows,
     focusedRow,
-    canEditRow,
+    canDeleteRow,
     folderId,
     effectiveRole,
     setError,
@@ -134,8 +138,9 @@ export function useWorkspaceActions({
     isTrashView,
     selectedRows,
     focusedRow,
-    canEditRow,
-    canEditCurrentFolder,
+    canShareRow,
+    canManageLinksRow,
+    canClassifyRow,
     isPrivilegedAdmin,
     setActiveModal,
     setClassificationPicker,

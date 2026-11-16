@@ -1,10 +1,8 @@
+import { canAccess } from '@/lib/capabilities';
 import { ApiClientError } from '@/lib/files-api/core';
-import {
-  formatAuditDateTime,
-  formatBytes,
-  hasRoleAtLeast,
-} from '@/lib/formatters';
+import { formatAuditDateTime, formatBytes } from '@/lib/formatters';
 import type {
+  Capability,
   ClassificationLabel,
   FileItem,
   FileLockInfo,
@@ -161,22 +159,24 @@ export function isVersionPreviewable(
 
 export function canDownloadVersion(
   version: Pick<FileVersionItem, 'uploadStatus'>,
-  effectiveRole: ResourceRole
+  effectiveRole: ResourceRole,
+  capabilities?: Capability[]
 ): boolean {
   return (
     isVersionPreviewable(version) &&
-    hasRoleAtLeast(effectiveRole, 'viewer')
+    canAccess({ capabilities, effectiveRole }, 'item.download')
   );
 }
 
 export function canRestoreVersion(
   version: Pick<FileVersionItem, 'uploadStatus' | 'isCurrent'>,
-  effectiveRole: ResourceRole
+  effectiveRole: ResourceRole,
+  capabilities?: Capability[]
 ): boolean {
   return (
     isVersionPreviewable(version) &&
     !version.isCurrent &&
-    hasRoleAtLeast(effectiveRole, 'editor')
+    canAccess({ capabilities, effectiveRole }, 'item.upload_version')
   );
 }
 
@@ -203,6 +203,7 @@ export function buildVersionHistoryView(
   options: {
     currentVersionNum: number;
     effectiveRole: ResourceRole;
+    capabilities?: Capability[];
     canDownload: boolean;
   }
 ): VersionHistoryRowView[] {
@@ -228,10 +229,15 @@ export function buildVersionHistoryView(
       canPreview: isVersionPreviewable(version),
       canDownload:
         options.canDownload &&
-        canDownloadVersion(version, options.effectiveRole),
+        canDownloadVersion(
+          version,
+          options.effectiveRole,
+          options.capabilities
+        ),
       canRestore: canRestoreVersion(
         { ...version, isCurrent },
-        options.effectiveRole
+        options.effectiveRole,
+        options.capabilities
       ),
     };
   });

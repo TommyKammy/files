@@ -1,6 +1,7 @@
-import { hasRoleAtLeast } from '@/lib/formatters';
+import { canAccess } from '@/lib/capabilities';
 import type {
   AuthUser,
+  Capability,
   TrashBulkItemRef,
   TrashBulkItemResult,
   TrashBulkItemStatus,
@@ -50,6 +51,7 @@ export function chunkTrashBulkItems<T>(
 
 type TrashCapabilityItem = Pick<TrashItem, 'type'> & {
   effectiveRole?: TrashItem['effectiveRole'];
+  capabilities?: Capability[];
 };
 
 /**
@@ -68,7 +70,13 @@ export function canRestoreTrashItem(
   ) {
     return true;
   }
-  return hasRoleAtLeast(item.effectiveRole ?? null, 'editor');
+  return canAccess(
+    {
+      capabilities: item.capabilities,
+      effectiveRole: item.effectiveRole ?? null,
+    },
+    'trash.restore'
+  );
 }
 
 /** Permanent deletion requires sys_admin or an effective owner/co_owner. */
@@ -78,7 +86,13 @@ export function canPurgeTrashItem(
 ): boolean {
   if (!user) return false;
   if (user.role === 'sys_admin') return true;
-  return hasRoleAtLeast(item.effectiveRole ?? null, 'co_owner');
+  return canAccess(
+    {
+      capabilities: item.capabilities,
+      effectiveRole: item.effectiveRole ?? null,
+    },
+    'trash.purge'
+  );
 }
 
 export interface TrashBulkCapabilities {

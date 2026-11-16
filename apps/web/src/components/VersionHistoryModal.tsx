@@ -27,6 +27,7 @@ import {
 } from '@/lib/version-history';
 import type { VersionHistoryRestoreSuccess } from '@/lib/version-history-controller';
 import type {
+  Capability,
   ClassificationLabel,
   FileItem,
   FileVersionItem,
@@ -93,6 +94,7 @@ function ErrorBanner({
 export function VersionHistoryModal({
   file,
   effectiveRole,
+  capabilities,
   canDownload,
   returnFocus = null,
   onFileUpdated,
@@ -101,6 +103,7 @@ export function VersionHistoryModal({
 }: {
   file: VersionHistoryTarget;
   effectiveRole: ResourceRole;
+  capabilities?: Capability[];
   canDownload: boolean;
   returnFocus?: HTMLElement | null;
   onFileUpdated?: (file: FileItem) => void;
@@ -141,6 +144,7 @@ export function VersionHistoryModal({
   const rows = buildVersionHistoryView(versions, {
     currentVersionNum,
     effectiveRole,
+    capabilities,
     canDownload,
   });
   const currentRow = rows.find((row) => row.isCurrent) ?? rows[0] ?? null;

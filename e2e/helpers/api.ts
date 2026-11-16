@@ -75,6 +75,7 @@ interface FolderChildrenResponse {
   effectiveRole: string;
   folders: FolderLike[];
   files: FileLike[];
+  capabilities?: string[];
 }
 
 export interface TrashItemLike {
@@ -116,8 +117,11 @@ export type PermissionRole =
   | 'owner'
   | 'co_owner'
   | 'editor'
+  | 'viewer_uploader'
+  | 'previewer_uploader'
   | 'viewer'
-  | 'previewer';
+  | 'previewer'
+  | 'uploader';
 
 export interface PermissionRecord {
   id: string;
@@ -132,12 +136,25 @@ export interface PermissionRecord {
   sourceName: string | null;
   grantedBy: string;
   createdAt: string;
+  synthesizedRole?: PermissionRole | null;
+  synthesizedCapabilities?: string[];
 }
 
 export interface PermissionListResponse {
   targetType: PermissionTargetType;
   targetId: string;
   effectiveRole: string;
+  capabilities: string[];
+  grantedRoles: PermissionRole[];
+  advancedRolesEnabled: boolean;
+  effectiveBreakdown: Array<{
+    granteeType: PermissionGranteeType;
+    granteeId: string;
+    role: PermissionRole;
+    inherited: boolean;
+    sourceName: string | null;
+    targetId: string;
+  }>;
   permissions: PermissionRecord[];
 }
 

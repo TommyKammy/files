@@ -55,6 +55,7 @@ export function toDragWorkspaceItem(
       parentId: row.folder.parent_id,
       classification: row.folder.classification,
       effectiveRole: row.folder.effectiveRole ?? fallbackRole,
+      capabilities: row.folder.capabilities,
     };
   }
   return {
@@ -64,5 +65,6 @@ export function toDragWorkspaceItem(
     parentId: row.file.folder_id,
     classification: row.file.classification,
     effectiveRole: fallbackRole,
+    capabilities: row.file.capabilities,
   };
 }

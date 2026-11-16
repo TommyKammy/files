@@ -84,6 +84,7 @@ export function DynamicWatermarkOverlay({
         <div
           key={restoreVersion}
           ref={overlayRef}
+          data-testid="dynamic-watermark"
           aria-hidden="true"
           style={{
             position: 'absolute',

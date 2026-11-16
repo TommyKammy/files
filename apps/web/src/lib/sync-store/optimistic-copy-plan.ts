@@ -1,10 +1,10 @@
+import { canAccess } from '@/lib/capabilities';
 import {
   allocateCopyDisplayName,
   getExtensionFromName,
-  hasRoleAtLeast,
   pickStricterClassification,
 } from '@/lib/formatters';
-import { checkRoleGuard } from '@/lib/mutation-outbox';
+import { checkCapabilityGuard } from '@/lib/mutation-outbox';
 import type {
   ClassificationLabel,
   FileItem,
@@ -139,7 +139,7 @@ export function planOptimisticCopy(
   // Zero-Trust DLP client guardrail: viewer+ required on source (previewer blocked at 0ms)
   for (const f of rootFolders) {
     const role = ctx.resolveItemEffectiveRole('folder', f);
-    if (!hasRoleAtLeast(role, 'viewer') && ctx.userRole !== 'sys_admin') {
+    if (!canAccess(role, 'item.download') && ctx.userRole !== 'sys_admin') {
       return {
         ok: false,
         error: 'Previewer 権限のフォルダはコピーできません (DLP 保護)',
@@ -149,7 +149,7 @@ export function planOptimisticCopy(
   }
   for (const fl of rootFiles) {
     const role = ctx.resolveItemEffectiveRole('file', fl);
-    if (!hasRoleAtLeast(role, 'viewer') && ctx.userRole !== 'sys_admin') {
+    if (!canAccess(role, 'item.download') && ctx.userRole !== 'sys_admin') {
       return {
         ok: false,
         error: 'Previewer 権限のファイルはコピーできません (DLP 保護)',
@@ -159,7 +159,7 @@ export function planOptimisticCopy(
   }
 
   if (!duplicateInPlace) {
-    const destRole = checkRoleGuard(ctx.destinationRole, 'editor', {
+    const destRole = checkCapabilityGuard(ctx.destinationRole, 'item.upload_new', {
       isPrivilegedAdmin: ctx.userRole === 'sys_admin',
       allowAdminOverride: true,
     });
@@ -222,7 +222,7 @@ export function planOptimisticCopy(
       is_pinned: 0,
       version: 1,
       updated_at: nowIso,
-      effectiveRole: 'owner',
+      effectiveRole: ctx.destinationRole,
       optimistic: true,
     });
     apiItems.push({ type: 'folder', id: f.id });

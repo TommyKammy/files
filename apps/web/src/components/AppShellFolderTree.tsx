@@ -12,7 +12,8 @@ import {
   getDropTargetClassName,
   useWorkspaceDrag,
 } from '@/components/WorkspaceDragPortal';
-import { formatDateTime, hasRoleAtLeast } from '@/lib/formatters';
+import { canAccess } from '@/lib/capabilities';
+import { formatDateTime } from '@/lib/formatters';
 import {
   type WorkspaceSyncStore,
   useWorkspaceSyncSnapshot,
@@ -68,6 +69,16 @@ export function AppShellFolderTree({
     handleFolderMenuAction,
     toggleExpand,
   } = useFolderTree({ syncStore, activeFolderId, onSelectFolder });
+
+  const folderAccess = (folder: FolderSummary) => {
+    const role = resolveFolderRole(folder);
+    return {
+      capabilities:
+        folder.capabilities ??
+        syncStore.getDirectoryView(folder.id).capabilities,
+      effectiveRole: role,
+    };
+  };
 
   const renderTreeNodes = (folders: FolderSummary[], depth: number): React.ReactNode => {
     if (depth > MAX_TREE_DEPTH || folders.length === 0) return null;
@@ -190,18 +201,29 @@ export function AppShellFolderTree({
       </div>
 
       {contextMenu && (() => {
-        const role = resolveFolderRole(contextMenu.folder);
-        const canEdit = isPrivilegedAdmin || hasRoleAtLeast(role, 'editor');
-        const canManage = isPrivilegedAdmin || hasRoleAtLeast(role, 'co_owner');
+        const access = folderAccess(contextMenu.folder);
+        const canShare =
+          isPrivilegedAdmin || canAccess(access, 'share_link.create');
+        const canManage =
+          isPrivilegedAdmin || canAccess(access, 'permission.manage');
+        const canCopyLink =
+          isPrivilegedAdmin ||
+          (canAccess(access, 'item.preview') &&
+            !(
+              access.effectiveRole === 'uploader' ||
+              access.effectiveRole === 'previewer_uploader' ||
+              access.effectiveRole === 'viewer_uploader'
+            ));
         return (
           <FolderTreeContextMenu
             anchor={{ x: contextMenu.x, y: contextMenu.y }}
             folder={contextMenu.folder}
-            canShare={canEdit}
+            canShare={canShare}
+            canCopyLink={canCopyLink}
             canManagePermissions={canManage}
-            canMove={canEdit}
-            canPin={canEdit}
-            canTrash={canEdit}
+            canMove={isPrivilegedAdmin || canAccess(access, 'folder.move')}
+            canPin={isPrivilegedAdmin || canAccess(access, 'folder.rename')}
+            canTrash={isPrivilegedAdmin || canAccess(access, 'folder.delete')}
             returnFocus={contextMenu.trigger}
             onAction={handleFolderMenuAction}
             onClose={() => setContextMenu(null)}
@@ -209,19 +231,24 @@ export function AppShellFolderTree({
         );
       })()}
 
-      {shareTarget && (
-        <SharePopover
-          targetType="folder"
-          targetId={shareTarget.id}
-          targetName={shareTarget.name}
-          classification={shareTarget.classification}
-          canEdit={
-            isPrivilegedAdmin ||
-            hasRoleAtLeast(resolveFolderRole(shareTarget), 'editor')
-          }
-          onClose={() => setShareTarget(null)}
-        />
-      )}
+      {shareTarget && (() => {
+        const access = folderAccess(shareTarget);
+        const canCreate =
+          isPrivilegedAdmin || canAccess(access, 'share_link.create');
+        const canManage =
+          isPrivilegedAdmin || canAccess(access, 'share_link.manage');
+        return (
+          <SharePopover
+            targetType="folder"
+            targetId={shareTarget.id}
+            targetName={shareTarget.name}
+            classification={shareTarget.classification}
+            canEdit={canCreate}
+            canManageLinks={canManage}
+            onClose={() => setShareTarget(null)}
+          />
+        );
+      })()}
 
       {permissionsTarget && (
         <PermissionsModal
@@ -229,6 +256,7 @@ export function AppShellFolderTree({
           targetId={permissionsTarget.folder.id}
           targetName={permissionsTarget.folder.name}
           effectiveRole={permissionsTarget.role}
+          targetCapabilities={folderAccess(permissionsTarget.folder).capabilities}
           onClose={() => setPermissionsTarget(null)}
         />
       )}

@@ -1,6 +1,7 @@
 import type {
   AuthUser,
   BreadcrumbItem,
+  Capability,
   FileItem,
   FolderSummary,
   OutboxMutationRecord,
@@ -39,6 +40,8 @@ export interface PersistedDirectoryRecord {
   dirKey: string; // '__ROOT__' | folderId
   folderId: string | null;
   effectiveRole: ResourceRole;
+  /** Server-provided capabilities for the current folder. */
+  capabilities?: Capability[];
   folderIds: string[];
   fileIds: string[];
   nextCursor: string | null;
