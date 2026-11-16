@@ -2,6 +2,7 @@ import type {
   CreateSharedLinkPayload,
   PermissionsListResponse,
   PrincipalCandidate,
+  PrincipalSearchKind,
   PublicShareMeta,
   PublicShareUrlResponse,
   ResourceRole,
@@ -43,7 +44,11 @@ export function revokePermission(permissionId: string): Promise<{ ok: boolean }>
   });
 }
 
-export function searchPrincipals(q: string): Promise<{ principals: PrincipalCandidate[] }> {
+export function searchPrincipals(
+  q: string,
+  kind: PrincipalSearchKind = 'all'
+): Promise<{ principals: PrincipalCandidate[] }> {
+  const params = new URLSearchParams({ q: q.trim(), kind });
   return apiFetch<{
     principals: Array<{
       type: 'user' | 'group';
@@ -52,13 +57,26 @@ export function searchPrincipals(q: string): Promise<{ principals: PrincipalCand
       displayName?: string;
       email: string | null;
       department?: string | null;
+      userType?: 'member' | 'guest';
+      externalOrg?: string | null;
+      expiresAt?: string | null;
+      lastLoginAt?: string | null;
+      invitedBy?: string | null;
+      invitationStatus?: PrincipalCandidate['invitationStatus'];
     }>;
-  }>(`/api/principals/search?q=${encodeURIComponent(q)}`).then((response) => ({
+  }>(`/api/principals/search?${params.toString()}`).then((response) => ({
     principals: response.principals.map((principal) => ({
       type: principal.type,
       id: principal.id,
       name: principal.name ?? principal.displayName ?? principal.id,
       email: principal.email,
+      department: principal.department ?? null,
+      userType: principal.userType ?? 'member',
+      externalOrg: principal.externalOrg ?? null,
+      expiresAt: principal.expiresAt ?? null,
+      lastLoginAt: principal.lastLoginAt ?? null,
+      invitedBy: principal.invitedBy ?? null,
+      invitationStatus: principal.invitationStatus ?? null,
     })),
   }));
 }

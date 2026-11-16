@@ -7,7 +7,7 @@ import {
   requireMemberUser,
   resolveTargetAccess,
 } from '../services/authorization';
-import { isResourceRole } from '../services/capabilities';
+import { can, isResourceRole } from '../services/capabilities';
 import { generateRandomToken, sha256Hex } from '../services/crypto-utils';
 import {
   getGuestPolicy,
@@ -15,6 +15,10 @@ import {
   isGuestEmailDomainAllowed,
   type GuestPolicy,
 } from '../services/external-guests';
+import {
+  buildGuestInvitationMailPreview,
+  guestGrantableRoles,
+} from '../services/guest-collaboration';
 import {
   computeEffectivePermissionsCapabilities,
   isRoleWithinCapabilitySubset,
@@ -53,6 +57,7 @@ interface GuestInvitationRow {
   created_at: string;
   updated_at: string;
   target_name: string | null;
+  invited_by_name?: string | null;
 }
 
 interface GuestUserRow {
@@ -72,6 +77,11 @@ function normalizeEmail(raw: unknown): string | null {
 }
 
 function projectInvitation(row: GuestInvitationRow) {
+  const nowIso = new Date().toISOString();
+  const status =
+    row.status === 'pending' && row.expires_at <= nowIso
+      ? 'expired'
+      : row.status;
   return {
     id: row.id,
     userId: row.user_id,
@@ -79,11 +89,12 @@ function projectInvitation(row: GuestInvitationRow) {
     displayName: row.display_name,
     externalOrg: row.external_org,
     invitedBy: row.invited_by,
+    invitedByName: row.invited_by_name ?? null,
     targetType: row.target_type,
     targetId: row.target_id,
     targetName: row.target_name,
     role: row.role,
-    status: row.status,
+    status,
     expiresAt: row.expires_at,
     acceptedAt: row.accepted_at,
     revokedAt: row.revoked_at,
@@ -92,6 +103,15 @@ function projectInvitation(row: GuestInvitationRow) {
     lastSentAt: row.last_sent_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    mailPreview: buildGuestInvitationMailPreview({
+      displayName: row.display_name,
+      externalOrg: row.external_org,
+      targetType: row.target_type,
+      targetName: row.target_name,
+      role: row.role,
+      expiresAt: row.expires_at,
+      invitedByName: row.invited_by_name ?? null,
+    }),
   };
 }
 
@@ -103,12 +123,14 @@ async function loadInvitation(
   return db
     .prepare(
       `SELECT gi.*,
-              COALESCE(f.name, fl.name) AS target_name
+              COALESCE(f.name, fl.name) AS target_name,
+              inviter.display_name AS invited_by_name
          FROM guest_invitations gi
          LEFT JOIN folders f
            ON gi.target_type = 'folder' AND f.tenant_id = gi.tenant_id AND f.id = gi.target_id
          LEFT JOIN files fl
            ON gi.target_type = 'file' AND fl.tenant_id = gi.tenant_id AND fl.id = gi.target_id
+         LEFT JOIN users inviter ON inviter.id = gi.invited_by
         WHERE gi.tenant_id = ? AND gi.id = ?`
     )
     .bind(tenantId, id)
@@ -322,12 +344,14 @@ guestsRoutes.get('/invitations', async (c) => {
 
   const rows = await c.env.DB.prepare(
     `SELECT gi.*,
-            COALESCE(f.name, fl.name) AS target_name
+            COALESCE(f.name, fl.name) AS target_name,
+            inviter.display_name AS invited_by_name
        FROM guest_invitations gi
        LEFT JOIN folders f
          ON gi.target_type = 'folder' AND f.tenant_id = gi.tenant_id AND f.id = gi.target_id
        LEFT JOIN files fl
          ON gi.target_type = 'file' AND fl.tenant_id = gi.tenant_id AND fl.id = gi.target_id
+       LEFT JOIN users inviter ON inviter.id = gi.invited_by
       WHERE ${filters.join(' AND ')}
       ORDER BY gi.created_at DESC
       LIMIT 100`
@@ -565,7 +589,13 @@ guestsRoutes.post('/invitations', async (c) => {
   }
 
   const created = await loadInvitation(c.env.DB, user.tenantId, invitationId);
-  return c.json({ invitation: created ? projectInvitation(created) : null }, 201);
+  return c.json(
+    {
+      invitation: created ? projectInvitation(created) : null,
+      notice: `外部ゲスト「${displayName}」へ招待メールを送信しました。有効期限は ${expiresAt} です。`,
+    },
+    201
+  );
 });
 
 /** POST /api/guests/invitations/:id/resend — rotate the token and resend. */
@@ -647,10 +677,15 @@ guestsRoutes.post('/invitations/:id/resend', async (c) => {
       actorId: user.id,
       actorEmail: user.email,
       actorIp: user.ipAddress,
-      action: 'guest.invite',
+      action: 'guest.resend',
       targetType: 'guest_invitation',
       targetId: invitation.id,
-      metadata: { email: invitation.email, resend: true },
+      metadata: {
+        email: invitation.email,
+        resend: true,
+        resendCount: invitation.resend_count + 1,
+        externalOrg: invitation.external_org,
+      },
       nowIso,
     }),
   ]);
@@ -676,7 +711,12 @@ guestsRoutes.post('/invitations/:id/resend', async (c) => {
   }
 
   const updated = await loadInvitation(c.env.DB, user.tenantId, invitation.id);
-  return c.json({ invitation: updated ? projectInvitation(updated) : null });
+  return c.json({
+    invitation: updated ? projectInvitation(updated) : null,
+    notice: `招待メールを再送しました（再送回数 ${
+      updated?.resend_count ?? invitation.resend_count + 1
+    } 回）。`,
+  });
 });
 
 /** POST /api/guests/invitations/:id/revoke — revoke access and live sessions. */
@@ -753,5 +793,431 @@ guestsRoutes.post('/invitations/:id/revoke', async (c) => {
 
   await c.env.DB.batch(statements);
   const updated = await loadInvitation(c.env.DB, user.tenantId, invitation.id);
-  return c.json({ ok: true, invitation: updated ? projectInvitation(updated) : null });
+  return c.json({
+    ok: true,
+    invitation: updated ? projectInvitation(updated) : null,
+    notice: '招待を取り消し、ゲストの有効セッションを失効させました。',
+  });
+});
+
+/* ------------------------------------------------------------------------- */
+/* P10-2 / TOM-60 guest detail summary                                        */
+/* ------------------------------------------------------------------------- */
+
+interface GuestSummaryUserRow {
+  id: string;
+  email: string;
+  display_name: string;
+  status: 'active' | 'suspended';
+  external_org: string | null;
+  expires_at: string | null;
+  last_login_at: string | null;
+  invited_by: string | null;
+  invited_by_name: string | null;
+}
+
+interface GuestPermissionRow {
+  id: string;
+  target_type: 'folder' | 'file';
+  target_id: string;
+  role: ResourceRole;
+  created_at: string;
+  target_name: string | null;
+  classification: 'unset' | 'confidential' | 'internal' | 'public';
+  parent_id: string | null;
+  folder_id: string | null;
+  extension: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  updated_at: string | null;
+}
+
+interface GuestGrantSourceRow {
+  permission_id: string;
+  role: ResourceRole;
+  source_type: 'folder' | 'file';
+  source_id: string;
+  source_name: string | null;
+}
+
+async function loadGuestPermissionRows(
+  db: D1Database,
+  tenantId: string,
+  guestId: string
+): Promise<GuestPermissionRow[]> {
+  const rows = await db
+    .prepare(
+      `SELECT p.id,
+              p.target_type,
+              p.target_id,
+              p.role,
+              p.created_at,
+              COALESCE(f.name, fl.name) AS target_name,
+              COALESCE(f.classification, fl.classification) AS classification,
+              f.parent_id,
+              fl.folder_id,
+              fl.extension,
+              fl.mime_type,
+              fl.size_bytes,
+              COALESCE(f.updated_at, fl.updated_at) AS updated_at
+         FROM permissions p
+         LEFT JOIN folders f
+           ON p.target_type = 'folder'
+          AND f.tenant_id = p.tenant_id
+          AND f.id = p.target_id
+          AND f.deleted_at IS NULL
+         LEFT JOIN files fl
+           ON p.target_type = 'file'
+          AND fl.tenant_id = p.tenant_id
+          AND fl.id = p.target_id
+          AND fl.deleted_at IS NULL
+        WHERE p.tenant_id = ?
+          AND p.grantee_type = 'user'
+          AND p.grantee_id = ?
+          AND (f.id IS NOT NULL OR fl.id IS NOT NULL)
+        ORDER BY p.created_at ASC`
+    )
+    .bind(tenantId, guestId)
+    .all<GuestPermissionRow>();
+  return rows.results.filter(
+    (row) =>
+      row.target_name !== null && row.classification !== null
+  );
+}
+
+async function loadGuestGrantSources(
+  db: D1Database,
+  tenantId: string,
+  guestId: string,
+  row: GuestPermissionRow
+): Promise<GuestGrantSourceRow[]> {
+  if (row.target_type === 'folder') {
+    const result = await db
+      .prepare(
+        `SELECT p.id AS permission_id,
+                p.role,
+                'folder' AS source_type,
+                p.target_id AS source_id,
+                source_folder.name AS source_name
+           FROM folder_closures fc
+           JOIN permissions p
+             ON p.tenant_id = fc.tenant_id
+            AND p.target_type = 'folder'
+            AND p.target_id = fc.ancestor_id
+           LEFT JOIN folders source_folder ON source_folder.id = p.target_id
+          WHERE fc.tenant_id = ?
+            AND fc.descendant_id = ?
+            AND p.grantee_type = 'user'
+            AND p.grantee_id = ?
+          ORDER BY fc.depth DESC`
+      )
+      .bind(tenantId, row.target_id, guestId)
+      .all<GuestGrantSourceRow>();
+    return result.results;
+  }
+
+  const [direct, inherited] = await Promise.all([
+    db
+      .prepare(
+        `SELECT p.id AS permission_id,
+                p.role,
+                'file' AS source_type,
+                p.target_id AS source_id,
+                target_file.name AS source_name
+           FROM permissions p
+           LEFT JOIN files target_file ON target_file.id = p.target_id
+          WHERE p.tenant_id = ?
+            AND p.target_type = 'file'
+            AND p.target_id = ?
+            AND p.grantee_type = 'user'
+            AND p.grantee_id = ?`
+      )
+      .bind(tenantId, row.target_id, guestId)
+      .all<GuestGrantSourceRow>(),
+    row.folder_id
+      ? db
+          .prepare(
+            `SELECT p.id AS permission_id,
+                    p.role,
+                    'folder' AS source_type,
+                    p.target_id AS source_id,
+                    source_folder.name AS source_name
+               FROM folder_closures fc
+               JOIN permissions p
+                 ON p.tenant_id = fc.tenant_id
+                AND p.target_type = 'folder'
+                AND p.target_id = fc.ancestor_id
+               LEFT JOIN folders source_folder ON source_folder.id = p.target_id
+              WHERE fc.tenant_id = ?
+                AND fc.descendant_id = ?
+                AND p.grantee_type = 'user'
+                AND p.grantee_id = ?
+              ORDER BY fc.depth DESC`
+          )
+          .bind(tenantId, row.folder_id, guestId)
+          .all<GuestGrantSourceRow>()
+      : Promise.resolve({ results: [] as GuestGrantSourceRow[] }),
+  ]);
+
+  return [...inherited.results, ...direct.results];
+}
+
+async function loadPathLabel(
+  db: D1Database,
+  tenantId: string,
+  row: Pick<GuestPermissionRow, 'target_type' | 'target_id' | 'folder_id'>
+): Promise<string> {
+  const breadcrumbFolderId =
+    row.target_type === 'folder' ? row.target_id : row.folder_id;
+  if (!breadcrumbFolderId) return 'マイファイル (ルート)';
+  const ancestors = await db
+    .prepare(
+      `SELECT folder.name
+         FROM folder_closures fc
+         JOIN folders folder
+           ON folder.tenant_id = fc.tenant_id
+          AND folder.id = fc.ancestor_id
+         WHERE fc.tenant_id = ? AND fc.descendant_id = ?
+         ORDER BY fc.depth DESC`
+    )
+    .bind(tenantId, breadcrumbFolderId)
+    .all<{ name: string }>();
+  return ['マイファイル', ...ancestors.results.map((item) => item.name)].join(
+    ' / '
+  );
+}
+
+/**
+ * GET /api/guests/:userId/summary — internal collaborator view of one guest.
+ *
+ * Visibility is intentionally narrow: tenant admins, the original inviter, or
+ * a member holding `permission.view` on at least one resource shared with the
+ * guest. The response is metadata-only: file bytes, R2 keys and raw invitation
+ * tokens are never selected or projected.
+ */
+guestsRoutes.get('/:userId/summary', async (c) => {
+  const caller = getAuthenticatedUser(c);
+  const guestUserId = c.req.param('userId');
+
+  const guest = await c.env.DB.prepare(
+    `SELECT u.id,
+            u.email,
+            u.display_name,
+            u.status,
+            u.external_org,
+            u.expires_at,
+            u.last_login_at,
+            u.invited_by,
+            inviter.display_name AS invited_by_name
+       FROM users u
+       LEFT JOIN users inviter ON inviter.id = u.invited_by
+      WHERE u.tenant_id = ? AND u.id = ? AND u.user_type = 'guest'`
+  )
+    .bind(caller.tenantId, guestUserId)
+    .first<GuestSummaryUserRow>();
+  if (!guest) {
+    return c.json({ error: 'Guest account not found', code: 'GUEST_NOT_FOUND' }, 404);
+  }
+
+  const [invitationRows, permissionRows] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT gi.*,
+              COALESCE(f.name, fl.name) AS target_name,
+              inviter.display_name AS invited_by_name
+         FROM guest_invitations gi
+         LEFT JOIN folders f
+           ON gi.target_type = 'folder'
+          AND f.tenant_id = gi.tenant_id
+          AND f.id = gi.target_id
+         LEFT JOIN files fl
+           ON gi.target_type = 'file'
+          AND fl.tenant_id = gi.tenant_id
+          AND fl.id = gi.target_id
+         LEFT JOIN users inviter ON inviter.id = gi.invited_by
+        WHERE gi.tenant_id = ? AND gi.user_id = ?
+        ORDER BY gi.created_at DESC
+        LIMIT 100`
+    )
+      .bind(caller.tenantId, guestUserId)
+      .all<GuestInvitationRow>(),
+    loadGuestPermissionRows(c.env.DB, caller.tenantId, guestUserId),
+  ]);
+
+  const invitations = invitationRows.results.map(projectInvitation);
+
+  // Authorization: admins, the inviter, or a member who can view permissions
+  // on at least one shared target. Target lookups are tenant-scoped.
+  let authorized =
+    caller.role === 'sys_admin' || caller.role === 'sec_admin';
+  if (!authorized) {
+    authorized = invitationRows.results.some(
+      (invitation) => invitation.invited_by === caller.id
+    );
+  }
+  if (!authorized) {
+    const targets = new Map<
+      string,
+      { targetType: 'folder' | 'file'; targetId: string }
+    >();
+    for (const invitation of invitationRows.results) {
+      targets.set(`${invitation.target_type}:${invitation.target_id}`, {
+        targetType: invitation.target_type,
+        targetId: invitation.target_id,
+      });
+    }
+    for (const permission of permissionRows) {
+      targets.set(`${permission.target_type}:${permission.target_id}`, {
+        targetType: permission.target_type,
+        targetId: permission.target_id,
+      });
+    }
+    for (const target of targets.values()) {
+      const access = await resolveTargetAccess(
+        c.env.DB,
+        caller,
+        target.targetType,
+        target.targetId
+      );
+      if (access && access.deletedAt === null && can(access.capabilities, 'permission.view')) {
+        authorized = true;
+        break;
+      }
+    }
+  }
+  if (!authorized) {
+    return c.json(
+      { error: 'Forbidden: guest summary requires resource visibility', code: 'FORBIDDEN' },
+      403
+    );
+  }
+
+  const guestIdentity = {
+    id: guest.id,
+    email: guest.email,
+    displayName: guest.display_name,
+    userType: 'guest' as const,
+    externalOrg: guest.external_org,
+    status: guest.status,
+    expiresAt: guest.expires_at,
+    lastLoginAt: guest.last_login_at,
+    invitedBy: guest.invited_by,
+    invitedByName: guest.invited_by_name,
+  };
+  const guestForAccess = {
+    id: guest.id,
+    tenantId: caller.tenantId,
+  };
+
+  const effectivePermissions: Array<{
+    targetType: 'folder' | 'file';
+    targetId: string;
+    targetName: string | null;
+    role: ResourceRole;
+    inherited: boolean;
+    inheritedFromName: string | null;
+    synthesizedRole: ResourceRole | null;
+    capabilities: string[];
+  }> = [];
+  const seenPermissionKeys = new Set<string>();
+
+  for (const permission of permissionRows) {
+    const access = await resolveTargetAccess(
+      c.env.DB,
+      guestForAccess,
+      permission.target_type,
+      permission.target_id
+    );
+    if (!access || access.accessMode === null) continue;
+    const sources = await loadGuestGrantSources(
+      c.env.DB,
+      caller.tenantId,
+      guestUserId,
+      permission
+    );
+    for (const source of sources) {
+      const inherited =
+        source.source_type !== permission.target_type ||
+        source.source_id !== permission.target_id;
+      const key = [
+        permission.target_type,
+        permission.target_id,
+        source.permission_id,
+      ].join(':');
+      if (seenPermissionKeys.has(key)) continue;
+      seenPermissionKeys.add(key);
+      effectivePermissions.push({
+        targetType: permission.target_type,
+        targetId: permission.target_id,
+        targetName: permission.target_name,
+        role: source.role,
+        inherited,
+        inheritedFromName: inherited ? source.source_name : null,
+        synthesizedRole: access.effectiveRole,
+        capabilities: access.capabilities,
+      });
+    }
+  }
+
+  const sharedItems = [];
+  for (const permission of permissionRows) {
+    const access = await resolveTargetAccess(
+      c.env.DB,
+      guestForAccess,
+      permission.target_type,
+      permission.target_id
+    );
+    if (!access || access.accessMode === null) continue;
+    sharedItems.push({
+      itemType: permission.target_type,
+      id: permission.target_id,
+      name: permission.target_name ?? permission.target_id,
+      classification: permission.classification,
+      pathLabel: await loadPathLabel(c.env.DB, caller.tenantId, permission),
+      effectiveRole: access.effectiveRole,
+      synthesizedRole: access.effectiveRole,
+      capabilities: access.capabilities,
+      folderId: permission.target_type === 'file' ? permission.folder_id : null,
+      extension: permission.target_type === 'file' ? permission.extension : null,
+      mimeType: permission.target_type === 'file' ? permission.mime_type : null,
+      sizeBytes: permission.target_type === 'file' ? permission.size_bytes : null,
+      updatedAt: permission.updated_at,
+    });
+  }
+
+  const guestPolicy = await getGuestPolicy(c.env.DB, caller.tenantId);
+  const advancedRolesEnabled = await areAdvancedRolesEnabled(
+    c.env.DB,
+    caller.tenantId
+  );
+
+  return c.json({
+    guest: guestIdentity,
+    invitations,
+    effectivePermissions,
+    sharedItems,
+    guestPolicy: {
+      allowExternalCollaborators: guestPolicy.allowExternalCollaborators,
+      externalDomainAllowlist: guestPolicy.externalDomainAllowlist,
+      allowGuestElevatedRoles: guestPolicy.allowGuestElevatedRoles,
+      guestGrantableRoles: [
+        ...new Set([
+          ...guestGrantableRoles(guestPolicy, {
+            advancedRolesEnabled,
+            targetType: 'folder',
+          }),
+          ...guestGrantableRoles(guestPolicy, {
+            advancedRolesEnabled,
+            targetType: 'file',
+          }),
+        ]),
+      ],
+      guestInvitationExpiryDays: guestPolicy.guestInvitationExpiryDays,
+    },
+    accessSummary: {
+      folderCount: sharedItems.filter((item) => item.itemType === 'folder').length,
+      fileCount: sharedItems.filter((item) => item.itemType === 'file').length,
+      itemCount: sharedItems.length,
+      invitationCount: invitations.length,
+    },
+  });
 });

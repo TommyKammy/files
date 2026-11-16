@@ -17,6 +17,7 @@ const LOCAL_LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
 
 interface SessionRow {
   session_expires_at: string;
+  revoked_at: string | null;
   id: string;
   tenant_id: string;
   email: string;
@@ -108,6 +109,48 @@ function isGuestUserExpired(
   return Boolean(expiresAt) && expiresAt! <= nowIso;
 }
 
+/**
+ * P10-2: give the web client an actionable reason for a rejected guest
+ * session. Members keep the generic message so existing sign-in flows and
+ * tests are unchanged (the `code` is additive).
+ */
+function sessionFailure(
+  row: Pick<
+    SessionRow,
+    'user_type' | 'status' | 'user_expires_at' | 'session_expires_at' | 'revoked_at'
+  >,
+  nowIso: string
+): { code: string; error: string } {
+  if (row.user_type === 'guest') {
+    if (row.status !== 'active') {
+      return {
+        code: 'GUEST_ACCOUNT_SUSPENDED',
+        error: 'Guest account is suspended',
+      };
+    }
+    if (isGuestUserExpired('guest', row.user_expires_at, nowIso)) {
+      return {
+        code: 'GUEST_ACCOUNT_EXPIRED',
+        error: 'Guest account has expired',
+      };
+    }
+    return {
+      code: 'SESSION_EXPIRED_OR_REVOKED',
+      error: 'Guest session expired or was revoked',
+    };
+  }
+  if (row.status !== 'active') {
+    return {
+      code: 'ACCOUNT_SUSPENDED',
+      error: 'Account is suspended',
+    };
+  }
+  return {
+    code: 'SESSION_EXPIRED_OR_REVOKED',
+    error: 'Session expired or revoked',
+  };
+}
+
 export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
   const isRequired = options.required ?? true;
 
@@ -132,7 +175,15 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
           isGuestUserExpired(userType, expiresAt, new Date().toISOString())
         ) {
           c.set('user', null);
-          if (isRequired) return c.json({ error: 'Guest account has expired' }, 401);
+          if (isRequired) {
+            return c.json(
+              {
+                error: 'Guest account has expired',
+                code: 'GUEST_ACCOUNT_EXPIRED',
+              },
+              401
+            );
+          }
           await next();
           return;
         }
@@ -155,31 +206,76 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
     const token = readSessionTokenFromRequest(c);
     if (!token) {
       c.set('user', null);
-      if (isRequired) return c.json({ error: 'Authentication required' }, 401);
+      if (isRequired) {
+        return c.json(
+          {
+            error: 'Authentication required',
+            code: 'AUTHENTICATION_REQUIRED',
+          },
+          401
+        );
+      }
       await next();
       return;
     }
 
+    const tokenHash = await sha256Hex(token);
     const row = await c.env.DB.prepare(
       `SELECT s.expires_at AS session_expires_at,
+              s.revoked_at,
               u.id, u.tenant_id, u.email, u.display_name, u.role, u.status,
               u.user_type, u.external_org, u.expires_at AS user_expires_at
          FROM sessions s
          JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = ? AND s.revoked_at IS NULL`
     )
-      .bind(await sha256Hex(token))
+      .bind(tokenHash)
       .first<SessionRow>();
 
     const nowIso = new Date().toISOString();
-    if (
-      !row ||
-      row.session_expires_at <= nowIso ||
-      row.status !== 'active' ||
-      isGuestUserExpired(row.user_type, row.user_expires_at, nowIso)
-    ) {
+    if (row) {
+      const expired =
+        row.session_expires_at <= nowIso ||
+        row.status !== 'active' ||
+        isGuestUserExpired(row.user_type, row.user_expires_at, nowIso);
+      if (expired) {
+        c.set('user', null);
+        if (isRequired) {
+          const failure = sessionFailure(row, nowIso);
+          return c.json({ error: failure.error, code: failure.code }, 401);
+        }
+        await next();
+        return;
+      }
+    }
+
+    if (!row) {
+      // The active-session lookup intentionally excludes revoked rows. Read the
+      // most recent matching session once more so a revoked/expired guest gets
+      // a precise reason instead of a generic authentication error.
+      const stale = await c.env.DB.prepare(
+        `SELECT s.expires_at AS session_expires_at,
+                s.revoked_at,
+                u.id, u.tenant_id, u.email, u.display_name, u.role, u.status,
+                u.user_type, u.external_org, u.expires_at AS user_expires_at
+           FROM sessions s
+           JOIN users u ON u.id = s.user_id
+          WHERE s.token_hash = ?
+          ORDER BY s.created_at DESC
+          LIMIT 1`
+      )
+        .bind(tokenHash)
+        .first<SessionRow>();
       c.set('user', null);
-      if (isRequired) return c.json({ error: 'Session expired or revoked' }, 401);
+      if (isRequired) {
+        const failure = stale
+          ? sessionFailure(stale, nowIso)
+          : {
+              code: 'SESSION_EXPIRED_OR_REVOKED',
+              error: 'Session expired or revoked',
+            };
+        return c.json({ error: failure.error, code: failure.code }, 401);
+      }
       await next();
       return;
     }

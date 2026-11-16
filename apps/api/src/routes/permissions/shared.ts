@@ -26,4 +26,17 @@ export interface PermissionListRow {
   grantee_email: string | null;
   source_name: string | null;
   is_inherited: number;
+  grantee_user_type: 'member' | 'guest' | null;
+  grantee_external_org: string | null;
+  grantee_expires_at: string | null;
+  grantee_last_login_at: string | null;
+  grantee_invited_by: string | null;
+  grantee_invited_by_name: string | null;
+  grantee_account_status: 'active' | 'suspended' | null;
+  grantee_invitation_status:
+    | 'pending'
+    | 'accepted'
+    | 'revoked'
+    | 'expired'
+    | null;
 }

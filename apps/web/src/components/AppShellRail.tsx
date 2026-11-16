@@ -46,6 +46,7 @@ export function AppShellRail({
   const [searchOpen, setSearchOpen] = useState(false);
   const resolvedView =
     activeView ?? (pathname.startsWith('/admin') ? 'admin' : 'workspace');
+  const isGuest = user?.userType === 'guest';
   const isAdmin =
     user?.userType !== 'guest' &&
     (user?.role === 'sys_admin' || user?.role === 'sec_admin');
@@ -87,83 +88,110 @@ export function AppShellRail({
           </div>
 
           <div className="px-3 pb-2">
-            <button
-              type="button"
-              onClick={() => setSearchOpen(true)}
-              className="flex h-7 w-full items-center justify-between rounded-md px-2 text-[0.8125rem] text-[#111214] transition hover:bg-[#e4e4e6] hover:text-[#111214]"
-            >
-              <span className="flex items-center gap-2">
-                <Search className="h-4 w-4 text-[#676b72]" />
-                <span>横断検索...</span>
-              </span>
-              <kbd className="rounded border border-[#d7d7dc] bg-[#f9f9fa] px-1 py-0.5 font-mono text-[0.625rem] text-[#3c3f46]">
-                ⌘K
-              </kbd>
-            </button>
+            {isGuest ? (
+              <div className="rounded-md border border-[#d7d7dc] bg-[#f9f9fa] px-2 py-1.5 text-[0.6875rem] leading-relaxed text-[#3c3f46]">
+                <span className="block font-medium text-[#111214]">
+                  外部ゲスト
+                </span>
+                <span className="block truncate">
+                  {user?.externalOrg ?? '外部組織未設定'}
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                className="flex h-7 w-full items-center justify-between rounded-md px-2 text-[0.8125rem] text-[#111214] transition hover:bg-[#e4e4e6] hover:text-[#111214]"
+              >
+                <span className="flex items-center gap-2">
+                  <Search className="h-4 w-4 text-[#676b72]" />
+                  <span>横断検索...</span>
+                </span>
+                <kbd className="rounded border border-[#d7d7dc] bg-[#f9f9fa] px-1 py-0.5 font-mono text-[0.625rem] text-[#3c3f46]">
+                  ⌘K
+                </kbd>
+              </button>
+            )}
           </div>
 
           <nav aria-label="メインナビゲーション" className="space-y-0.5 px-2">
-            <Link
-              href="/workspace"
-              data-drop-folder-id={ROOT_DROP_ID}
-              data-drop-label="マイファイル"
-              className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
-                dragCtx?.isDragging
-                  ? `${getDropTargetClassName(
-                      null,
-                      dragCtx.hoveredTarget
-                    ) || (resolvedView === 'workspace'
-                      ? 'bg-[#e2e2e6] text-[#111214]'
-                      : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]')}`
-                  : resolvedView === 'workspace'
-                    ? 'bg-[#e2e2e6] text-[#111214]'
-                    : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
-              }`}
-            >
-              <FolderOpen className="h-4 w-4 text-[#676b72]" />
-              <span>マイファイル</span>
-            </Link>
-
-            <Link
-              href="/workspace?view=shared"
-              className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
-                resolvedView === 'shared'
-                  ? 'bg-[#e2e2e6] text-[#111214]'
-                  : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
-              }`}
-            >
-              <Share2 className="h-4 w-4 text-[#676b72]" />
-              <span>共有アイテム</span>
-            </Link>
-
-            <Link
-              href="/workspace?view=trash"
-              className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
-                resolvedView === 'trash'
-                  ? 'bg-[#e2e2e6] text-[#111214]'
-                  : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
-              }`}
-            >
-              <Trash2 className="h-4 w-4 text-[#676b72]" />
-              <span>ゴミ箱</span>
-            </Link>
-
-            {isAdmin && (
+            {isGuest ? (
               <Link
-                href="/admin"
+                href="/workspace?view=shared"
                 className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
-                  resolvedView === 'admin'
+                  resolvedView === 'shared' || resolvedView === 'workspace'
                     ? 'bg-[#e2e2e6] text-[#111214]'
                     : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
                 }`}
               >
-                <ShieldAlert className="h-4 w-4 text-[#676b72]" />
-                <span>ガバナンス</span>
+                <Share2 className="h-4 w-4 text-[#676b72]" />
+                <span>共有アイテム</span>
               </Link>
+            ) : (
+              <>
+                <Link
+                  href="/workspace"
+                  data-drop-folder-id={ROOT_DROP_ID}
+                  data-drop-label="マイファイル"
+                  className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
+                    dragCtx?.isDragging
+                      ? `${getDropTargetClassName(
+                          null,
+                          dragCtx.hoveredTarget
+                        ) || (resolvedView === 'workspace'
+                          ? 'bg-[#e2e2e6] text-[#111214]'
+                          : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]')}`
+                      : resolvedView === 'workspace'
+                        ? 'bg-[#e2e2e6] text-[#111214]'
+                        : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
+                  }`}
+                >
+                  <FolderOpen className="h-4 w-4 text-[#676b72]" />
+                  <span>マイファイル</span>
+                </Link>
+
+                <Link
+                  href="/workspace?view=shared"
+                  className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
+                    resolvedView === 'shared'
+                      ? 'bg-[#e2e2e6] text-[#111214]'
+                      : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
+                  }`}
+                >
+                  <Share2 className="h-4 w-4 text-[#676b72]" />
+                  <span>共有アイテム</span>
+                </Link>
+
+                <Link
+                  href="/workspace?view=trash"
+                  className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
+                    resolvedView === 'trash'
+                      ? 'bg-[#e2e2e6] text-[#111214]'
+                      : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
+                  }`}
+                >
+                  <Trash2 className="h-4 w-4 text-[#676b72]" />
+                  <span>ゴミ箱</span>
+                </Link>
+
+                {isAdmin && (
+                  <Link
+                    href="/admin"
+                    className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
+                      resolvedView === 'admin'
+                        ? 'bg-[#e2e2e6] text-[#111214]'
+                        : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
+                    }`}
+                  >
+                    <ShieldAlert className="h-4 w-4 text-[#676b72]" />
+                    <span>ガバナンス</span>
+                  </Link>
+                )}
+              </>
             )}
           </nav>
 
-          {user && (resolvedView === 'workspace' || resolvedView === 'trash') && (
+          {user && !isGuest && (resolvedView === 'workspace' || resolvedView === 'trash') && (
             <AppShellFolderTree
               syncStore={syncStore}
               activeFolderId={activeFolderId}
@@ -186,6 +214,14 @@ export function AppShellRail({
                 <div className="truncate text-[0.6875rem] text-[#3c3f46]">
                   {user.email}
                 </div>
+                {isGuest && (
+                  <div className="truncate text-[0.625rem] text-[#676b72]">
+                    {user.externalOrg ?? '外部組織未設定'}
+                    {user.expiresAt
+                      ? ` / 期限 ${new Date(user.expiresAt).toLocaleDateString('ja-JP')}`
+                      : ''}
+                  </div>
+                )}
               </div>
               <button
                 type="button"
@@ -202,15 +238,17 @@ export function AppShellRail({
         </div>
       </aside>
 
-      <CommandPalette
-        open={searchOpen}
-        user={user}
-        activeView={resolvedView}
-        workspaceActions={workspaceActions}
-        onSelectResult={onSelectResult}
-        onSelectFolder={onSelectFolder}
-        onClose={() => setSearchOpen(false)}
-      />
+      {!isGuest && (
+        <CommandPalette
+          open={searchOpen}
+          user={user}
+          activeView={resolvedView}
+          workspaceActions={workspaceActions}
+          onSelectResult={onSelectResult}
+          onSelectFolder={onSelectFolder}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
     </>
   );
 }

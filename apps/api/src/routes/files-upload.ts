@@ -28,6 +28,7 @@ import {
   getShareLinkPolicyFlags,
   projectViewerShareLinkCapability,
 } from '../services/shared-link-permissions';
+import { recordGuestAccess } from '../services/guest-access-audit';
 import { buildSyncChangeStmt, parseExpectedVersionInput } from '../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../services/sync-notifier';
 import type { ClassificationLabel } from '../types/api';
@@ -142,6 +143,13 @@ filesUploadRoutes.post('/upload-complete', async (c) => {
       eventKind: 'file.upload_complete',
       scopeFolderIds: [result.file.folder_id],
     });
+    await recordGuestAccess(
+      c.env.DB,
+      user,
+      'upload_complete',
+      'file',
+      result.file.id
+    );
     return c.json(result);
   } catch (err) {
     return handleFileError(c, err);
@@ -193,6 +201,8 @@ filesUploadRoutes.get('/:id', async (c) => {
     shareLinkPolicy.allow_viewer_share_links
   );
 
+  await recordGuestAccess(c.env.DB, user, 'read_file_metadata', 'file', fileId);
+
   return c.json({
     file,
     effectiveRole: access.effectiveRole,
@@ -234,6 +244,14 @@ filesUploadRoutes.get('/:id/content-url', async (c) => {
   if (!delivered.ok) {
     return c.json(delivered.body, delivered.status);
   }
+
+  await recordGuestAccess(
+    c.env.DB,
+    user,
+    intent === 'download' ? 'download_url' : 'preview_url',
+    'file',
+    fileId
+  );
 
   return c.json(delivered.body);
 });

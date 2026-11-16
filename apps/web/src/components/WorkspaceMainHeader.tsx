@@ -150,7 +150,7 @@ export function WorkspaceMainHeader({
           )}
       </div>
 
-      <div className="relative flex w-full flex-wrap items-center gap-1.5">
+      <div className="relative flex w-full min-w-0 flex-wrap items-center gap-1.5">
         <WorkspaceToolbar
           isTrashView={isTrashView}
           hasSelection={!isTrashView && selectedRows.length > 0}

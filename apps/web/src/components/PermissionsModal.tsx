@@ -3,6 +3,8 @@
 import { Loader2, Search, Shield, Trash2, UserPlus, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ModalShell } from '@/components/ModalShell';
+import { GuestCollaborationSection } from '@/components/permissions/GuestCollaborationSection';
+import { GuestSummaryCard } from '@/components/permissions/GuestSummaryCard';
 import { ModalError } from '@/components/ui/ModalError';
 import { ModalHeader } from '@/components/ui/ModalHeader';
 import {
@@ -14,6 +16,8 @@ import {
   roleGroupsForTarget,
   synthesizeEffectiveAccessFromRoles,
 } from '@/lib/capabilities';
+import { guestRoleOptions } from '@/lib/guest-collaboration';
+import { formatDateTime } from '@/lib/formatters';
 import { usePermissionsModal } from '@/lib/use-permissions-modal';
 import {
   INVITE_POLICY_DESCRIPTION,
@@ -104,6 +108,8 @@ export function PermissionsModal({
     permissionInheritanceMode,
     invitePolicy,
     grantableRoles,
+    guestInvitations,
+    guestPolicy,
     canInvite,
     policySaving,
     policyNotice,
@@ -127,6 +133,7 @@ export function PermissionsModal({
     handleGrant,
     handleRevoke,
     handleUpdateFolderInvitePolicy,
+    reloadPermissions,
   } = usePermissionsModal({ targetType, targetId, effectiveRole });
 
   const effectiveCapabilities = targetCapabilities ?? capabilities;
@@ -135,7 +142,43 @@ export function PermissionsModal({
     'permission.view'
   );
 
+  const guestSelected =
+    selectedPrincipal?.type === 'user' && selectedPrincipal.userType === 'guest';
+  const guestRoleCandidates = useMemo(
+    () =>
+      guestRoleOptions({
+        targetType,
+        advancedRolesEnabled,
+        allowGuestElevatedRoles: guestPolicy?.allowGuestElevatedRoles ?? false,
+        grantableRoles,
+      }),
+    [
+      targetType,
+      advancedRolesEnabled,
+      guestPolicy?.allowGuestElevatedRoles,
+      grantableRoles,
+    ]
+  );
+  const guestAssignableRoles = useMemo(
+    () =>
+      guestRoleCandidates
+        .filter((option) => option.enabled)
+        .map((option) => option.role),
+    [guestRoleCandidates]
+  );
+
   const roleGroups = useMemo(() => {
+    if (guestSelected) {
+      return guestAssignableRoles.length > 0
+        ? [
+            {
+              id: 'guest-allowed',
+              label: '外部ゲストに付与できるロール',
+              roles: guestAssignableRoles,
+            },
+          ]
+        : [];
+    }
     const grantable = new Set(grantableRoles);
     return roleGroupsForTarget(targetType, {
       advancedRolesEnabled,
@@ -149,7 +192,23 @@ export function PermissionsModal({
         ),
       }))
       .filter((group) => group.roles.length > 0);
-  }, [targetType, advancedRolesEnabled, currentEffectiveRole, grantableRoles]);
+  }, [
+    targetType,
+    advancedRolesEnabled,
+    currentEffectiveRole,
+    grantableRoles,
+    guestSelected,
+    guestAssignableRoles,
+  ]);
+
+  // A guest principal must never keep a stale member-only role selection.
+  useEffect(() => {
+    if (!guestSelected) return;
+    if (guestAssignableRoles.length === 0) return;
+    if (!guestAssignableRoles.includes(role)) {
+      setRole(guestAssignableRoles[0]!);
+    }
+  }, [guestSelected, guestAssignableRoles, role, setRole]);
 
   const assignableRoleIds = roleGroups.flatMap((group) => group.roles);
   const selectedRoleDescription =
@@ -170,6 +229,9 @@ export function PermissionsModal({
   const [folderPolicyChoice, setFolderPolicyChoice] = useState<
     InvitePolicy | null
   >(invitePolicy?.folderOwnPolicy ?? null);
+  const [guestDetailUserId, setGuestDetailUserId] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     setFolderPolicyChoice(invitePolicy?.folderOwnPolicy ?? null);
@@ -444,19 +506,39 @@ export function PermissionsModal({
                                     setSelectedPrincipal(cand);
                                     setCandidates([]);
                                   }}
-                                  className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-blue-50"
+                                  className="flex w-full flex-col gap-0.5 px-3 py-2 text-left text-xs hover:bg-blue-50"
                                 >
-                                  <span className="flex items-center gap-2 font-medium text-slate-800">
+                                  <span className="flex min-w-0 flex-wrap items-center gap-2 font-medium text-slate-800">
                                     {cand.type === 'group' ? (
-                                      <Users className="h-3.5 w-3.5 text-indigo-500" />
+                                      <Users className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
                                     ) : (
-                                      <UserPlus className="h-3.5 w-3.5 text-blue-500" />
+                                      <UserPlus className="h-3.5 w-3.5 shrink-0 text-blue-500" />
                                     )}
-                                    <span>{cand.name}</span>
+                                    <span className="min-w-0 break-words">
+                                      {cand.name}
+                                    </span>
+                                    {cand.userType === 'guest' && (
+                                      <span
+                                        data-testid="principal-guest-badge"
+                                        className="rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[0.625rem] font-medium text-amber-800"
+                                      >
+                                        外部ゲスト
+                                      </span>
+                                    )}
                                   </span>
-                                  <span className="text-[0.6875rem] text-slate-600">
+                                  <span className="min-w-0 break-all text-[0.6875rem] text-slate-600">
                                     {cand.email ?? 'SCIM Group'}
                                   </span>
+                                  {cand.userType === 'guest' && (
+                                    <span className="min-w-0 break-words text-[0.625rem] text-amber-800">
+                                      {cand.externalOrg ?? '外部組織未設定'}
+                                      {cand.expiresAt
+                                        ? ` / 有効期限: ${formatDateTime(
+                                            cand.expiresAt
+                                          )}`
+                                        : ''}
+                                    </span>
+                                  )}
                                 </button>
                               ))
                             )}
@@ -475,7 +557,10 @@ export function PermissionsModal({
                         id="permission-role"
                         name="role"
                         value={safeRole}
-                        disabled={Boolean(selectedPrincipalLock)}
+                        disabled={
+                          Boolean(selectedPrincipalLock) ||
+                          (guestSelected && guestAssignableRoles.length === 0)
+                        }
                         onChange={(e) => setRole(e.target.value as ResourceRole)}
                         aria-describedby="permission-role-description"
                         className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:opacity-50"
@@ -498,7 +583,8 @@ export function PermissionsModal({
                       disabled={
                         !selectedPrincipal ||
                         submitting ||
-                        Boolean(selectedPrincipalLock)
+                        Boolean(selectedPrincipalLock) ||
+                        (guestSelected && guestAssignableRoles.length === 0)
                       }
                       title={
                         selectedPrincipalLock
@@ -529,6 +615,40 @@ export function PermissionsModal({
                       capabilityLabels={ROLE_CAPABILITY_CHIPS[safeRole]}
                       ariaLabel={`${ROLE_META[safeRole].label} の権限`}
                     />
+                    {guestSelected && (
+                      <div
+                        role="note"
+                        data-testid="guest-role-constraints"
+                        className="space-y-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[0.625rem] leading-relaxed text-amber-900"
+                      >
+                        <p className="break-words font-semibold">
+                          外部ゲストのロール制約
+                        </p>
+                        <ul className="list-disc space-y-0.5 pl-3">
+                          <li className="break-words">
+                            Owner / Co-Owner は選択できません。
+                          </li>
+                          {!guestPolicy?.allowGuestElevatedRoles && (
+                            <li className="break-words">
+                              Editor は既定のゲストポリシーでは選択できません。
+                            </li>
+                          )}
+                          {targetType === 'file' && (
+                            <li className="break-words">
+                              投稿系ロールはフォルダ専用のため選択できません。
+                            </li>
+                          )}
+                          <li className="break-words">
+                            共有リンクとは異なり、ゲストはアカウント単位で有効期限・監査ログの対象です。
+                          </li>
+                        </ul>
+                        {guestAssignableRoles.length === 0 && (
+                          <p className="break-words font-medium text-red-800">
+                            このゲストに付与できるロールがありません。
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </fieldset>
 
@@ -552,6 +672,19 @@ export function PermissionsModal({
                 ) : null}
               </form>
             )}
+
+            <GuestCollaborationSection
+              targetType={targetType}
+              targetId={targetId}
+              targetName={targetName}
+              canInvite={canInvite}
+              advancedRolesEnabled={advancedRolesEnabled}
+              grantableRoles={grantableRoles}
+              guestPolicy={guestPolicy}
+              guestInvitations={guestInvitations}
+              onReload={reloadPermissions}
+              onOpenGuestDetail={setGuestDetailUserId}
+            />
 
             {targetType === 'folder' && invitePolicy?.canEditFolderPolicy && (
               <form
@@ -752,6 +885,14 @@ export function PermissionsModal({
                           <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.625rem] text-slate-600">
                             {perm.granteeType}
                           </span>
+                          {perm.granteeUserType === 'guest' && (
+                            <span
+                              data-testid="permission-guest-badge"
+                              className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[0.625rem] font-medium text-amber-800"
+                            >
+                              外部ゲスト
+                            </span>
+                          )}
                           {perm.inherited && (
                             <span
                               data-testid="permission-inherited-badge"
@@ -788,6 +929,21 @@ export function PermissionsModal({
                             {perm.granteeEmail}
                           </div>
                         )}
+                        {perm.granteeUserType === 'guest' && (
+                          <div
+                            data-testid="permission-guest-meta"
+                            className="mt-0.5 min-w-0 space-y-0.5 break-words text-[0.625rem] leading-relaxed text-amber-900"
+                          >
+                            <p>
+                              外部組織: {perm.granteeExternalOrg ?? '未設定'} / 有効期限:{' '}
+                              {formatDateTime(perm.granteeExpiresAt)}
+                            </p>
+                            <p>
+                              最終ログイン: {formatDateTime(perm.granteeLastLoginAt)} /
+                              招待者: {perm.granteeInvitedByName ?? '不明'}
+                            </p>
+                          </div>
+                        )}
                         <div className="mt-1.5">
                           <CapabilityChips
                             capabilityLabels={
@@ -808,6 +964,16 @@ export function PermissionsModal({
                       </div>
 
                       <div className="flex shrink-0 items-center gap-2">
+                        {perm.granteeUserType === 'guest' && !perm.inherited && (
+                          <button
+                            type="button"
+                            data-testid={`permission-guest-detail-${perm.granteeId}`}
+                            onClick={() => setGuestDetailUserId(perm.granteeId)}
+                            className="inline-flex min-h-7 items-center rounded border border-sky-200 bg-white px-2 py-0.5 text-[0.625rem] font-medium text-sky-800 hover:bg-sky-50"
+                          >
+                            ゲスト詳細
+                          </button>
+                        )}
                         <span className="rounded-md bg-blue-50 px-2 py-0.5 font-medium text-blue-700">
                           {ROLE_META[perm.role]?.label ?? perm.role}
                         </span>
@@ -829,6 +995,13 @@ export function PermissionsModal({
               )}
             </div>
           </>
+        )}
+
+        {guestDetailUserId && (
+          <GuestSummaryCard
+            userId={guestDetailUserId}
+            onClose={() => setGuestDetailUserId(null)}
+          />
         )}
       </div>
     </ModalShell>

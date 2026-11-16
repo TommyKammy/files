@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
+import { requireMemberUser } from '../services/authorization';
 import type { OidcHonoEnv } from '../types/oidc';
 import { registerPermissionGrantRoute } from './permissions/grant';
 import { registerPermissionListRoute } from './permissions/list';
@@ -18,7 +19,8 @@ permissionsRoutes.use(
 );
 permissionsRoutes.use(
   '/principals/*',
-  sessionAuthMiddleware({ required: true })
+  sessionAuthMiddleware({ required: true }),
+  requireMemberUser
 );
 
 registerPermissionListRoute(permissionsRoutes);

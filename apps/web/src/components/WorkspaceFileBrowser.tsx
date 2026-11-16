@@ -24,9 +24,13 @@ import { WorkspaceMainHeader } from '@/components/WorkspaceMainHeader';
 import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
 import { WorkspacePermissionBanner } from '@/components/WorkspacePermissionBanner';
+import { WorkspaceSharedItemsView } from '@/components/WorkspaceSharedItemsView';
 import { WorkspaceTrashFilters } from '@/components/WorkspaceTrashFilters';
 import { WorkspaceUtilityOverlays } from '@/components/WorkspaceUtilityOverlays';
-import { WorkspaceSharedItemsView } from '@/components/WorkspaceSharedItemsView';
+import {
+  guestSessionIssueFromCode,
+  type GuestSessionIssue,
+} from '@/lib/guest-collaboration';
 import { VersionHistoryModal } from '@/components/VersionHistoryModal';
 import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
 import { useWorkspaceContextMenuActions } from '@/lib/use-workspace-context-menu-actions';
@@ -117,8 +121,8 @@ export function WorkspaceFileBrowser() {
   const searchParams = useSearchParams();
   const folderId = searchParams.get('folderId');
   const previewFileId = searchParams.get('preview');
-  const isTrashView = searchParams.get('view') === 'trash';
-  const isSharedView = searchParams.get('view') === 'shared';
+  const viewParam = searchParams.get('view');
+  const isTrashView = viewParam === 'trash';
 
   const syncStore = getWorkspaceSyncStore();
   const {
@@ -143,6 +147,14 @@ export function WorkspaceFileBrowser() {
     [syncStore]
   );
 
+  const isGuestUser = user?.userType === 'guest';
+  /**
+   * Guests land on the shared-items view when they open /workspace without a
+   * folder. Members keep the existing "My Files" default.
+   */
+  const isSharedView =
+    viewParam === 'shared' || (isGuestUser && !folderId && !isTrashView);
+
 
   const currentFolder = isTrashView ? null : directory.folder;
   const effectiveRole: ResourceRole = isTrashView
@@ -159,7 +171,6 @@ export function WorkspaceFileBrowser() {
       : directory.files;
   const folderStructureMode = readFolderStructureMode(snapshot.policy);
   const isSysAdminUser = user?.role === 'sys_admin';
-  const isGuestUser = user?.userType === 'guest';
   const rootCreationRestricted =
     !isTrashView &&
     folderId === null &&
@@ -356,7 +367,8 @@ export function WorkspaceFileBrowser() {
     !isTrashView &&
     !isPathOnly &&
     Boolean(currentFolder) &&
-    (effectiveRole === 'uploader' ||
+    (isGuestUser ||
+      effectiveRole === 'uploader' ||
       effectiveRole === 'previewer_uploader' ||
       effectiveRole === 'viewer_uploader' ||
       effectiveRole === 'previewer');
@@ -1186,7 +1198,27 @@ export function WorkspaceFileBrowser() {
     );
   }
 
+  const sessionIssue: GuestSessionIssue | null = snapshot.sessionError
+    ? guestSessionIssueFromCode(
+        snapshot.sessionError.code ?? null,
+        snapshot.sessionError.userType
+      )
+    : null;
+
   if (!user) {
+    if (sessionIssue) {
+      return (
+        <SignInCard
+          title="外部ゲストの再サインインが必要です"
+          description="セッションが失効したため、ワークスペースの内容を安全に破棄しました。原因を確認し、外部ゲストサインインから認証コードを再取得してください。"
+          returnTo="/workspace"
+          guestIssue={sessionIssue}
+          onSignedIn={(signedIn) => {
+            void syncStore.adoptAuthenticatedUser(signedIn);
+          }}
+        />
+      );
+    }
     return (
       <SignInCard
         title="Files ワークスペースへサインイン"
@@ -1217,6 +1249,9 @@ export function WorkspaceFileBrowser() {
           className="mb-2 mr-2 mt-2 min-w-0 flex-1 space-y-4 rounded-2xl border border-[#e7e7ea] bg-[#f9f9fa] px-5 py-4 lg:px-7"
         >
           <WorkspaceSharedItemsView
+            isGuest={isGuestUser}
+            externalOrg={user.externalOrg ?? null}
+            expiresAt={user.expiresAt ?? null}
             onOpenFolder={(targetFolderId) =>
               router.push(
                 `/workspace?folderId=${encodeURIComponent(targetFolderId)}`
@@ -1571,6 +1606,14 @@ export function WorkspaceFileBrowser() {
           <WorkspacePermissionBanner
             role={effectiveRole}
             capabilities={directory.capabilities}
+            guest={
+              isGuestUser
+                ? {
+                    externalOrg: user.externalOrg ?? null,
+                    expiresAt: user.expiresAt ?? null,
+                  }
+                : null
+            }
           />
         )}
 

@@ -6,6 +6,7 @@ import type {
   GuestInviteMeta,
   GuestOtpRequestResponse,
   GuestOtpVerifyResponse,
+  GuestSummaryResponse,
 } from '@/types/files';
 import { apiFetch } from './core';
 
@@ -55,7 +56,7 @@ export function fetchGuestInvitations(
 
 export function createGuestInvitation(
   payload: CreateGuestInvitationPayload
-): Promise<{ invitation: GuestInvitationSummary | null }> {
+): Promise<{ invitation: GuestInvitationSummary | null; notice?: string }> {
   return apiFetch('/api/guests/invitations', {
     method: 'POST',
     body: JSON.stringify(buildGuestInvitationPayload(payload)),
@@ -64,7 +65,7 @@ export function createGuestInvitation(
 
 export function resendGuestInvitation(
   invitationId: string
-): Promise<{ invitation: GuestInvitationSummary | null }> {
+): Promise<{ invitation: GuestInvitationSummary | null; notice?: string }> {
   return apiFetch(
     `/api/guests/invitations/${encodeURIComponent(invitationId)}/resend`,
     { method: 'POST' }
@@ -73,10 +74,23 @@ export function resendGuestInvitation(
 
 export function revokeGuestInvitation(
   invitationId: string
-): Promise<{ ok: boolean; invitation: GuestInvitationSummary | null }> {
+): Promise<{
+  ok: boolean;
+  invitation: GuestInvitationSummary | null;
+  notice?: string;
+}> {
   return apiFetch(
     `/api/guests/invitations/${encodeURIComponent(invitationId)}/revoke`,
     { method: 'POST' }
+  );
+}
+
+/** GET /api/guests/:userId/summary — internal-only guest detail card. */
+export function fetchGuestSummary(
+  userId: string
+): Promise<GuestSummaryResponse> {
+  return apiFetch(
+    `/api/guests/${encodeURIComponent(userId)}/summary`
   );
 }
 

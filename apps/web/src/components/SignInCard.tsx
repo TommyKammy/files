@@ -11,6 +11,7 @@ import {
   loginWithDevAccount,
   logoutSession,
 } from '@/lib/files-api';
+import type { GuestSessionIssue } from '@/lib/guest-collaboration';
 import { getWorkspaceSyncStore } from '@/lib/sync-store';
 import type { AuthUser, DevAuthAccount, UserRole } from '@/types/files';
 
@@ -148,16 +149,18 @@ export function SignInCard({
   returnTo,
   preferredRoles,
   onSignedIn,
+  guestIssue = null,
 }: {
   title: string;
   description?: string;
   returnTo: string;
   preferredRoles?: UserRole[];
   onSignedIn: (user: AuthUser) => void;
+  guestIssue?: GuestSessionIssue | null;
 }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#efeff1] px-6 py-10">
-      <div className="w-full max-w-md rounded-xl border border-[#e7e7ea] bg-white p-7 text-center shadow-xs space-y-5">
+    <main className="flex min-h-screen items-center justify-center bg-[#efeff1] px-4 py-10 sm:px-6">
+      <div className="w-full max-w-md rounded-xl border border-[#e7e7ea] bg-white p-5 text-center shadow-xs space-y-5 sm:p-7">
         <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg bg-[#5e6ad2] text-base font-semibold text-white">
           F
         </div>
@@ -169,13 +172,50 @@ export function SignInCard({
           )}
         </div>
 
-        <a
-          href={buildLoginUrl(returnTo)}
-          className="inline-flex w-full items-center justify-center gap-2 h-9 rounded-md bg-[#5e6ad2] px-4 text-[0.8125rem] font-medium text-white transition hover:bg-[#4f5ac2]"
-        >
-          <ShieldCheck className="h-4 w-4" />
-          <span>SSO でサインイン</span>
-        </a>
+        {guestIssue && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            data-testid="guest-session-issue"
+            data-code={guestIssue.code}
+            className="space-y-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-3 text-left"
+          >
+            <p className="text-[0.8125rem] font-semibold text-amber-950">
+              {guestIssue.title}
+            </p>
+            <p className="break-words text-[0.75rem] leading-relaxed text-amber-900">
+              {guestIssue.description}
+            </p>
+          </div>
+        )}
+
+        {guestIssue ? (
+          <a
+            href={guestIssue.actionHref}
+            data-testid="guest-relogin-link"
+            className="inline-flex w-full items-center justify-center gap-2 h-10 rounded-md bg-amber-600 px-4 text-[0.8125rem] font-medium text-white transition hover:bg-amber-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            <span>{guestIssue.actionLabel} (/guest/login)</span>
+          </a>
+        ) : (
+          <a
+            href={buildLoginUrl(returnTo)}
+            className="inline-flex w-full items-center justify-center gap-2 h-9 rounded-md bg-[#5e6ad2] px-4 text-[0.8125rem] font-medium text-white transition hover:bg-[#4f5ac2]"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            <span>SSO でサインイン</span>
+          </a>
+        )}
+
+        {guestIssue && (
+          <a
+            href={buildLoginUrl(returnTo)}
+            className="block text-[0.6875rem] text-slate-500 underline-offset-2 hover:text-slate-700 hover:underline"
+          >
+            社内メンバーの方は SSO でサインイン
+          </a>
+        )}
 
         <LocalDevQuickLoginPanel
           preferredRoles={preferredRoles}

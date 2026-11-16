@@ -7,6 +7,7 @@ import {
 } from '../services/authorization';
 import { parseRoleList } from '../services/capabilities';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
+import { recordGuestAccess } from '../services/guest-access-audit';
 import type { ClassificationLabel } from '../types/api';
 import type { OidcHonoEnv } from '../types/oidc';
 
@@ -238,6 +239,14 @@ sharedItemsRoutes.get('/', async (c) => {
     const byUpdated = b.updatedAt.localeCompare(a.updatedAt);
     return byUpdated !== 0 ? byUpdated : a.id.localeCompare(b.id);
   });
+
+  await recordGuestAccess(
+    c.env.DB,
+    user,
+    'list_shared_items',
+    'shared_items',
+    user.id
+  );
 
   return c.json({ items: items.slice(0, limit) });
 });

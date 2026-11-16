@@ -16,6 +16,8 @@ import {
 import type {
   Capability,
   EffectiveBreakdownGrant,
+  GuestInvitationSummary,
+  GuestPolicyProjection,
   InvitePolicy,
   InvitePolicyInfo,
   PermissionEntry,
@@ -86,6 +88,20 @@ export function formatPermissionError(
       return 'フォルダ階層の制約により、この権限操作は実行できません。';
     case 'SUSPENDED_USER_BLOCKED':
       return '停止中のユーザーには権限を付与できません。';
+    case 'GUEST_ROLE_FORBIDDEN':
+      return '外部ゲストには Owner / Co-Owner を付与できません。Editor はテナントポリシーで許可された場合のみ付与できます。';
+    case 'EXTERNAL_COLLABORATORS_DISABLED':
+      return '外部ゲストコラボレーターがテナントポリシーで無効です。管理者が /admin で有効化してください。';
+    case 'EXTERNAL_DOMAIN_NOT_ALLOWED':
+      return 'このメールドメインは外部ゲストの許可リストに含まれていません。';
+    case 'GUEST_ACCOUNT_INACTIVE':
+      return 'ゲストアカウントは停止されています。管理者にお問い合わせください。';
+    case 'GUEST_ACCOUNT_EXPIRED':
+      return 'ゲストアカウントの有効期限が切れています。';
+    case 'INVITATION_NOT_PENDING':
+      return 'この招待は再送できない状態です（受諾済み・取消済み・期限切れ）。';
+    case 'INVITATION_NOT_FOUND':
+      return 'ゲスト招待が見つかりません。画面を再読み込みしてください。';
     default:
       return err.message || fallback;
   }
@@ -109,6 +125,12 @@ export function usePermissionsModal({
     useState<PermissionInheritanceMode>('additive');
   const [invitePolicy, setInvitePolicy] = useState<InvitePolicyInfo | null>(null);
   const [grantableRoles, setGrantableRoles] = useState<ResourceRole[]>([]);
+  const [guestInvitations, setGuestInvitations] = useState<
+    GuestInvitationSummary[]
+  >([]);
+  const [guestPolicy, setGuestPolicy] = useState<GuestPolicyProjection | null>(
+    null
+  );
   const [canInvite, setCanInvite] = useState(false);
   const [policySaving, setPolicySaving] = useState(false);
   const [policyNotice, setPolicyNotice] = useState<string | null>(null);
@@ -179,6 +201,8 @@ export function usePermissionsModal({
         res.permissionInheritanceMode ?? 'additive'
       );
       setInvitePolicy(res.invitePolicy ?? null);
+      setGuestInvitations(res.guestInvitations ?? []);
+      setGuestPolicy(res.guestPolicy ?? null);
       const roles = res.grantableRoles ?? [];
       setGrantableRoles(roles);
       setCanInvite(
@@ -224,7 +248,7 @@ export function usePermissionsModal({
     let cancelled = false;
     setSearching(true);
     const t = window.setTimeout(() => {
-      searchPrincipals(trimmed)
+      searchPrincipals(trimmed, 'all')
         .then((res) => {
           if (!cancelled) setCandidates(res.principals);
         })
@@ -321,6 +345,8 @@ export function usePermissionsModal({
     permissionInheritanceMode,
     invitePolicy,
     grantableRoles,
+    guestInvitations,
+    guestPolicy,
     canInvite,
     policySaving,
     policyNotice,
@@ -344,5 +370,6 @@ export function usePermissionsModal({
     handleGrant,
     handleRevoke,
     handleUpdateFolderInvitePolicy,
+    reloadPermissions,
   };
 }

@@ -9,8 +9,14 @@ const CODE_MESSAGES: Record<string, string> = {
     'このメールアドレスの外部ゲストアカウントが見つかりません。',
   GUEST_ACCOUNT_INACTIVE:
     'ゲストアカウントは停止されています。管理者にお問い合わせください。',
+  GUEST_ACCOUNT_SUSPENDED:
+    'ゲストアカウントは停止されています。管理者または招待元にお問い合わせください。',
   GUEST_ACCOUNT_EXPIRED:
     'ゲストアカウントの有効期限が切れています。管理者にお問い合わせください。',
+  SESSION_EXPIRED_OR_REVOKED:
+    'セッションの有効期限が切れたか、失効しました。もう一度サインインしてください。',
+  AUTHENTICATION_REQUIRED:
+    'サインインが必要です。外部ゲストの方は /guest/login から認証コードを取得してください。',
   INVITATION_NOT_ACCEPTED:
     '招待の承諾が完了していません。招待メールの URL から承諾してください。',
   INVITATION_NOT_FOUND: '招待リンクが無効です。URL を確認してください。',

@@ -59,14 +59,20 @@ export function WorkspaceToolbar({
 }) {
   return (
     <div
+      role="toolbar"
+      aria-label="ワークスペース操作"
       aria-hidden={hasSelection}
       inert={hasSelection}
-      className={`flex flex-wrap items-center gap-2 ${
+      className={`flex min-w-0 max-w-full flex-wrap items-center gap-2 ${
         hasSelection ? 'invisible' : ''
       }`}
     >
       {!isTrashView && (
-        <>
+        <div
+          role="group"
+          aria-label="フォルダ操作"
+          className="flex min-w-0 flex-wrap items-center gap-2"
+        >
           {canCreateFolder && !rootCreationRestricted && (
             <button
               type="button"
@@ -151,50 +157,56 @@ export function WorkspaceToolbar({
               </span>
             </button>
           )}
-        </>
+        </div>
       )}
 
-      <button
-        type="button"
-        title="リスト / グリッド表示切替 (v)"
-        aria-pressed={viewMode === 'grid'}
-        onClick={onToggleViewMode}
-        className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
+      <div
+        role="group"
+        aria-label="表示とヘルプ"
+        className="flex min-w-0 flex-wrap items-center gap-2"
       >
-        {viewMode === 'grid' ? (
-          <List className="h-3.5 w-3.5 text-slate-600" />
-        ) : (
-          <LayoutGrid className="h-3.5 w-3.5 text-slate-600" />
-        )}
-        <span>{viewMode === 'grid' ? 'リスト' : 'グリッド'}</span>
-      </button>
-
-      {!isTrashView && canInspectCurrentFolder && (
         <button
           type="button"
-          title="詳細インスペクタ (i)"
-          aria-pressed={inspectorOpen}
-          onClick={onToggleInspector}
-          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-2xs transition ${
-            inspectorOpen
-              ? 'border-[#bcc3ea] bg-[#eef0fb] text-[#4f5ac2]'
-              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-          }`}
+          title="リスト / グリッド表示切替 (v)"
+          aria-pressed={viewMode === 'grid'}
+          onClick={onToggleViewMode}
+          className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
         >
-          <Info className="h-3.5 w-3.5" />
-          <span>詳細</span>
+          {viewMode === 'grid' ? (
+            <List className="h-3.5 w-3.5 text-slate-600" />
+          ) : (
+            <LayoutGrid className="h-3.5 w-3.5 text-slate-600" />
+          )}
+          <span>{viewMode === 'grid' ? 'リスト' : 'グリッド'}</span>
         </button>
-      )}
 
-      <button
-        type="button"
-        title="キーボードショートカット (?)"
-        onClick={onOpenShortcuts}
-        className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
-      >
-        <Keyboard className="h-3.5 w-3.5 text-slate-500" />
-        <kbd className="font-mono text-[0.625rem] text-slate-500">?</kbd>
-      </button>
+        {!isTrashView && canInspectCurrentFolder && (
+          <button
+            type="button"
+            title="詳細インスペクタ (i)"
+            aria-pressed={inspectorOpen}
+            onClick={onToggleInspector}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-2xs transition ${
+              inspectorOpen
+                ? 'border-[#bcc3ea] bg-[#eef0fb] text-[#4f5ac2]'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+          >
+            <Info className="h-3.5 w-3.5" />
+            <span>詳細</span>
+          </button>
+        )}
+
+        <button
+          type="button"
+          title="キーボードショートカット (?)"
+          onClick={onOpenShortcuts}
+          className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
+        >
+          <Keyboard className="h-3.5 w-3.5 text-slate-500" />
+          <kbd className="font-mono text-[0.625rem] text-slate-500">?</kbd>
+        </button>
+      </div>
     </div>
   );
 }

@@ -13,28 +13,47 @@ import { useCallback, useEffect, useState } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
 import { canAccess, ROLE_META } from '@/lib/capabilities';
 import { listSharedItems } from '@/lib/files-api';
+import {
+  guestSessionIssueFromError,
+  type GuestSessionIssue,
+} from '@/lib/guest-collaboration';
 import { formatDateTime } from '@/lib/formatters';
 import type { SharedItemEntry } from '@/types/files';
 
 export function WorkspaceSharedItemsView({
   onOpenFolder,
   onOpenFile,
+  isGuest = false,
+  externalOrg = null,
+  expiresAt = null,
 }: {
   onOpenFolder: (folderId: string) => void;
   onOpenFile: (fileId: string) => void;
+  isGuest?: boolean;
+  externalOrg?: string | null;
+  expiresAt?: string | null;
 }) {
   const [items, setItems] = useState<SharedItemEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionIssue, setSessionIssue] = useState<GuestSessionIssue | null>(
+    null
+  );
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
+    setSessionIssue(null);
     try {
       const res = await listSharedItems(200, signal);
       setItems(res.items);
     } catch (err) {
       if ((err as Error)?.name === 'AbortError') return;
+      setSessionIssue(
+        isGuest
+          ? guestSessionIssueFromError(err, { userType: 'guest' })
+          : null
+      );
       setError(
         err instanceof Error
           ? err.message
@@ -43,7 +62,7 @@ export function WorkspaceSharedItemsView({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isGuest]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -77,6 +96,23 @@ export function WorkspaceSharedItemsView({
           <p className="mt-1 text-[0.6875rem] leading-relaxed text-[#6b6f76]">
             あなたまたは所属グループに直接共有されたフォルダとファイルです。継承のみのアイテムは含まれません。
           </p>
+          {isGuest && (
+            <div
+              data-testid="guest-shared-guidance"
+              className="mt-2 min-w-0 space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[0.6875rem] leading-relaxed text-amber-900"
+            >
+              <p className="break-words font-semibold">
+                外部ゲストとしてサインイン中
+              </p>
+              <p className="break-words">
+                外部組織: {externalOrg ?? '未設定'} / アカウント有効期限:{' '}
+                {formatDateTime(expiresAt)}
+              </p>
+              <p className="break-words">
+                共有アイテムのみ表示されます。権限管理・削除・ルートフォルダ作成はできません。操作範囲は各フォルダの実効ロールに従います。
+              </p>
+            </div>
+          )}
         </div>
         <button
           type="button"
@@ -89,16 +125,37 @@ export function WorkspaceSharedItemsView({
         </button>
       </header>
 
-      {error && (
+      {sessionIssue ? (
+        <div
+          role="alert"
+          aria-live="assertive"
+          data-testid="guest-shared-session-issue"
+          data-code={sessionIssue.code}
+          className="flex min-w-0 flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900"
+        >
+          <div className="min-w-0 space-y-1">
+            <p className="break-words font-semibold">{sessionIssue.title}</p>
+            <p className="break-words leading-relaxed">
+              {sessionIssue.description}
+            </p>
+          </div>
+          <a
+            href={sessionIssue.actionHref}
+            className="inline-flex min-h-8 shrink-0 items-center rounded-md bg-amber-600 px-3 py-1.5 font-medium text-white hover:bg-amber-700"
+          >
+            {sessionIssue.actionLabel} (/guest/login)
+          </a>
+        </div>
+      ) : error ? (
         <div
           role="alert"
           aria-live="assertive"
           className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700"
         >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
+          <span className="min-w-0 break-words">{error}</span>
         </div>
-      )}
+      ) : null}
 
       <div
         role="region"

@@ -575,6 +575,13 @@ export interface PermissionEntry {
   ancestorFolderId?: string | null;
   ancestorFolderName?: string | null;
   ancestorRole?: ResourceRole | null;
+  granteeUserType?: 'member' | 'guest';
+  granteeExternalOrg?: string | null;
+  granteeExpiresAt?: string | null;
+  granteeLastLoginAt?: string | null;
+  granteeInvitedBy?: string | null;
+  granteeInvitedByName?: string | null;
+  granteeStatus?: GuestInvitationStatus | null;
 }
 
 export interface PermissionsListResponse {
@@ -593,6 +600,8 @@ export interface PermissionsListResponse {
   grantableRoles?: ResourceRole[];
   effectiveBreakdown: EffectiveBreakdownGrant[];
   permissions: PermissionEntry[];
+  guestInvitations?: GuestInvitationSummary[];
+  guestPolicy?: GuestPolicyProjection;
 }
 
 export interface FileViewerInfo {
@@ -607,7 +616,16 @@ export interface PrincipalCandidate {
   id: string;
   name: string;
   email: string | null;
+  department?: string | null;
+  userType?: 'member' | 'guest';
+  externalOrg?: string | null;
+  expiresAt?: string | null;
+  lastLoginAt?: string | null;
+  invitedBy?: string | null;
+  invitationStatus?: GuestInvitationStatus | null;
 }
+
+export type PrincipalSearchKind = 'all' | 'member' | 'guest';
 
 export interface SharedLinkSummary {
   id: string;
@@ -881,6 +899,7 @@ export interface GuestInvitationSummary {
   displayName: string;
   externalOrg: string | null;
   invitedBy: string;
+  invitedByName?: string | null;
   targetType: 'folder' | 'file';
   targetId: string;
   targetName: string | null;
@@ -894,6 +913,72 @@ export interface GuestInvitationSummary {
   lastSentAt: string | null;
   createdAt: string;
   updatedAt: string;
+  mailPreview?: GuestMailPreview | null;
+}
+
+export interface GuestMailPreview {
+  subject: string;
+  bodyPreview: string;
+}
+
+export interface GuestPolicyProjection {
+  allowExternalCollaborators: boolean;
+  externalDomainAllowlist: string[];
+  allowGuestElevatedRoles: boolean;
+  guestGrantableRoles: ResourceRole[];
+  guestInvitationExpiryDays: number;
+}
+
+export interface GuestEffectivePermission {
+  targetType: 'folder' | 'file';
+  targetId: string;
+  targetName: string | null;
+  role: ResourceRole;
+  inherited: boolean;
+  inheritedFromName: string | null;
+  synthesizedRole: ResourceRole | null;
+  capabilities: Capability[];
+}
+
+export interface GuestSharedItemSummary {
+  itemType: 'folder' | 'file';
+  id: string;
+  name: string;
+  classification: ClassificationLabel;
+  pathLabel: string;
+  effectiveRole: ResourceRole | null;
+  synthesizedRole: ResourceRole | null;
+  capabilities: Capability[];
+  folderId: string | null;
+  extension: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  updatedAt: string | null;
+}
+
+export interface GuestSummaryResponse {
+  guest: {
+    id: string;
+    email: string;
+    displayName: string;
+    userType: 'guest';
+    externalOrg: string | null;
+    status: 'active' | 'suspended';
+    expiresAt: string | null;
+    lastLoginAt: string | null;
+    invitedBy: string | null;
+    invitedByName: string | null;
+  };
+  invitations: GuestInvitationSummary[];
+  effectivePermissions: GuestEffectivePermission[];
+  sharedItems: GuestSharedItemSummary[];
+  guestPolicy: GuestPolicyProjection;
+  accessSummary: {
+    folderCount: number;
+    fileCount: number;
+    itemCount: number;
+    invitationCount: number;
+  };
 }
 
 export interface GuestInvitationListResponse {

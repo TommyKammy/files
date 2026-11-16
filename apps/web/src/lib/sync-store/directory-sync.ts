@@ -54,6 +54,7 @@ export interface DirectorySyncContext {
   applyDeltaChanges: (changes: SyncDeltaItem[]) => { shouldRevokeAll: boolean; shouldRevalidateActive: boolean };
   emitSecurityRevocation: (event: RealtimeSecurityRevocationEvent) => void;
   purgeCurrentScope: () => Promise<void>;
+  reportSessionError?: (err: unknown) => void;
   startRealtime: () => void;
   syncDelta: () => Promise<void>;
   ensureDirectoryLoaded: (folderId: string | null, options?: { force?: boolean; signal?: AbortSignal; isPrefetch?: boolean }) => Promise<void>;
@@ -63,13 +64,26 @@ function dirKeyForFolder(folderId: string | null): string {
   return folderId ?? ROOT_DIR_KEY;
 }
 
+const GUEST_SESSION_FAILURE_CODES = new Set([
+  'GUEST_ACCOUNT_EXPIRED',
+  'GUEST_ACCOUNT_SUSPENDED',
+  'GUEST_ACCOUNT_INACTIVE',
+  'INVITATION_REVOKED',
+  'INVITATION_EXPIRED',
+  'INVITATION_NOT_ACCEPTED',
+  'EXTERNAL_COLLABORATORS_DISABLED',
+  'EXTERNAL_DOMAIN_NOT_ALLOWED',
+]);
+
 function isUnauthorizedError(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'status' in err &&
-    (err as { status?: number }).status === 401
-  );
+  if (typeof err !== 'object' || err === null || !('status' in err)) {
+    return false;
+  }
+  const status = (err as { status?: number }).status;
+  if (status === 401) return true;
+  if (status !== 403) return false;
+  const code = (err as { code?: string }).code;
+  return Boolean(code && GUEST_SESSION_FAILURE_CODES.has(code));
 }
 
   export async function bootstrap(
@@ -174,6 +188,7 @@ function isUnauthorizedError(err: unknown): boolean {
         return res;
       } catch (err) {
         if (isUnauthorizedError(err)) {
+          ctx.reportSessionError?.(err);
           await ctx.purgeCurrentScope();
           return null;
         }
@@ -264,6 +279,7 @@ function isUnauthorizedError(err: unknown): boolean {
     })()
       .catch(async (err) => {
         if (isUnauthorizedError(err)) {
+          ctx.reportSessionError?.(err);
           await ctx.purgeCurrentScope();
         }
       })
@@ -376,6 +392,7 @@ function isUnauthorizedError(err: unknown): boolean {
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return;
         if (isUnauthorizedError(err)) {
+          ctx.reportSessionError?.(err);
           await ctx.purgeCurrentScope();
           return;
         }

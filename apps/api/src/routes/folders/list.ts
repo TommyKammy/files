@@ -25,6 +25,7 @@ import {
   getShareLinkPolicyFlags,
   projectViewerShareLinkCapability,
 } from '../../services/shared-link-permissions';
+import { recordGuestAccess } from '../../services/guest-access-audit';
 import type { ResourceRole } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -249,6 +250,13 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
     // receive a file listing; `search` applies the same rule. Path-only
     // ancestors never list files at all.
     const canSeeFiles = !pathOnly && can(access.capabilities, 'item.preview');
+    await recordGuestAccess(
+      c.env.DB,
+      user,
+      pathOnly ? 'traverse_folder' : 'list_folder',
+      'folder',
+      folderId
+    );
     const [folder, breadcrumbResult] = await Promise.all([
       c.env.DB.prepare(
         `SELECT ${FOLDER_CHILD_COLS} FROM folders WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL`

@@ -116,6 +116,7 @@ import type {
   SyncDeltaResponse,
   SyncInvalidationSignal,
   TenantPolicyRow,
+  UserType,
   WorkspaceConflictPolicy,
   WorkspaceToastItem,
 } from '@/types/files';
@@ -125,6 +126,18 @@ const DEFAULT_SWR_TTL_MS = 15_000;
 const MAX_DELTA_PAGES_PER_SYNC = 5;
 
 export type SyncAuthStatus = 'unknown' | 'authenticated' | 'unauthenticated';
+
+/**
+ * P10-2: the last authentication failure that cleared the workspace cache.
+ * `userType` is captured before the user is purged so the recovery screen can
+ * offer the guest sign-in route without exposing member sessions to it.
+ */
+export interface SessionErrorInfo {
+  status: number;
+  code?: string;
+  message: string;
+  userType: UserType | null;
+}
 
 export interface SyncStoreSnapshot {
   authStatus: SyncAuthStatus;
@@ -140,6 +153,7 @@ export interface SyncStoreSnapshot {
   canUndo: boolean;
   pendingMutationCount: number;
   revision: number;
+  sessionError: SessionErrorInfo | null;
 }
 
 export interface SyncStoreDeps {
@@ -298,6 +312,7 @@ export class WorkspaceSyncStore {
   private revalidatingCount = 0;
   private activeDirKey: string = ROOT_DIR_KEY;
   private activeDirectoryNotice: string | null = null;
+  private sessionError: SessionErrorInfo | null = null;
   private revision = 0;
 
   private hydratedScopeKey: string | null = null;
@@ -376,6 +391,7 @@ export class WorkspaceSyncStore {
       canUndo: this.undoStack.length > 0,
       pendingMutationCount: this.pendingMutationCount,
       revision: this.revision,
+      sessionError: this.sessionError,
     };
   }
 
@@ -485,6 +501,7 @@ export class WorkspaceSyncStore {
 
       // Guard against race if session was revoked or changed while IDB opened
       if (this.authStatus === 'unauthenticated') return false;
+      if (this.sessionError) return false;
       if (
         this.user &&
         (this.user.id !== snapshot.meta.user.id ||
@@ -525,6 +542,7 @@ export class WorkspaceSyncStore {
 
   async adoptAuthenticatedUser(nextUser: AuthUser): Promise<void> {
     const previous = this.user;
+    this.sessionError = null;
     if (
       previous &&
       (previous.id !== nextUser.id || previous.tenantId !== nextUser.tenantId)
@@ -729,6 +747,7 @@ export class WorkspaceSyncStore {
       emitSecurityRevocation: (event) =>
         this.emitSecurityRevocation(event),
       purgeCurrentScope: () => this.purgeCurrentScope(),
+      reportSessionError: (err) => this.reportSessionError(err),
       startRealtime: () => this.startRealtime(),
       syncDelta: () => this.syncDelta(),
       ensureDirectoryLoaded: (folderId, options) =>
@@ -739,7 +758,12 @@ export class WorkspaceSyncStore {
   async bootstrap(
     options?: { force?: boolean }
   ): Promise<BootstrapResponse | null> {
-    return bootstrap(this.directorySyncContext(), options);
+    const result = await bootstrap(this.directorySyncContext(), options);
+    if (result && this.sessionError) {
+      this.sessionError = null;
+      this.emit();
+    }
+    return result;
   }
 
   /**
@@ -781,9 +805,51 @@ export class WorkspaceSyncStore {
     cacheRemoveFolderFromCache(this.cacheContext(), folder);
   }
 
+  /**
+   * Capture an authentication failure before the cache is purged so the
+   * workspace can render a cause-specific recovery screen. Only guest codes
+   * and generic 401s are retained; ordinary member 403s are not session errors.
+   */
+  reportSessionError(err: unknown): void {
+    const status =
+      typeof err === 'object' && err !== null && 'status' in err
+        ? Number((err as { status?: unknown }).status)
+        : 0;
+    if (status !== 401 && status !== 403) return;
+    const code =
+      typeof err === 'object' && err !== null && 'code' in err
+        ? String((err as { code?: unknown }).code ?? '')
+        : '';
+    const guestCodes = new Set([
+      'GUEST_ACCOUNT_EXPIRED',
+      'GUEST_ACCOUNT_SUSPENDED',
+      'GUEST_ACCOUNT_INACTIVE',
+      'SESSION_EXPIRED_OR_REVOKED',
+      'INVITATION_REVOKED',
+      'INVITATION_EXPIRED',
+      'INVITATION_NOT_ACCEPTED',
+      'EXTERNAL_COLLABORATORS_DISABLED',
+      'EXTERNAL_DOMAIN_NOT_ALLOWED',
+    ]);
+    if (status === 403 && !guestCodes.has(code)) return;
+    const message =
+      err instanceof Error ? err.message : 'セッションが失効しました';
+    const inferredGuest =
+      code.startsWith('GUEST_') ||
+      code.startsWith('INVITATION_') ||
+      code === 'EXTERNAL_COLLABORATORS_DISABLED' ||
+      code === 'EXTERNAL_DOMAIN_NOT_ALLOWED';
+    this.sessionError = {
+      status,
+      ...(code ? { code } : {}),
+      message,
+      userType: this.user?.userType ?? (inferredGuest ? 'guest' : null),
+    };
+    this.emit();
+  }
+
   /** Complete security purge of memory + IndexedDB + scope hint on logout, 401, or user switch. */
-  async purgeCurrentScope(): Promise<void> {
-    this.stopRealtime();
+  async purgeCurrentScope(): Promise<void> {    this.stopRealtime();
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;
