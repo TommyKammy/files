@@ -14,6 +14,7 @@ import {
   shouldHandleWorkspaceKey,
   toggleKeySelection,
 } from '@/lib/keyboard-shortcuts';
+import { handleWorkspaceNavigationKey } from '@/lib/keyboard/workspace-navigation';
 import type { WorkspaceClipboardStore } from '@/lib/workspace-clipboard';
 import { resolveContextSelection } from '@/lib/workspace-actions';
 import {
@@ -277,147 +278,31 @@ export function useWorkspaceKeyboard(ctx: WorkspaceKeyboardContext) {
 
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      const lower = e.key.toLowerCase();
-
-      const moveFocusTo = (nextIdx: number, extendRange: boolean) => {
-        const nextKey = orderedRowKeys[nextIdx];
-        if (!nextKey) return;
-        if (extendRange && !isTrashView) {
-          const anchor = selectionAnchorKey ?? focusedRowKey ?? nextKey;
-          if (!selectionAnchorKey) {
-            setSelectionAnchorKey(anchor);
-          }
-          setSelectedKeys(selectKeyRange(orderedRowKeys, anchor, nextKey));
-        } else if (!isTrashView) {
-          // Google Drive parity: a bare arrow moves focus and selection together.
-          setSelectedKeys(new Set([nextKey]));
-          setSelectionAnchorKey(nextKey);
-        }
-        setFocusedRowKey(nextKey);
-        scrollLinearRowIntoView(nextIdx);
-        virtualWindow.containerRef.current?.focus({ preventScroll: true });
-      };
-
-      if (e.key === 'ArrowDown' || lower === 'j') {
-        if (rows.length === 0) return;
-        e.preventDefault();
-        const nextIdx =
-          focusedRowIndex < 0 ? 0 : Math.min(rows.length - 1, focusedRowIndex + 1);
-        moveFocusTo(nextIdx, e.shiftKey);
-        return;
-      }
-
-      if (e.key === 'ArrowUp' || lower === 'k') {
-        if (rows.length === 0) return;
-        e.preventDefault();
-        const nextIdx =
-          focusedRowIndex < 0 ? 0 : Math.max(0, focusedRowIndex - 1);
-        moveFocusTo(nextIdx, e.shiftKey);
-        return;
-      }
-
-      if (e.key === 'Home') {
-        if (rows.length === 0) return;
-        e.preventDefault();
-        moveFocusTo(0, e.shiftKey);
-        return;
-      }
-
-      if (e.key === 'End') {
-        if (rows.length === 0) return;
-        e.preventDefault();
-        moveFocusTo(rows.length - 1, e.shiftKey);
-        return;
-      }
-
-      if (e.key === 'F2' || lower === 'r') {
-        if (isTrashView || !focusedRow || focusedRowIndex < 0) return;
-        e.preventDefault();
-        startInlineRename(focusedRow, focusedRowIndex);
-        return;
-      }
-
-      if (e.key === 'Backspace' || lower === 'h') {
-        if (isTrashView) return;
-        if (e.key === 'Backspace' && isInteractiveNonRowTarget(e.target)) return;
-        e.preventDefault();
-        navigateToParentFolder();
-        return;
-      }
-
-      if (e.key === 'Enter' || lower === 'l') {
-        if (e.key === 'Enter' && isInteractiveNonRowTarget(e.target)) return;
-        if (!focusedRow || isTrashView) return;
-        e.preventDefault();
-        if (focusedRow.kind === 'folder') {
-          router.push(
-            `/workspace?folderId=${encodeURIComponent(focusedRow.folder.id)}`
-          );
-        } else {
-          openPreviewForFile(focusedRow.file);
-        }
-        return;
-      }
-
-      if (e.key === ' ') {
-        if (isInteractiveNonRowTarget(e.target)) return;
-        if (isTrashView) return;
-        e.preventDefault();
-        if (focusedRow?.kind === 'file') {
-          openPreviewForFile(focusedRow.file);
-        }
-        return;
-      }
-
-      if (lower === 'x') {
-        if (isTrashView || !focusedRow || !isRowSelectable(focusedRow)) return;
-        e.preventDefault();
-        const key = getWorkspaceRowKey(focusedRow);
-        setSelectedKeys((prev) => toggleKeySelection(prev, key));
-        setSelectionAnchorKey(key);
-        return;
-      }
-
-      if (lower === 'm') {
-        if (isTrashView) return;
-        e.preventDefault();
-        handleOpenMoveCopyModal();
-        return;
-      }
-
-      if (lower === 'd') {
-        if (isTrashView || !canDownloadCurrentFolder) return;
-        const targetFile =
-          focusedRow?.kind === 'file'
-            ? focusedRow.file
-            : selectedRows.find((r): r is { kind: 'file'; file: FileItem } => r.kind === 'file')
-                ?.file;
-        if (targetFile && targetFile.upload_state !== 'pending' && !targetFile.optimistic) {
-          e.preventDefault();
-          void handleDownloadFile(targetFile.id);
-        }
-        return;
-      }
-
-      if (lower === 'i') {
-        if (isTrashView) return;
-        e.preventDefault();
-        setInspectorOpen((prev) => !prev);
-        return;
-      }
-
-      if (lower === 'v') {
-        if (isTrashView) return;
-        e.preventDefault();
-        handleToggleViewMode();
-        return;
-      }
-
-      if (lower === 's') {
-        if (isTrashView) return;
-        e.preventDefault();
-        openShareFromTarget();
-      }
+      handleWorkspaceNavigationKey(e, {
+        isTrashView,
+        rows,
+        focusedRowIndex,
+        focusedRow,
+        orderedRowKeys,
+        selectedRows,
+        selectionAnchorKey,
+        focusedRowKey,
+        canDownloadCurrentFolder,
+        setSelectedKeys,
+        setFocusedRowKey,
+        setSelectionAnchorKey,
+        scrollLinearRowIntoView,
+        virtualWindow,
+        router,
+        navigateToParentFolder,
+        openPreviewForFile,
+        startInlineRename,
+        handleOpenMoveCopyModal,
+        handleDownloadFile,
+        setInspectorOpen,
+        handleToggleViewMode,
+        openShareFromTarget,
+      });
     }
 
     window.addEventListener('keydown', handleWorkspaceKeyDown);
