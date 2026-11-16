@@ -47,6 +47,7 @@ export type ContextMenuActionId =
   | 'pin'
   | 'permissions'
   | 'inspector'
+  | 'versionHistory'
   | 'trash';
 
 export function WorkspaceContextMenu({
@@ -263,10 +264,10 @@ export function WorkspaceContextMenu({
             enabled: capabilities.canInspector,
           },
           {
-            id: 'inspector',
-            label: '版履歴（準備中）',
+            id: 'versionHistory',
+            label: '版履歴',
             icon: <History className="h-3.5 w-3.5" />,
-            enabled: false,
+            enabled: capabilities.canVersionHistory,
           },
           {
             id: 'inspector',

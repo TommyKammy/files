@@ -20,6 +20,7 @@ export interface FileLike {
   upload_state?: string;
   current_version_num?: number;
   meta_version?: number;
+  updated_at?: string;
   deleted_at?: string | null;
 }
 
@@ -268,6 +269,8 @@ export async function uploadFile(
     name: string;
     content: string | Buffer;
     mimeType?: string;
+    /** `new_version` appends to an existing same-name file instead of 409. */
+    conflictPolicy?: 'fail' | 'new_version';
   }
 ): Promise<FileLike> {
   const mimeType = input.mimeType ?? 'text/plain; charset=utf-8';
@@ -281,7 +284,7 @@ export async function uploadFile(
       fileName: input.name,
       mimeType,
       sizeBytes: body.byteLength,
-      conflictPolicy: 'fail',
+      conflictPolicy: input.conflictPolicy ?? 'fail',
     },
   });
   expect(initRes.status(), 'POST /api/files/upload-init should return 201').toBe(201);

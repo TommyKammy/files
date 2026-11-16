@@ -15,6 +15,8 @@ export interface PreviewTargetFile {
   mimeType: string | null;
   sizeBytes: number;
   classification: ClassificationLabel;
+  /** Set when previewing a historical version, e.g. `v1 (過去版)`. */
+  versionLabel?: string | null;
 }
 
 export interface PreResolvedPreviewGrant {
@@ -85,6 +87,14 @@ export function SecurePreviewModal({
             <h2 className="truncate text-sm font-semibold text-slate-900">
               {file.name}
             </h2>
+            {file.versionLabel && (
+              <span
+                data-testid="preview-version-label"
+                className="shrink-0 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-mono text-[0.625rem] font-semibold text-indigo-700"
+              >
+                {file.versionLabel}
+              </span>
+            )}
             <ClassificationBadge classification={file.classification} compact />
             <span className="text-xs text-slate-500">{formatBytes(file.sizeBytes)}</span>
           </div>

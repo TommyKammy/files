@@ -21,6 +21,7 @@ import type {
   ClassificationPickerState,
 } from '@/components/WorkspaceUtilityOverlays';
 import type { PreviewTargetFile } from '@/components/SecurePreviewModal';
+import type { VersionHistoryTarget } from '@/components/VersionHistoryModal';
 import type {
   ClassificationLabel,
   FileItem,
@@ -69,6 +70,10 @@ export function useWorkspaceDialogs({
     useState<ClassificationPickerState | null>(null);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [versionHistoryTarget, setVersionHistoryTarget] = useState<{
+    target: VersionHistoryTarget;
+    returnFocus: HTMLElement | null;
+  } | null>(null);
 
   const modalScopeTokenRef = useRef<string | null>(null);
   const openedPreviewParamRef = useRef<string | null>(null);
@@ -134,6 +139,32 @@ export function useWorkspaceDialogs({
       });
     },
     [canDownloadCurrentFolder, isTrashView, setFocusedRowKey]
+  );
+
+  const openVersionHistoryForFile = useCallback(
+    (file: FileItem, returnFocus: HTMLElement | null = null) => {
+      if (
+        file.optimistic ||
+        file.upload_state === 'pending' ||
+        isTrashView
+      ) {
+        return;
+      }
+      setFocusedRowKey(`file:${file.id}`);
+      setVersionHistoryTarget({
+        target: {
+          id: file.id,
+          name: file.name,
+          currentVersionNum: file.current_version_num,
+          metaVersion: file.meta_version ?? 1,
+          sizeBytes: file.size_bytes,
+          mimeType: file.mime_type,
+          classification: file.classification,
+        },
+        returnFocus,
+      });
+    },
+    [isTrashView, setFocusedRowKey]
   );
 
   // Deep link: /workspace?folderId=...&preview=<fileId> opens the preview once.
@@ -268,5 +299,8 @@ export function useWorkspaceDialogs({
     setShortcutsHelpOpen,
     inspectorOpen,
     setInspectorOpen,
+    versionHistoryTarget,
+    setVersionHistoryTarget,
+    openVersionHistoryForFile,
   };
 }

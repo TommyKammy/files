@@ -82,7 +82,8 @@ export function WorkspaceActionOverlays({
     action: ContextMenuActionId,
     row: ContextRowTarget,
     targets: ContextRowTarget[],
-    pasteDestId: string | undefined
+    pasteDestId: string | undefined,
+    returnFocus: HTMLElement | null
   ) => void;
   onCloseContextMenu: () => void;
   onBackgroundAction: (action: string) => void;
@@ -125,7 +126,8 @@ export function WorkspaceActionOverlays({
                 action,
                 contextMenu.row,
                 targets,
-                pasteDestId
+                pasteDestId,
+                contextMenu.trigger
               )
             }
             onClose={onCloseContextMenu}

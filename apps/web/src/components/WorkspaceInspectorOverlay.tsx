@@ -28,6 +28,7 @@ export function WorkspaceInspectorOverlay({
   onClose,
   onPreview,
   onDownload,
+  onOpenVersionHistory,
   onOpenClassification,
   onOpenShare,
   onOpenPermissions,
@@ -47,6 +48,10 @@ export function WorkspaceInspectorOverlay({
   onClose: () => void;
   onPreview: (file: FileItem) => void;
   onDownload: (fileId: string) => void;
+  onOpenVersionHistory: (
+    file: FileItem,
+    returnFocus?: HTMLElement | null
+  ) => void;
   onOpenClassification: (file: FileItem) => void;
   onOpenShare: (target: InspectorTarget) => void;
   onOpenPermissions: (target: InspectorTarget) => void;
@@ -85,6 +90,7 @@ export function WorkspaceInspectorOverlay({
       onClose={onClose}
       onPreview={onPreview}
       onDownload={onDownload}
+      onOpenVersionHistory={onOpenVersionHistory}
       onOpenClassification={onOpenClassification}
       onOpenShare={onOpenShare}
       onOpenPermissions={onOpenPermissions}

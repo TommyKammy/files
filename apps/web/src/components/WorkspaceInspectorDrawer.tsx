@@ -5,6 +5,7 @@ import {
   Eye,
   FileText,
   Folder,
+  History,
   Link2,
   Lock,
   Shield,
@@ -44,6 +45,7 @@ export function WorkspaceInspectorDrawer({
   onClose,
   onPreview,
   onDownload,
+  onOpenVersionHistory,
   onOpenClassification,
   onOpenShare,
   onOpenPermissions,
@@ -61,6 +63,10 @@ export function WorkspaceInspectorDrawer({
   onClose: () => void;
   onPreview: (file: FileItem) => void;
   onDownload: (fileId: string) => void;
+  onOpenVersionHistory: (
+    file: FileItem,
+    returnFocus?: HTMLElement | null
+  ) => void;
   onOpenClassification: (file: FileItem) => void;
   onOpenShare: (target: InspectorTarget) => void;
   onOpenPermissions: (target: InspectorTarget) => void;
@@ -253,6 +259,19 @@ export function WorkspaceInspectorDrawer({
           >
             <Eye className="h-3.5 w-3.5 text-blue-600" />
             <span>プレビュー (Enter / Space)</span>
+          </button>
+        )}
+        {!isFolder && hasRoleAtLeast(itemRole, 'previewer') && (
+          <button
+            type="button"
+            data-testid="inspector-open-version-history"
+            onClick={(event) =>
+              onOpenVersionHistory(target.file, event.currentTarget)
+            }
+            className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <History className="h-3.5 w-3.5 text-indigo-600" />
+            <span>版履歴を開く</span>
           </button>
         )}
         {!isFolder && canDownload && (

@@ -451,6 +451,34 @@ export interface SyncWsTicketResponse {
   expiresAt: string;
 }
 
+export type FileVersionUploadStatus = 'pending' | 'completed' | 'failed';
+
+/**
+ * Public historical-version shape returned by `GET /api/files/:id/versions`.
+ * `r2_object_key` is intentionally never exposed by the API.
+ */
+export interface FileVersionItem {
+  id: string;
+  versionNum: number;
+  sizeBytes: number;
+  mimeType: string;
+  uploadedBy: string;
+  uploadedByName: string | null;
+  createdAt: string;
+  uploadStatus: FileVersionUploadStatus;
+  isCurrent: boolean;
+  /** Present on the freshly created version returned by a restore. */
+  comment?: string | null;
+  restoredFromVersionId?: string | null;
+  restoredFromVersionNum?: number | null;
+}
+
+export interface FileVersionListResponse {
+  versions: FileVersionItem[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 export type FileLockMode = 'wopi_collab' | 'desktop_exclusive';
 
 export interface FileLockInfo {

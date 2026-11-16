@@ -137,6 +137,11 @@ dialog.modal-shell {
   background: transparent;
   color: inherit;
   overflow: visible;
+  overscroll-behavior: contain;
+}
+
+dialog.modal-shell::backdrop {
+  overscroll-behavior: contain;
 }
 
 dialog.modal-shell[open] {

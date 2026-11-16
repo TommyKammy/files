@@ -227,6 +227,8 @@ export interface ContextMenuCapabilities {
   canPermissions: boolean;
   canTrash: boolean;
   canInspector: boolean;
+  /** Single file, previewer+ (version list reads are previewer-gated). */
+  canVersionHistory: boolean;
 }
 
 export function buildContextMenuCapabilities(options: {
@@ -325,6 +327,10 @@ export function buildContextMenuCapabilities(options: {
       (isSysAdmin || hasRoleAtLeast(primaryRole, 'co_owner')),
     canTrash: allEditorPlus,
     canInspector: !isMulti && Boolean(primaryRow),
+    canVersionHistory:
+      !isMulti &&
+      primaryIsFile &&
+      hasRoleAtLeast(primaryRole, 'previewer'),
   };
 }
 

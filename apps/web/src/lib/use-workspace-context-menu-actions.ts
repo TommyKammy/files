@@ -36,6 +36,7 @@ export function useWorkspaceContextMenuActions({
   handleDuplicateTargets,
   handleOpenMoveCopyModal,
   onOpenWopiEditor,
+  onOpenVersionHistory,
   openCreateFolderModal,
   backgroundFileInputRef,
   backgroundFolderInputRef,
@@ -71,6 +72,10 @@ export function useWorkspaceContextMenuActions({
     modeHint?: 'move' | 'copy'
   ) => void;
   onOpenWopiEditor: (file: FileItem) => void;
+  onOpenVersionHistory: (
+    file: FileItem,
+    returnFocus?: HTMLElement | null
+  ) => void;
   openCreateFolderModal: () => void;
   backgroundFileInputRef: RefObject<HTMLInputElement | null>;
   backgroundFolderInputRef: RefObject<HTMLInputElement | null>;
@@ -124,7 +129,8 @@ export function useWorkspaceContextMenuActions({
       action: ContextMenuActionId,
       primary: WorkspaceTableRow | null,
       targets: WorkspaceTableRow[],
-      pasteDestId: string | null | undefined
+      pasteDestId: string | null | undefined,
+      returnFocus: HTMLElement | null = null
     ) => {
       switch (action) {
         case 'open':
@@ -265,6 +271,11 @@ export function useWorkspaceContextMenuActions({
             setInspectorOpen(true);
           }
           break;
+        case 'versionHistory':
+          if (primary?.kind === 'file') {
+            onOpenVersionHistory(primary.file, returnFocus);
+          }
+          break;
         case 'trash':
           for (const r of targets) {
             if (!canEditRow(r)) continue;
@@ -295,6 +306,7 @@ export function useWorkspaceContextMenuActions({
       handleDuplicateTargets,
       handleOpenMoveCopyModal,
       onOpenWopiEditor,
+      onOpenVersionHistory,
       canEditRow,
       handleTogglePin,
       resolveRowRole,

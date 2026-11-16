@@ -18,6 +18,7 @@ import { WorkspaceMainHeader } from '@/components/WorkspaceMainHeader';
 import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
 import { WorkspaceUtilityOverlays } from '@/components/WorkspaceUtilityOverlays';
+import { VersionHistoryModal } from '@/components/VersionHistoryModal';
 import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
 import { useWorkspaceContextMenuActions } from '@/lib/use-workspace-context-menu-actions';
 import { useWorkspacePaletteActions } from '@/lib/use-workspace-palette-actions';
@@ -350,6 +351,9 @@ export function WorkspaceFileBrowser() {
     setShortcutsHelpOpen,
     inspectorOpen,
     setInspectorOpen,
+    versionHistoryTarget,
+    setVersionHistoryTarget,
+    openVersionHistoryForFile,
   } = useWorkspaceDialogs({
     sortedFiles,
     files,
@@ -714,6 +718,7 @@ export function WorkspaceFileBrowser() {
       handleDuplicateTargets,
       handleOpenMoveCopyModal,
       onOpenWopiEditor: openFileOrEditor,
+      onOpenVersionHistory: openVersionHistoryForFile,
       openCreateFolderModal,
       backgroundFileInputRef,
       backgroundFolderInputRef,
@@ -1190,6 +1195,7 @@ export function WorkspaceFileBrowser() {
         onClose={() => setInspectorOpen(false)}
         onPreview={openFileOrEditor}
         onDownload={handleDownloadFile}
+        onOpenVersionHistory={openVersionHistoryForFile}
         onOpenClassification={(file) =>
           setClassificationPicker({ mode: 'single', file })
         }
@@ -1272,6 +1278,31 @@ export function WorkspaceFileBrowser() {
         onFolderNameChange={setFolderNameInput}
         onFolderClassChange={setFolderClassInput}
       />
+
+      {versionHistoryTarget && (
+        <VersionHistoryModal
+          file={versionHistoryTarget.target}
+          effectiveRole={effectiveRole}
+          canDownload={canDownloadCurrentFolder}
+          returnFocus={versionHistoryTarget.returnFocus}
+          onFileUpdated={(file) => syncStore.upsertFileInCache(file)}
+          onRestored={(result) => {
+            const nextLabel = result.version
+              ? `v${result.version.versionNum}`
+              : result.file?.current_version_num
+                ? `v${result.file.current_version_num}`
+                : '新しいバージョン';
+            syncStore.pushToast(
+              {
+                kind: 'info',
+                message: `v${result.restoredFromVersionNum} を復元しました。${nextLabel} として現在版を更新しました。`,
+              },
+              10_000
+            );
+          }}
+          onClose={() => setVersionHistoryTarget(null)}
+        />
+      )}
 
       <WorkspaceToastStack
         toasts={snapshot.toasts}
