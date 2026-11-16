@@ -8,123 +8,24 @@ import {
   ShieldCheck,
   UploadCloud,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import {
-  ApiClientError,
-  getPublicFileRequestMeta,
-  uploadToPublicFileRequest,
-} from '@/lib/files-api';
+import { usePublicFileRequestUploader } from '@/lib/use-public-file-request-uploader';
 import { formatBytes, formatDateTime } from '@/lib/formatters';
-import type { PublicFileRequestMeta } from '@/types/files';
-
-interface SubmittedRecord {
-  id: string;
-  fileName: string;
-  sizeBytes: number;
-  status: 'uploading' | 'done' | 'error';
-  percent: number;
-  submittedAt?: string;
-  errorMessage?: string;
-}
 
 export function PublicFileRequestUploader({ token }: { token: string }) {
-  const [meta, setMeta] = useState<PublicFileRequestMeta | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  const [submitterEmail, setSubmitterEmail] = useState('');
-  const [turnstileToken, setTurnstileToken] = useState('');
-  const [dragging, setDragging] = useState(false);
-  const [submissions, setSubmissions] = useState<SubmittedRecord[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setLoading(true);
-    setLoadError(null);
-    getPublicFileRequestMeta(token)
-      .then((res) => setMeta(res))
-      .catch((err) => {
-        setLoadError(
-          err instanceof ApiClientError
-            ? err.message
-            : 'ファイル収集リンクの読み込みに失敗しました'
-        );
-      })
-      .finally(() => setLoading(false));
-  }, [token]);
-
-  async function handleFiles(fileList: FileList | null) {
-    if (!meta || !fileList || fileList.length === 0) return;
-    if (meta.requireSubmitterEmail && !submitterEmail.trim()) {
-      setSubmissions((prev) => [
-        {
-          id: crypto.randomUUID(),
-          fileName: fileList[0].name,
-          sizeBytes: fileList[0].size,
-          status: 'error',
-          percent: 0,
-          errorMessage: '送信前にメールアドレスを入力してください。',
-        },
-        ...prev,
-      ]);
-      return;
-    }
-
-    for (const file of Array.from(fileList)) {
-      const recId = crypto.randomUUID();
-      setSubmissions((prev) => [
-        {
-          id: recId,
-          fileName: file.name,
-          sizeBytes: file.size,
-          status: 'uploading',
-          percent: 0,
-        },
-        ...prev,
-      ]);
-
-      try {
-        const res = await uploadToPublicFileRequest({
-          token,
-          file,
-          submitterEmail,
-          turnstileToken: meta.turnstileEnabled ? turnstileToken : undefined,
-          onProgress: (percent) => {
-            setSubmissions((prev) =>
-              prev.map((s) => (s.id === recId ? { ...s, percent } : s))
-            );
-          },
-        });
-        setSubmissions((prev) =>
-          prev.map((s) =>
-            s.id === recId
-              ? {
-                  ...s,
-                  status: 'done',
-                  percent: 100,
-                  submittedAt: res.submittedAt,
-                }
-              : s
-          )
-        );
-      } catch (err) {
-        setSubmissions((prev) =>
-          prev.map((s) =>
-            s.id === recId
-              ? {
-                  ...s,
-                  status: 'error',
-                  errorMessage:
-                    err instanceof ApiClientError
-                      ? err.message
-                      : 'ファイルのアップロードに失敗しました',
-                }
-              : s
-          )
-        );
-      }
-    }
-  }
+  const {
+    meta,
+    loading,
+    loadError,
+    submitterEmail,
+    setSubmitterEmail,
+    turnstileToken,
+    setTurnstileToken,
+    dragging,
+    setDragging,
+    submissions,
+    fileInputRef,
+    handleFiles,
+  } = usePublicFileRequestUploader({ token });
 
   return (
     <main className="min-h-screen bg-[#efeff1] px-4 py-12 text-slate-900">
