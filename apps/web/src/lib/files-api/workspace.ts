@@ -8,6 +8,9 @@ import type {
   FolderSummary,
   ResourceRole,
   SearchResultItem,
+  TrashBulkItemRef,
+  TrashBulkResponse,
+  TrashEmptyResponse,
   TrashListResponse,
   TrashSort,
   TrashTypeFilter,
@@ -76,6 +79,37 @@ export function listTrash(params: {
       sort: params.sort ?? 'deletedAt_desc',
     })}`
   );
+}
+
+/** POST /api/trash/restore — per-item bulk restore (max 100 items per call). */
+export function restoreTrashItems(payload: {
+  items: TrashBulkItemRef[];
+  conflictPolicy?: 'fail' | 'rename';
+}): Promise<TrashBulkResponse> {
+  return apiFetch<TrashBulkResponse>('/api/trash/restore', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** DELETE /api/trash/items — per-item permanent deletion (max 100 items). */
+export function purgeTrashItems(payload: {
+  items: TrashBulkItemRef[];
+}): Promise<TrashBulkResponse> {
+  return apiFetch<TrashBulkResponse>('/api/trash/items', {
+    method: 'DELETE',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** POST /api/trash/empty — destructive empty with mandatory confirmation. */
+export function emptyTrash(payload: {
+  confirm: 'EMPTY_TRASH';
+}): Promise<TrashEmptyResponse> {
+  return apiFetch<TrashEmptyResponse>('/api/trash/empty', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function createFolder(payload: {

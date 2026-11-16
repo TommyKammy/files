@@ -173,6 +173,18 @@ export async function listAuthorizedSyncDeltas(
               sc.entity_type = 'user'
               AND (sc.target_user_id = ? OR ? = 1)
             )
+            -- Purge invalidations are tenant-scoped on purpose: their rows are
+            -- written after permissions/folder closures are deleted, so the
+            -- normal RBAC joins can no longer authorize them. Payloads contain
+            -- only ids/timestamps/counts, never file names or classifications.
+            OR (
+              sc.entity_type = 'folder'
+              AND sc.action = 'folder.purged'
+            )
+            OR (
+              sc.entity_type = 'file'
+              AND sc.action = 'file.purged'
+            )
             OR (
               sc.entity_type = 'folder'
               AND EXISTS (

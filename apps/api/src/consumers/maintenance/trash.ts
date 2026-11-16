@@ -1,20 +1,12 @@
-import type { ClassificationLabel } from '../../types/api';
-import { chunkArray, executeBatchChunks } from '../../utils/batch';
+import { chunkArray } from '../../utils/batch';
 import {
-  buildInClauseDeleteStmts,
-  deleteR2ObjectsAndAbortMultipart,
-  fetchVersionObjectsForFiles,
-} from './r2-gc';
+  purgeFileRows,
+  purgeFolderRows,
+  type PurgeFileRow,
+} from '../../services/trash-purge';
 
 const TRASH_FILE_BATCH_SIZE = 100;
 const TRASH_FOLDER_BATCH_SIZE = 50;
-
-interface ExpiredTrashFileRow {
-  id: string;
-  classification: ClassificationLabel;
-  size_bytes: number;
-  upload_state: 'pending' | 'active' | 'failed';
-}
 
 interface ExpiredTrashFolderRow {
   id: string;
@@ -41,16 +33,16 @@ export async function purgeExpiredTrashForTenant(
   const candidateFolderIds = expiredFoldersRes.results.map((r) => r.id);
 
   // Gather expired trashed files directly marked deleted <= cutoffIso
-  const expiredFilesMap = new Map<string, ExpiredTrashFileRow>();
+  const expiredFilesMap = new Map<string, PurgeFileRow>();
   const directExpiredRes = await db
     .prepare(
-      `SELECT id, classification, size_bytes, upload_state
+      `SELECT id, folder_id, classification, size_bytes, upload_state
          FROM files
         WHERE tenant_id = ? AND deleted_at IS NOT NULL AND deleted_at <= ?
         LIMIT ?`
     )
     .bind(tenantId, cutoffIso, TRASH_FILE_BATCH_SIZE)
-    .all<ExpiredTrashFileRow>();
+    .all<PurgeFileRow>();
   for (const row of directExpiredRes.results) {
     expiredFilesMap.set(row.id, row);
   }
@@ -63,13 +55,13 @@ export async function purgeExpiredTrashForTenant(
       const placeholders = fChunk.map(() => '?').join(', ');
       const folderFilesRes = await db
         .prepare(
-          `SELECT id, classification, size_bytes, upload_state
+          `SELECT id, folder_id, classification, size_bytes, upload_state
              FROM files
             WHERE tenant_id = ? AND folder_id IN (${placeholders})
             LIMIT ?`
         )
         .bind(tenantId, ...fChunk, remaining)
-        .all<ExpiredTrashFileRow>();
+        .all<PurgeFileRow>();
       for (const row of folderFilesRes.results) {
         expiredFilesMap.set(row.id, row);
       }
@@ -77,49 +69,13 @@ export async function purgeExpiredTrashForTenant(
   }
 
   const expiredFiles = [...expiredFilesMap.values()];
-  const expiredFileIds = expiredFiles.map((f) => f.id);
-
-  if (expiredFileIds.length > 0) {
-    const versions = await fetchVersionObjectsForFiles(db, expiredFileIds);
-    await deleteR2ObjectsAndAbortMultipart(db, bucket, versions);
-
-    // Track stats deltas only for files whose upload had reached 'active'
-    const statsDelta = new Map<ClassificationLabel, { count: number; bytes: number }>();
-    for (const f of expiredFiles) {
-      if (f.upload_state !== 'active') continue;
-      const prev = statsDelta.get(f.classification) ?? { count: 0, bytes: 0 };
-      statsDelta.set(f.classification, {
-        count: prev.count + 1,
-        bytes: prev.bytes + f.size_bytes,
-      });
-    }
-
-    const stmts: D1PreparedStatement[] = [
-      ...expiredFileIds.map((fid) =>
-        db.prepare('DELETE FROM files_fts WHERE file_id = ?').bind(fid)
-      ),
-      ...buildInClauseDeleteStmts(db, 'permissions', 'target_id', expiredFileIds, "target_type = 'file'"),
-      ...buildInClauseDeleteStmts(db, 'shared_links', 'target_id', expiredFileIds, "target_type = 'file'"),
-      ...buildInClauseDeleteStmts(db, 'file_versions', 'file_id', expiredFileIds),
-      ...buildInClauseDeleteStmts(db, 'files', 'id', expiredFileIds),
-    ];
-
-    for (const [classification, delta] of statsDelta.entries()) {
-      stmts.push(
-        db
-          .prepare(
-            `UPDATE tenant_storage_stats
-                SET file_count = MAX(0, file_count - ?),
-                    total_bytes = MAX(0, total_bytes - ?),
-                    updated_at = ?
-              WHERE tenant_id = ? AND classification = ?`
-          )
-          .bind(delta.count, delta.bytes, nowIso, tenantId, classification)
-      );
-    }
-
-    await executeBatchChunks(db, stmts);
-  }
+  const { filesPurged } = await purgeFileRows({
+    db,
+    bucket,
+    tenantId,
+    files: expiredFiles,
+    nowIso,
+  });
 
   // Only delete expired folders that have no remaining child folders or files
   const safeFolderIds: string[] = [];
@@ -138,22 +94,7 @@ export async function purgeExpiredTrashForTenant(
     }
   }
 
-  if (safeFolderIds.length > 0) {
-    const folderStmts: D1PreparedStatement[] = [
-      ...buildInClauseDeleteStmts(db, 'permissions', 'target_id', safeFolderIds, "target_type = 'folder'"),
-      ...buildInClauseDeleteStmts(db, 'shared_links', 'target_id', safeFolderIds, "target_type = 'folder'"),
-      ...safeFolderIds.map((fid) =>
-        db
-          .prepare('DELETE FROM folder_closures WHERE ancestor_id = ? OR descendant_id = ?')
-          .bind(fid, fid)
-      ),
-      ...buildInClauseDeleteStmts(db, 'folders', 'id', safeFolderIds),
-    ];
-    await executeBatchChunks(db, folderStmts);
-  }
+  const foldersPurged = await purgeFolderRows(db, safeFolderIds);
 
-  return {
-    filesPurged: expiredFileIds.length,
-    foldersPurged: safeFolderIds.length,
-  };
+  return { filesPurged, foldersPurged };
 }

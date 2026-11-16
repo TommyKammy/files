@@ -1,5 +1,8 @@
 import { Hono } from 'hono';
-import { getAuthenticatedUser } from '../../services/authorization';
+import {
+  ROLE_RANK_SQL,
+  getAuthenticatedUser,
+} from '../../services/authorization';
 import { base64UrlToBytes, bytesToBase64Url } from '../../services/crypto-utils';
 import type { ClassificationLabel } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
@@ -49,6 +52,7 @@ interface TrashDbRow {
   created_at: string;
   updated_at: string;
   deleted_by_name: string | null;
+  effective_role: 'owner' | 'co_owner' | 'editor' | 'viewer' | 'previewer' | null;
 }
 
 interface TrashCursor {
@@ -106,25 +110,32 @@ const TRASH_FOLDER_UNION_SQL = `
          f.deleted_by AS deleted_by,
          f.created_at AS created_at,
          f.updated_at AS updated_at,
-         u.display_name AS deleted_by_name
+         u.display_name AS deleted_by_name,
+         CASE (
+           SELECT MAX(${ROLE_RANK_SQL})
+             FROM folder_closures fc
+             JOIN permissions p
+               ON p.tenant_id = f.tenant_id
+              AND p.target_type = 'folder'
+              AND p.target_id = fc.ancestor_id
+            WHERE fc.tenant_id = f.tenant_id
+              AND fc.descendant_id = f.id
+              AND ${TRASH_GRANTEE_MATCH_SQL}
+         )
+           WHEN 5 THEN 'owner'
+           WHEN 4 THEN 'co_owner'
+           WHEN 3 THEN 'editor'
+           WHEN 2 THEN 'viewer'
+           WHEN 1 THEN 'previewer'
+           ELSE NULL
+         END AS effective_role
     FROM folders f
     LEFT JOIN users u
       ON u.id = f.deleted_by AND u.tenant_id = f.tenant_id
     LEFT JOIN folders pf ON pf.id = f.parent_id
    WHERE f.tenant_id = ?
      AND f.deleted_at IS NOT NULL
-     AND (f.parent_id IS NULL OR pf.deleted_at IS NULL)
-     AND EXISTS (
-       SELECT 1
-         FROM folder_closures fc
-         JOIN permissions p
-           ON p.tenant_id = f.tenant_id
-          AND p.target_type = 'folder'
-          AND p.target_id = fc.ancestor_id
-        WHERE fc.tenant_id = f.tenant_id
-          AND fc.descendant_id = f.id
-          AND ${TRASH_GRANTEE_MATCH_SQL}
-     )`;
+     AND (f.parent_id IS NULL OR pf.deleted_at IS NULL)`;
 
 /**
  * Accessible top-level soft-deleted active files.
@@ -154,7 +165,33 @@ const TRASH_FILE_UNION_SQL = `
          fl.deleted_by AS deleted_by,
          fl.created_at AS created_at,
          fl.updated_at AS updated_at,
-         u.display_name AS deleted_by_name
+         u.display_name AS deleted_by_name,
+         CASE (
+           SELECT MAX(${ROLE_RANK_SQL})
+             FROM permissions p
+            WHERE p.tenant_id = fl.tenant_id
+              AND (
+                (p.target_type = 'file' AND p.target_id = fl.id)
+                OR (
+                  p.target_type = 'folder'
+                  AND fl.folder_id IS NOT NULL
+                  AND p.target_id IN (
+                    SELECT fc.ancestor_id
+                      FROM folder_closures fc
+                     WHERE fc.tenant_id = fl.tenant_id
+                       AND fc.descendant_id = fl.folder_id
+                  )
+                )
+              )
+              AND ${TRASH_GRANTEE_MATCH_SQL}
+         )
+           WHEN 5 THEN 'owner'
+           WHEN 4 THEN 'co_owner'
+           WHEN 3 THEN 'editor'
+           WHEN 2 THEN 'viewer'
+           WHEN 1 THEN 'previewer'
+           ELSE NULL
+         END AS effective_role
     FROM files fl
     LEFT JOIN users u
       ON u.id = fl.deleted_by AND u.tenant_id = fl.tenant_id
@@ -162,32 +199,22 @@ const TRASH_FILE_UNION_SQL = `
    WHERE fl.tenant_id = ?
      AND fl.upload_state = 'active'
      AND fl.deleted_at IS NOT NULL
-     AND (fl.folder_id IS NULL OR pf.deleted_at IS NULL)
-     AND EXISTS (
-       SELECT 1
-         FROM permissions p
-        WHERE p.tenant_id = fl.tenant_id
-          AND (
-            (p.target_type = 'file' AND p.target_id = fl.id)
-            OR (
-              p.target_type = 'folder'
-              AND fl.folder_id IS NOT NULL
-              AND p.target_id IN (
-                SELECT fc.ancestor_id
-                  FROM folder_closures fc
-                 WHERE fc.tenant_id = fl.tenant_id
-                   AND fc.descendant_id = fl.folder_id
-              )
-            )
-          )
-          AND ${TRASH_GRANTEE_MATCH_SQL}
-     )`;
+     AND (fl.folder_id IS NULL OR pf.deleted_at IS NULL)`;
 
 const TRASH_UNION_SQL = `${TRASH_FOLDER_UNION_SQL} UNION ALL ${TRASH_FILE_UNION_SQL}`;
 
 /** Bindings for TRASH_UNION_SQL in prepared-statement order. */
 function trashUnionBindings(user: { tenantId: string; id: string }): string[] {
-  return [user.tenantId, user.id, user.id, user.tenantId, user.id, user.id];
+  // Each union branch binds the effective-role grantee predicate first
+  // (SELECT clause) and then the tenant id (WHERE clause).
+  return [
+    user.id,
+    user.id,
+    user.tenantId,
+    user.id,
+    user.id,
+    user.tenantId,
+  ];
 }
 
 function encodeTrashCursor(cursor: TrashCursor): string {
@@ -304,6 +331,8 @@ function toTrashItem(
   return {
     ...rest,
     type: itemType,
+    effectiveRole: row.effective_role,
+    effective_role: row.effective_role,
     // snake_case stays for existing consumers, camelCase is the documented
     // Trash UI contract.
     deleted_at: row.deleted_at,
@@ -445,6 +474,7 @@ export function registerFolderTrashRoutes(routes: Hono<OidcHonoEnv>) {
       SELECT *
         FROM (${TRASH_UNION_SQL}) t
        WHERE 1 = 1
+         AND t.effective_role IS NOT NULL
          ${whereSql.join('\n         ')}
        ORDER BY ${buildTrashOrderBy(sort)}
        LIMIT ?`;
@@ -461,6 +491,7 @@ export function registerFolderTrashRoutes(routes: Hono<OidcHonoEnv>) {
       c.env.DB.prepare(
         `SELECT DISTINCT t.deleted_by AS id, t.deleted_by_name AS name
            FROM (${TRASH_UNION_SQL}) t
+          WHERE t.effective_role IS NOT NULL
           ORDER BY t.deleted_by_name ASC, t.deleted_by ASC`
       )
         .bind(...rbacBindings)

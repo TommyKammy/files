@@ -51,7 +51,7 @@ export function handleWorkspaceNavigationKey(
   const moveFocusTo = (nextIdx: number, extendRange: boolean) => {
     const nextKey = ctx.orderedRowKeys[nextIdx];
     if (!nextKey) return;
-    if (extendRange && !ctx.isTrashView) {
+    if (extendRange) {
       const anchor =
         ctx.selectionAnchorKey ?? ctx.focusedRowKey ?? nextKey;
       if (!ctx.selectionAnchorKey) {
@@ -60,7 +60,7 @@ export function handleWorkspaceNavigationKey(
       ctx.setSelectedKeys(
         selectKeyRange(ctx.orderedRowKeys, anchor, nextKey)
       );
-    } else if (!ctx.isTrashView) {
+    } else {
       ctx.setSelectedKeys(new Set([nextKey]));
       ctx.setSelectionAnchorKey(nextKey);
     }
@@ -142,20 +142,22 @@ export function handleWorkspaceNavigationKey(
 
   if (e.key === ' ') {
     if (isInteractiveNonRowTarget(e.target)) return false;
-    if (ctx.isTrashView) return false;
+    if (!ctx.focusedRow || !isRowSelectable(ctx.focusedRow)) return false;
     e.preventDefault();
-    if (ctx.focusedRow?.kind === 'file') {
+    if (ctx.isTrashView) {
+      const key = getWorkspaceRowKey(ctx.focusedRow);
+      ctx.setSelectedKeys((prev) => toggleKeySelection(prev, key));
+      ctx.setSelectionAnchorKey(key);
+      return true;
+    }
+    if (ctx.focusedRow.kind === 'file') {
       ctx.openPreviewForFile(ctx.focusedRow.file);
     }
     return true;
   }
 
   if (lower === 'x') {
-    if (
-      ctx.isTrashView ||
-      !ctx.focusedRow ||
-      !isRowSelectable(ctx.focusedRow)
-    ) {
+    if (!ctx.focusedRow || !isRowSelectable(ctx.focusedRow)) {
       return false;
     }
     e.preventDefault();

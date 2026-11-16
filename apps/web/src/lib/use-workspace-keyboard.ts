@@ -158,7 +158,6 @@ export function useWorkspaceKeyboard(ctx: WorkspaceKeyboardContext) {
       }
 
       if (
-        !isTrashView &&
         (e.metaKey || e.ctrlKey) &&
         !e.shiftKey &&
         !e.altKey &&

@@ -35,6 +35,64 @@ function removeFromIdList(list: string[], id: string): string[] {
 }
 
 /**
+ * Purging a folder removes the whole subtree from the server. Directory
+ * eviction already handles visible caches; also drop descendant folder/file
+ * metadata so content-visibility and inspector lookups cannot resurrect rows.
+ */
+function purgeFolderSubtreeMetadata(
+  ctx: DeltaCacheContext,
+  rootFolderId: string
+): void {
+  const removedFolderIds = new Set<string>([rootFolderId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [id, folder] of ctx.foldersById) {
+      if (
+        !removedFolderIds.has(id) &&
+        folder.parent_id !== null &&
+        removedFolderIds.has(folder.parent_id)
+      ) {
+        removedFolderIds.add(id);
+        changed = true;
+      }
+    }
+    for (const [key, dir] of ctx.directoriesByKey) {
+      if (removedFolderIds.has(key)) continue;
+      if (
+        (dir.folderId !== null && removedFolderIds.has(dir.folderId)) ||
+        dir.breadcrumbs.some((crumb) => removedFolderIds.has(crumb.id))
+      ) {
+        removedFolderIds.add(key);
+        changed = true;
+      }
+    }
+  }
+
+  const removedFileIds = new Set<string>();
+  for (const [id, file] of ctx.filesById) {
+    if (file.folder_id !== null && removedFolderIds.has(file.folder_id)) {
+      removedFileIds.add(id);
+      ctx.filesById.delete(id);
+    }
+  }
+  for (const id of removedFolderIds) {
+    ctx.foldersById.delete(id);
+  }
+  ctx.rootFolderIds = ctx.rootFolderIds.filter(
+    (id) => !removedFolderIds.has(id)
+  );
+  ctx.pinnedFolderIds = ctx.pinnedFolderIds.filter(
+    (id) => !removedFolderIds.has(id)
+  );
+
+  for (const dir of ctx.directoriesByKey.values()) {
+    dir.folderIds = dir.folderIds.filter((id) => !removedFolderIds.has(id));
+    dir.fileIds = dir.fileIds.filter((id) => !removedFileIds.has(id));
+  }
+}
+
+/**
  * Shared projection for `file.version_finalized` (WOPI save) and
  * `file.version_restored` (historical version restore): both replace the
  * current version pointer, size, MIME type and optimistic `meta_version`.
@@ -297,6 +355,18 @@ export function applyDeltaChangesToCache(
         continue;
       }
 
+      if (change.action === 'folder.purged') {
+        purgeFolderSubtreeMetadata(ctx, change.entityId);
+        const hitActive = ctx.evictSubtreeFromCache(change.entityId);
+        if (hitActive) {
+          ctx.setActiveDirectoryNotice(
+            'このフォルダは完全削除されました'
+          );
+          shouldRevalidateActive = true;
+        }
+        continue;
+      }
+
       if (change.action === 'folder.restore') {
         const folder = p.folder as FolderSummary | undefined;
         if (folder) {
@@ -324,6 +394,22 @@ export function applyDeltaChangesToCache(
         );
         if (dir) {
           dir.fileIds = removeFromIdList(dir.fileIds, change.entityId);
+        }
+        continue;
+      }
+
+      if (change.action === 'file.purged') {
+        ctx.filesById.delete(change.entityId);
+        const dir = ctx.directoriesByKey.get(
+          dirKeyForDeltaFolder(change.folderId)
+        );
+        if (dir) {
+          dir.fileIds = removeFromIdList(dir.fileIds, change.entityId);
+        }
+        if (
+          dirKeyForDeltaFolder(change.folderId) === ctx.activeDirKey
+        ) {
+          shouldRevalidateActive = true;
         }
         continue;
       }

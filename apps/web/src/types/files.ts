@@ -91,6 +91,7 @@ export interface FileItem {
   upload_state?: 'pending' | 'active' | 'failed';
   upload_progress?: number;
   optimistic?: boolean;
+  effectiveRole?: ResourceRole;
 }
 
 export interface FolderChildrenResponse {
@@ -183,6 +184,43 @@ export interface TrashListResponse {
   trashRetentionDays: number;
   deleters: TrashDeleter[];
   hasUnknownDeleter: boolean;
+}
+
+export interface TrashBulkItemRef {
+  type: TrashItemType;
+  id: string;
+}
+
+export type TrashBulkItemStatus = 'succeeded' | 'failed' | 'skipped';
+
+export interface TrashBulkItemResult {
+  type: TrashItemType;
+  id: string;
+  ok: boolean;
+  status: TrashBulkItemStatus;
+  name?: string;
+  code?: string;
+  error?: string;
+  purgedFileCount?: number;
+  purgedFolderCount?: number;
+  file?: FileItem;
+  folder?: FolderSummary;
+}
+
+export interface TrashBulkResponse {
+  ok: boolean;
+  results: TrashBulkItemResult[];
+  succeededCount: number;
+  failedCount: number;
+  skippedCount?: number;
+}
+
+export interface TrashEmptyResponse {
+  ok: boolean;
+  deletedCount: number;
+  failedCount: number;
+  skippedCount: number;
+  results: TrashBulkItemResult[];
 }
 
 export interface BootstrapResponse {

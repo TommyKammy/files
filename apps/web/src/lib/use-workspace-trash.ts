@@ -189,6 +189,7 @@ export function useWorkspaceTrash() {
     clearFilters,
     retry,
     updateFile,
+    removeItem,
     removeFolder,
     removeFile,
   };

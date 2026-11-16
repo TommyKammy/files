@@ -11,6 +11,8 @@ import { WorkspaceInspectorOverlay } from '@/components/WorkspaceInspectorOverla
 import { WorkspaceFileListSection } from '@/components/WorkspaceFileListSection';
 import { WorkspaceItemCard } from '@/components/WorkspaceItemCard';
 import { WorkspaceItemRow } from '@/components/WorkspaceItemRow';
+import { WorkspaceTrashBulkBar } from '@/components/WorkspaceTrashBulkBar';
+import { WorkspaceTrashBulkDialogs } from '@/components/WorkspaceTrashBulkDialogs';
 import { WorkspaceActionOverlays } from '@/components/WorkspaceActionOverlays';
 import { WorkspaceClipboardBar } from '@/components/WorkspaceClipboardBar';
 import { WorkspaceManagementModals } from '@/components/WorkspaceManagementModals';
@@ -40,6 +42,8 @@ import { useWorkspaceDialogs } from '@/lib/use-workspace-dialogs';
 import { useWorkspaceInlineRename } from '@/lib/use-workspace-inline-rename';
 import { useWorkspaceKeyboard } from '@/lib/use-workspace-keyboard';
 import { useWorkspaceSelection } from '@/lib/use-workspace-selection';
+import { useWorkspaceTrashBulkActions } from '@/lib/use-workspace-trash-bulk-actions';
+import { getTrashBulkCapabilities } from '@/lib/trash-bulk';
 import { useWorkspaceUploads } from '@/lib/use-workspace-uploads';
 import { useWorkspaceVirtualization } from '@/lib/use-workspace-virtualization';
 import { describeWorkspaceRow } from '@/lib/workspace-row-presentation';
@@ -60,7 +64,7 @@ import {
   sortWorkspaceFoldersAndFiles,
   type WorkspaceSortField,
 } from '@/lib/workspace-sort-and-view';
-import type { FileItem, ResourceRole, SearchResultItem } from '@/types/files';
+import type { FileItem, ResourceRole, SearchResultItem, TrashItem } from '@/types/files';
 
 function collectDragItemsForRow(
   row: WorkspaceTableRow,
@@ -360,6 +364,38 @@ export function WorkspaceFileBrowser() {
     setSelectedKeys,
     selectionAnchorKey,
     setSelectionAnchorKey,
+  });
+
+  const [trashConflictPolicy, setTrashConflictPolicy] = useState<
+    'fail' | 'rename'
+  >('rename');
+  const selectedTrashItems = useMemo<TrashItem[]>(
+    () =>
+      isTrashView
+        ? selectedRows.map((row) =>
+            row.kind === 'folder'
+              ? (row.folder as TrashItem)
+              : (row.file as TrashItem)
+          )
+        : [],
+    [isTrashView, selectedRows]
+  );
+  const selectedTrashCapabilities = useMemo(
+    () => getTrashBulkCapabilities(selectedTrashItems, user),
+    [selectedTrashItems, user]
+  );
+  const currentTrashCapabilities = useMemo(
+    () => getTrashBulkCapabilities(trash.items, user),
+    [trash.items, user]
+  );
+  const trashBulk = useWorkspaceTrashBulkActions({
+    syncStore,
+    selectedItems: selectedTrashItems,
+    allItems: trash.items,
+    removeTrashItem: trash.removeItem,
+    reloadTrash: trash.retry,
+    resetTrashView: trash.clearFilters,
+    setSelectedKeys,
   });
 
   const {
@@ -928,7 +964,7 @@ export function WorkspaceFileBrowser() {
               globalIdx={globalIdx}
               isFocused={focusedRowKey === rowKey}
               isSelected={selectedKeys.has(rowKey)}
-              rowSelectable={!isTrashView && isRowSelectable(row)}
+              rowSelectable={isRowSelectable(row)}
               isTrashView={isTrashView}
               isInlineRenaming={inlineRename?.rowKey === rowKey}
               isPendingUpload={isPendingUpload}
@@ -994,7 +1030,7 @@ export function WorkspaceFileBrowser() {
                         globalIdx={globalIdx}
                         isFocused={focusedRowKey === rowKey}
                         isSelected={selectedKeys.has(rowKey)}
-                        rowSelectable={!isTrashView && isRowSelectable(row)}
+                        rowSelectable={isRowSelectable(row)}
                         isTrashView={isTrashView}
                         isInlineRenaming={inlineRename?.rowKey === rowKey}
                         isContextMenuOpen={
@@ -1131,6 +1167,32 @@ export function WorkspaceFileBrowser() {
           onTrash={trashSelectedOrFocused}
           onClearSelection={() => setSelectedKeys(new Set())}
         />
+
+        {isTrashView && (
+          <WorkspaceTrashBulkBar
+            selectedCount={selectedRows.length}
+            restorableCount={selectedTrashCapabilities.restorableCount}
+            purgableCount={selectedTrashCapabilities.purgableCount}
+            hasTrashItems={
+              trash.loaded &&
+              (trash.items.length > 0 || trash.hasMore || trashFilterActive)
+            }
+            busyAction={trashBulk.busyAction}
+            conflictPolicy={trashConflictPolicy}
+            onConflictPolicyChange={setTrashConflictPolicy}
+            onRestore={() => {
+              void trashBulk.requestRestore(trashConflictPolicy);
+            }}
+            onPurge={trashBulk.requestPurge}
+            onEmpty={() =>
+              trashBulk.requestEmpty(currentTrashCapabilities.purgableCount)
+            }
+            onClearSelection={() => {
+              setSelectedKeys(new Set());
+              setSelectionAnchorKey(null);
+            }}
+          />
+        )}
 
         {isTrashView && (
           <WorkspaceTrashFilters
@@ -1341,6 +1403,17 @@ export function WorkspaceFileBrowser() {
             onClear={() => clipboardStore.clear()}
           />
         )}
+
+      <WorkspaceTrashBulkDialogs
+        confirmState={trashBulk.confirmState}
+        resultState={trashBulk.resultState}
+        busy={trashBulk.isBusy}
+        onConfirm={() => {
+          void trashBulk.confirmPendingAction();
+        }}
+        onCancel={trashBulk.cancelConfirm}
+        onCloseResult={trashBulk.closeResult}
+      />
 
       <WorkspaceManagementModals
         activeModal={activeModal}

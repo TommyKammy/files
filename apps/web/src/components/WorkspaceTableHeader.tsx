@@ -29,7 +29,7 @@ export function WorkspaceTableHeader({
     <thead className="sticky top-0 z-10 border-b border-[#ededf0] bg-[#fbfbfc]/95 text-[0.6875rem] font-medium tracking-normal text-[#6b6f76] backdrop-blur-xs">
       <tr aria-rowindex={1}>
         <th scope="col" className="w-10 px-3 py-2">
-          {!isTrashView && selectableRowKeys.length > 0 && (
+          {selectableRowKeys.length > 0 && (
             <WorkspaceSelectionCheckbox
               checked={
                 selectedRowCount > 0 &&

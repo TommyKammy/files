@@ -93,7 +93,7 @@ export function useWorkspaceSelection({
       row: WorkspaceTableRow,
       rowKey: string
     ) => {
-      if (!isRowSelectable(row) || isTrashView) return;
+      if (!isRowSelectable(row)) return;
       setFocusedRowKey(rowKey);
       if (event.shiftKey && selectionAnchorKey) {
         setSelectedKeys(
@@ -104,7 +104,7 @@ export function useWorkspaceSelection({
         setSelectionAnchorKey(rowKey);
       }
     },
-    [isTrashView, orderedRowKeys, selectionAnchorKey]
+    [orderedRowKeys, selectionAnchorKey]
   );
 
   const clearSelection = useCallback(() => {

@@ -20,6 +20,7 @@ import { publicShareRoutes, sharedLinksRoutes } from './routes/shared-links';
 import { scimGroupsRoutes } from './routes/scim-groups';
 import { scimUsersRoutes } from './routes/scim-users';
 import { syncRoutes } from './routes/sync';
+import { trashRoutes } from './routes/trash';
 import { workspaceRoutes } from './routes/workspace';
 import { wopiSessionRoutes } from './routes/wopi';
 import { wopiHostRoutes } from './routes/wopi-host';
@@ -60,6 +61,7 @@ app.post('/api/csp-report', async (c) => {
 app.route('/', authRoutes);
 app.route('/api', permissionsRoutes);
 app.route('/api/sync', syncRoutes);
+app.route('/api/trash', trashRoutes);
 app.route('/api/workspace', workspaceRoutes);
 app.route('/api/folders', foldersRoutes);
 app.route('/api/search', searchRoutes);
