@@ -3,13 +3,9 @@
 import { Keyboard, Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AppShellRail,
-  type WorkspacePaletteActions,
-} from '@/components/AppShellRail';
+import { AppShellRail } from '@/components/AppShellRail';
 import { FileDropzoneUploader } from '@/components/FileDropzoneUploader';
 import { SignInCard } from '@/components/SignInCard';
-import { type ContextMenuActionId } from '@/components/WorkspaceContextMenu';
 import type { InspectorTarget } from '@/components/WorkspaceInspectorDrawer';
 import { WorkspaceInspectorOverlay } from '@/components/WorkspaceInspectorOverlay';
 import { WorkspaceFileListSection } from '@/components/WorkspaceFileListSection';
@@ -23,6 +19,8 @@ import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
 import { WorkspaceUtilityOverlays } from '@/components/WorkspaceUtilityOverlays';
 import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
+import { useWorkspaceContextMenuActions } from '@/lib/use-workspace-context-menu-actions';
+import { useWorkspacePaletteActions } from '@/lib/use-workspace-palette-actions';
 import {
   getDropTargetClassName,
   WorkspaceDragProvider,
@@ -620,43 +618,6 @@ export function WorkspaceFileBrowser() {
     setActiveModal({ kind: 'createFolder', parentId: folderId ?? null });
   }, [currentFolder?.classification, folderId]);
 
-  const handleBackgroundMenuAction = useCallback(
-    (action: string) => {
-      switch (action) {
-        case 'newFolder':
-          openCreateFolderModal();
-          break;
-        case 'uploadFiles':
-          backgroundFileInputRef.current?.click();
-          break;
-        case 'uploadFolder':
-          backgroundFolderInputRef.current?.click();
-          break;
-        case 'paste':
-          handlePasteClipboard(folderId ?? null);
-          break;
-        case 'selectAll':
-          setSelectedKeys(new Set(selectableRowKeys));
-          setSelectionAnchorKey(selectableRowKeys[0] ?? null);
-          break;
-        case 'refresh':
-          void loadActiveView({ force: true });
-          break;
-        case 'toggleView':
-          handleToggleViewMode();
-          break;
-      }
-    },
-    [
-      openCreateFolderModal,
-      handlePasteClipboard,
-      folderId,
-      selectableRowKeys,
-      loadActiveView,
-      handleToggleViewMode,
-    ]
-  );
-
   const handleBackgroundContextMenu = useCallback(
     (event: React.MouseEvent) => {
       if (isTrashView) return;
@@ -729,6 +690,38 @@ export function WorkspaceFileBrowser() {
     handlePasteClipboard,
   });
 
+  const { handleBackgroundMenuAction, handleContextMenuAction } =
+    useWorkspaceContextMenuActions({
+      syncStore,
+      folderId,
+      effectiveRole,
+      selectedRows,
+      canEditRow,
+      resolveRowRole,
+      handleTogglePin,
+      setActiveModal,
+      setClassificationPicker,
+      setFocusedRowKey,
+      setInspectorOpen,
+      setSelectedKeys,
+      setSelectionAnchorKey,
+      openRow,
+      orderedRowKeys,
+      startInlineRename,
+      handleDownloadFile,
+      handleCopyTargets,
+      handleCutTargets,
+      handlePasteClipboard,
+      handleDuplicateTargets,
+      handleOpenMoveCopyModal,
+      openCreateFolderModal,
+      backgroundFileInputRef,
+      backgroundFolderInputRef,
+      selectableRowKeys,
+      loadActiveView,
+      handleToggleViewMode,
+    });
+
   useWorkspaceKeyboard({
     authChecked,
     user,
@@ -773,274 +766,31 @@ export function WorkspaceFileBrowser() {
     handleDownloadFile,
   });
 
-  const handleContextMenuAction = useCallback(
-    (
-      action: ContextMenuActionId,
-      primary: WorkspaceTableRow | null,
-      targets: WorkspaceTableRow[],
-      pasteDestId: string | null | undefined
-    ) => {
-      switch (action) {
-        case 'open':
-          if (!primary) return;
-          openRow(primary);
-          break;
-        case 'openInNewTab':
-          if (primary?.kind === 'folder') {
-            window.open(
-              `/workspace?folderId=${encodeURIComponent(primary.folder.id)}`,
-              '_blank',
-              'noopener,noreferrer'
-            );
-          } else if (primary?.kind === 'file') {
-            const parentQuery = primary.file.folder_id
-              ? `folderId=${encodeURIComponent(primary.file.folder_id)}&`
-              : '';
-            window.open(
-              `/workspace?${parentQuery}preview=${encodeURIComponent(primary.file.id)}`,
-              '_blank',
-              'noopener,noreferrer'
-            );
-          }
-          break;
-        case 'copyLink': {
-          if (!primary) return;
-          const fileParentQuery =
-            primary.kind === 'file' && primary.file.folder_id
-              ? `folderId=${encodeURIComponent(primary.file.folder_id)}&`
-              : '';
-          const url =
-            primary.kind === 'folder'
-              ? `${window.location.origin}/workspace?folderId=${encodeURIComponent(primary.folder.id)}`
-              : `${window.location.origin}/workspace?${fileParentQuery}preview=${encodeURIComponent(primary.file.id)}`;
-          void navigator.clipboard
-            .writeText(url)
-            .then(() =>
-              syncStore.pushToast({
-                kind: 'info',
-                message: '内部リンクをコピーしました',
-              })
-            )
-            .catch(() =>
-              syncStore.pushToast({
-                kind: 'error',
-                message: 'リンクをコピーできませんでした',
-              })
-            );
-          break;
-        }
-        case 'download':
-          if (primary?.kind === 'file') {
-            handleDownloadFile(primary.file.id);
-          }
-          break;
-        case 'rename':
-          if (primary) {
-            const idx = orderedRowKeys.indexOf(getWorkspaceRowKey(primary));
-            if (idx >= 0) startInlineRename(primary, idx);
-          }
-          break;
-        case 'copy':
-          handleCopyTargets(targets);
-          break;
-        case 'cut':
-          handleCutTargets(targets);
-          break;
-        case 'paste':
-          handlePasteClipboard(pasteDestId);
-          break;
-        case 'duplicate':
-          handleDuplicateTargets(targets);
-          break;
-        case 'moveCopy':
-          handleOpenMoveCopyModal(targets, 'move');
-          break;
-        case 'classify': {
-          const targetFiles = targets
-            .filter((r): r is { kind: 'file'; file: FileItem } => r.kind === 'file')
-            .map((r) => r.file);
-          if (targetFiles.length === 1) {
-            setClassificationPicker({ mode: 'single', file: targetFiles[0]! });
-          } else if (targetFiles.length > 1) {
-            setClassificationPicker({ mode: 'bulk', files: targetFiles });
-          }
-          break;
-        }
-        case 'share':
-          if (!primary) return;
-          setActiveModal({
-            kind: 'share',
-            targetType: primary.kind,
-            targetId: primary.kind === 'folder' ? primary.folder.id : primary.file.id,
-            targetName:
-              primary.kind === 'folder' ? primary.folder.name : primary.file.name,
-            classification:
-              primary.kind === 'folder'
-                ? primary.folder.classification
-                : primary.file.classification,
-            canEdit: canEditRow(primary),
-          });
-          break;
-        case 'pin':
-          if (primary?.kind === 'folder') {
-            handleTogglePin(primary.folder);
-          }
-          break;
-        case 'permissions':
-          if (primary) {
-            setActiveModal({
-              kind: 'permissions',
-              targetType: primary.kind,
-              targetId: primary.kind === 'folder' ? primary.folder.id : primary.file.id,
-              targetName:
-                primary.kind === 'folder' ? primary.folder.name : primary.file.name,
-              effectiveRole: resolveRowRole(primary),
-            });
-          }
-          break;
-        case 'inspector':
-          if (primary) {
-            setFocusedRowKey(getWorkspaceRowKey(primary));
-            setInspectorOpen(true);
-          }
-          break;
-        case 'trash':
-          for (const r of targets) {
-            if (!canEditRow(r)) continue;
-            if (r.kind === 'folder') {
-              syncStore.optimisticSoftDeleteFolder(r.folder);
-            } else {
-              syncStore.optimisticSoftDeleteFile(r.file, folderId, effectiveRole);
-            }
-          }
-          if (selectedRows.length > 0) {
-            setSelectedKeys(new Set());
-          }
-          break;
-      }
-    },
-    [
-      router,
-      openRow,
-      openPreviewForFile,
-      handleDownloadFile,
-      orderedRowKeys,
-      startInlineRename,
-      handleCopyTargets,
-      handleCutTargets,
-      handlePasteClipboard,
-      handleDuplicateTargets,
-      handleOpenMoveCopyModal,
-      canEditRow,
-      handleTogglePin,
-      resolveRowRole,
-      syncStore,
-      folderId,
-      effectiveRole,
-      selectedRows.length,
-    ]
-  );
-
-  const workspaceActions = useMemo<WorkspacePaletteActions>(
-    () => ({
-      hasTargetItem: Boolean(focusedRow || selectedRows.length > 0),
-      canClassifyTarget:
-        !isTrashView && (canEditCurrentFolder || isPrivilegedAdmin),
-      canShareTarget:
-        !isTrashView &&
-        Boolean((focusedRow && canEditRow(focusedRow)) || selectedRows[0]),
-      canTrashTarget:
-        !isTrashView &&
-        (selectedRows.length > 0 || (focusedRow !== null && canEditRow(focusedRow))),
-      canCopyTarget:
-        !isTrashView &&
-        getShortcutTargets().some(
-          (r) => isSysAdmin || hasRoleAtLeast(resolveRowRole(r), 'viewer')
-        ),
-      canCutTarget:
-        !isTrashView &&
-        getShortcutTargets().some(
-          (r) => isSysAdmin || hasRoleAtLeast(resolveRowRole(r), 'editor')
-        ),
-      canPasteClipboard:
-        !isTrashView && Boolean(clipboardState && clipboardState.items.length > 0),
-      canDuplicateTarget:
-        !isTrashView &&
-        getShortcutTargets().length > 0 &&
-        (isSysAdmin ||
-          hasRoleAtLeast(effectiveRole, 'viewer')),
-      onCommand: (cmdId) => {
-        switch (cmdId) {
-          case 'cmd:new-folder':
-            setFolderNameInput('');
-            setFolderClassInput(
-              currentFolder?.classification === 'confidential'
-                ? 'confidential'
-                : 'internal'
-            );
-            setActiveModal({ kind: 'createFolder', parentId: folderId ?? null });
-            break;
-          case 'cmd:move-copy':
-            handleOpenMoveCopyModal();
-            break;
-          case 'cmd:copy':
-            handleCopyTargets();
-            break;
-          case 'cmd:cut':
-            handleCutTargets();
-            break;
-          case 'cmd:paste':
-            handlePasteClipboard();
-            break;
-          case 'cmd:duplicate':
-            handleDuplicateTargets();
-            break;
-          case 'cmd:toggle-inspector':
-            setInspectorOpen((prev) => !prev);
-            break;
-          case 'cmd:toggle-view':
-            handleToggleViewMode();
-            break;
-          case 'cmd:change-classification':
-            openClassificationPickerFromTarget();
-            break;
-          case 'cmd:share':
-            openShareFromTarget();
-            break;
-          case 'cmd:trash':
-            trashSelectedOrFocused();
-            break;
-          case 'cmd:shortcuts':
-            setShortcutsHelpOpen(true);
-            break;
-        }
-      },
-    }),
-    [
-      focusedRow,
-      selectedRows,
-      isTrashView,
-      canEditCurrentFolder,
-      isPrivilegedAdmin,
-      isSysAdmin,
-      effectiveRole,
-      canEditRow,
-      resolveRowRole,
-      getShortcutTargets,
-      clipboardState,
-      currentFolder?.classification,
-      folderId,
-      openClassificationPickerFromTarget,
-      openShareFromTarget,
-      trashSelectedOrFocused,
-      handleOpenMoveCopyModal,
-      handleCopyTargets,
-      handleCutTargets,
-      handlePasteClipboard,
-      handleDuplicateTargets,
-      handleToggleViewMode,
-    ]
-  );
+  const workspaceActions = useWorkspacePaletteActions({
+    focusedRow,
+    selectedRows,
+    isTrashView,
+    canEditCurrentFolder,
+    isPrivilegedAdmin,
+    isSysAdmin,
+    effectiveRole,
+    canEditRow,
+    resolveRowRole,
+    getShortcutTargets,
+    clipboardState,
+    openCreateFolderModal,
+    openClassificationPickerFromTarget,
+    openShareFromTarget,
+    trashSelectedOrFocused,
+    handleOpenMoveCopyModal,
+    handleCopyTargets,
+    handleCutTargets,
+    handlePasteClipboard,
+    handleDuplicateTargets,
+    handleToggleViewMode,
+    setInspectorOpen,
+    setShortcutsHelpOpen,
+  });
 
   if (!authChecked) {
     return (
