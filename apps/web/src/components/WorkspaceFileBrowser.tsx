@@ -56,6 +56,7 @@ import {
 import type { InspectorTarget } from '@/components/WorkspaceInspectorDrawer';
 import { WorkspaceInspectorOverlay } from '@/components/WorkspaceInspectorOverlay';
 import { WorkspaceEmptyState } from '@/components/WorkspaceEmptyState';
+import { WorkspaceFileListSection } from '@/components/WorkspaceFileListSection';
 import { WorkspaceGridBody } from '@/components/WorkspaceGridBody';
 import { WorkspaceItemCard } from '@/components/WorkspaceItemCard';
 import { WorkspaceItemRow } from '@/components/WorkspaceItemRow';
@@ -1464,100 +1465,40 @@ export function WorkspaceFileBrowser() {
             : '選択なし'}
         </div>
 
-        <div
-          ref={marqueeSurfaceRef}
-          data-marquee-surface="true"
-          onPointerDown={marquee.onPointerDown}
-          onContextMenu={handleBackgroundContextMenu}
-          className="-mx-6 px-6 lg:-mx-8 lg:px-8"
-        >
-        <section className="overflow-hidden rounded-lg border border-[#e7e7ea] bg-white">
-          {isInitialLoading ? (
-            <div className="flex h-48 items-center justify-center text-sm text-slate-500">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin text-blue-600" />
-              読み込み中...
-            </div>
-          ) : rows.length === 0 ? (
-            <WorkspaceEmptyState
-              isTrashView={isTrashView}
-              folderId={folderId}
-              onContextMenu={handleBackgroundContextMenu}
-              onClick={handleBackgroundEmptyClick}
-            />
-          ) : (
-            <div
-              ref={(el) => {
-                (virtualWindow.containerRef as { current: HTMLDivElement | null }).current =
-                  el;
-                dragCtx.registerScrollContainer(el);
-              }}
-              onScroll={virtualWindow.onScroll}
-              onContextMenu={handleBackgroundContextMenu}
-              role="region"
-              aria-label="ファイルとフォルダの一覧"
-              tabIndex={0}
-              data-workspace-table="true"
-              className={`min-h-[420px] overflow-x-auto ${
-                virtualWindow.virtualized ? 'max-h-[68vh] overflow-y-auto' : ''
-              }`}
-            >
-              {viewMode === 'grid' ? (
-                <WorkspaceGridBody
-                  visibleRows={visibleGridRows}
-                  startIndex={virtualWindow.startIndex}
-                  columns={GRID_COLUMNS}
-                  topSpacerPx={virtualWindow.topSpacerPx}
-                  bottomSpacerPx={virtualWindow.bottomSpacerPx}
-                  renderCard={renderGridRowCard}
-                />
-              ) : (
-                <WorkspaceTableBody
-                  rowCount={rows.length}
-                  visibleRows={visibleRows}
-                  startIndex={virtualWindow.startIndex}
-                  topSpacerPx={virtualWindow.topSpacerPx}
-                  bottomSpacerPx={virtualWindow.bottomSpacerPx}
-                  isTrashView={isTrashView}
-                  selectableRowKeys={selectableRowKeys}
-                  selectedRowCount={selectedRows.length}
-                  sortBy={sortBy}
-                  sortDir={sortDir}
-                  onToggleSelectAll={() => {
-                    if (selectedRows.length === selectableRowKeys.length) {
-                      setSelectedKeys(new Set());
-                    } else {
-                      setSelectedKeys(new Set(selectableRowKeys));
-                    }
-                  }}
-                  onSort={handleSortHeaderClick}
-                  renderRow={renderTableRow}
-                />
-              )}
-            </div>
-          )}
-
-          {nextCursor && (
-            <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-3 text-center">
-              <button
-                type="button"
-                disabled={loadingMore}
-                onClick={handleLoadMore}
-                className="inline-flex items-center gap-2 h-7 rounded-md border border-[#e1e1e4] bg-white px-3 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] disabled:opacity-50"
-              >
-                {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                <span>さらに読み込む</span>
-              </button>
-            </div>
-          )}
-        </section>
-        <div
-          aria-hidden="true"
-          data-background-surface="true"
-          className="min-h-[96px]"
-          onClick={handleBackgroundEmptyClick}
-          onContextMenu={handleBackgroundContextMenu}
+        <WorkspaceFileListSection
+          viewMode={viewMode}
+          isInitialLoading={isInitialLoading}
+          isTrashView={isTrashView}
+          folderId={folderId}
+          rowCount={rows.length}
+          visibleRows={visibleRows}
+          visibleGridRows={visibleGridRows}
+          virtualWindow={virtualWindow}
+          gridColumns={GRID_COLUMNS}
+          selectableRowKeys={selectableRowKeys}
+          selectedRowCount={selectedRows.length}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          nextCursor={nextCursor}
+          loadingMore={loadingMore}
+          marqueeSurfaceRef={marqueeSurfaceRef}
+          containerRef={virtualWindow.containerRef}
+          onMarqueePointerDown={marquee.onPointerDown}
+          onBackgroundContextMenu={handleBackgroundContextMenu}
+          onBackgroundEmptyClick={handleBackgroundEmptyClick}
+          onToggleSelectAll={() => {
+            if (selectedRows.length === selectableRowKeys.length) {
+              setSelectedKeys(new Set());
+            } else {
+              setSelectedKeys(new Set(selectableRowKeys));
+            }
+          }}
+          onSort={handleSortHeaderClick}
+          onLoadMore={handleLoadMore}
+          registerScrollContainer={dragCtx.registerScrollContainer}
+          renderCard={renderGridRowCard}
+          renderRow={renderTableRow}
         />
-        </div>
       </main>
 
       <input
