@@ -13,6 +13,10 @@ import { WorkspaceItemCard } from '@/components/WorkspaceItemCard';
 import { WorkspaceItemRow } from '@/components/WorkspaceItemRow';
 import { WorkspaceTrashBulkBar } from '@/components/WorkspaceTrashBulkBar';
 import { WorkspaceTrashBulkDialogs } from '@/components/WorkspaceTrashBulkDialogs';
+import {
+  WorkspaceTrashRestoreModal,
+  type TrashRestoreSuccessResult,
+} from '@/components/WorkspaceTrashRestoreModal';
 import { WorkspaceActionOverlays } from '@/components/WorkspaceActionOverlays';
 import { WorkspaceClipboardBar } from '@/components/WorkspaceClipboardBar';
 import { WorkspaceManagementModals } from '@/components/WorkspaceManagementModals';
@@ -44,6 +48,7 @@ import { useWorkspaceKeyboard } from '@/lib/use-workspace-keyboard';
 import { useWorkspaceSelection } from '@/lib/use-workspace-selection';
 import { useWorkspaceTrashBulkActions } from '@/lib/use-workspace-trash-bulk-actions';
 import { getTrashBulkCapabilities } from '@/lib/trash-bulk';
+import { formatTrashRestoreSuccessMessage } from '@/lib/trash-restore-options';
 import { useWorkspaceUploads } from '@/lib/use-workspace-uploads';
 import { useWorkspaceVirtualization } from '@/lib/use-workspace-virtualization';
 import { describeWorkspaceRow } from '@/lib/workspace-row-presentation';
@@ -64,7 +69,13 @@ import {
   sortWorkspaceFoldersAndFiles,
   type WorkspaceSortField,
 } from '@/lib/workspace-sort-and-view';
-import type { FileItem, ResourceRole, SearchResultItem, TrashItem } from '@/types/files';
+import type {
+  FileItem,
+  FolderSummary,
+  ResourceRole,
+  SearchResultItem,
+  TrashItem,
+} from '@/types/files';
 
 function collectDragItemsForRow(
   row: WorkspaceTableRow,
@@ -181,6 +192,8 @@ export function WorkspaceFileBrowser() {
     items: DragWorkspaceItem[];
     modeHint: 'move' | 'copy';
   } | null>(null);
+  const [trashRestoreTarget, setTrashRestoreTarget] =
+    useState<TrashItem | null>(null);
   const fileLocks = useFileLocks(syncStore);
   const {
     sortBy,
@@ -511,6 +524,75 @@ export function WorkspaceFileBrowser() {
     [isTrashView, canEditCurrentFolder]
   );
 
+  const requestRestoreTrashFolder = useCallback(
+    (folder: FolderSummary) => {
+      const target = trash.items.find(
+        (candidate) => candidate.type === 'folder' && candidate.id === folder.id
+      );
+      if (!target) {
+        setError('復元対象の情報を取得できませんでした');
+        return;
+      }
+      setTrashRestoreTarget(target);
+    },
+    [trash.items, setError]
+  );
+
+  const requestRestoreTrashFile = useCallback(
+    (file: FileItem) => {
+      const target = trash.items.find(
+        (candidate) => candidate.type === 'file' && candidate.id === file.id
+      );
+      if (!target) {
+        setError('復元対象の情報を取得できませんでした');
+        return;
+      }
+      setTrashRestoreTarget(target);
+    },
+    [trash.items, setError]
+  );
+
+  const handleTrashRestoreSuccess = useCallback(
+    (result: TrashRestoreSuccessResult) => {
+      const target = trashRestoreTarget;
+      if (target) {
+        trash.removeItem(target.type, target.id);
+      }
+      for (const ancestorId of result.restoredAncestorIds) {
+        trash.removeItem('folder', ancestorId);
+      }
+
+      if (result.file) {
+        syncStore.upsertFileInCache(result.file);
+      }
+      if (result.folder) {
+        syncStore.upsertFolderInCache(result.folder);
+      }
+
+      const refreshIds = new Set<string | null>(result.affectedFolderIds);
+      refreshIds.add(result.destination.id);
+      for (const folderId of refreshIds) {
+        void syncStore
+          .ensureDirectoryLoaded(folderId, { force: true })
+          .catch(() => undefined);
+      }
+
+      syncStore.pushToast({
+        kind: 'info',
+        message: formatTrashRestoreSuccessMessage({
+          itemName: target?.name ?? result.restoredName,
+          destinationPath: result.destination.path,
+          restoredName: result.restoredName,
+          restoredAncestorCount: result.restoredAncestorIds.length,
+        }),
+      });
+      setTrashRestoreTarget(null);
+      setSelectedKeys(new Set());
+      setSelectionAnchorKey(null);
+    },
+    [setSelectionAnchorKey, syncStore, trash, trashRestoreTarget]
+  );
+
   const {
     resolveRowRole,
     isSysAdmin,
@@ -546,8 +628,8 @@ export function WorkspaceFileBrowser() {
     setActiveModal,
     setClassificationPicker,
     setMoveCopyModal,
-    removeTrashFolder: trash.removeFolder,
-    removeTrashFile: trash.removeFile,
+    onRequestRestoreFolder: requestRestoreTrashFolder,
+    onRequestRestoreFile: requestRestoreTrashFile,
   });
 
   const openFileOrEditor = useCallback((file: { id: string }) => {
@@ -1414,6 +1496,16 @@ export function WorkspaceFileBrowser() {
         onCancel={trashBulk.cancelConfirm}
         onCloseResult={trashBulk.closeResult}
       />
+
+      {trashRestoreTarget && (
+        <WorkspaceTrashRestoreModal
+          item={trashRestoreTarget}
+          isSysAdmin={isSysAdmin}
+          syncStore={syncStore}
+          onClose={() => setTrashRestoreTarget(null)}
+          onSuccess={handleTrashRestoreSuccess}
+        />
+      )}
 
       <WorkspaceManagementModals
         activeModal={activeModal}

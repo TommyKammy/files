@@ -217,6 +217,17 @@ test.describe('workspace baseline E2E', () => {
     await expect(trashRow.getByRole('button', { name: '復元', exact: true })).toBeVisible();
     await trashRow.getByRole('button', { name: '復元', exact: true }).click();
 
+    const restoreDialog = admin.page.getByRole('dialog', {
+      name: 'ゴミ箱から復元',
+    });
+    await expect(restoreDialog).toBeVisible();
+    await expect(
+      restoreDialog.getByRole('button', { name: 'キャンセル', exact: true })
+    ).toBeFocused();
+    await restoreDialog
+      .getByRole('button', { name: '復元する', exact: true })
+      .click();
+
     await waitForFileInFolder(admin, folder.id, fileName, { present: true });
     await waitForTrashFile(admin, fileName, { present: false });
     await expect(trashRow).toHaveCount(0);

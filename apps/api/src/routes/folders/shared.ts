@@ -60,6 +60,7 @@ export function handleFolderError(
         error: err.message,
         code: err.code,
         ...(err.latest ? { latest: err.latest } : {}),
+        ...(err.details ?? {}),
       },
       err.status
     );

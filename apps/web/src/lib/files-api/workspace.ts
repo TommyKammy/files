@@ -7,11 +7,17 @@ import type {
   FolderChildrenResponse,
   FolderSummary,
   ResourceRole,
+  RestoreFileOptionsPayload,
+  RestoreFileOptionsResponse,
+  RestoreFolderOptionsPayload,
+  RestoreFolderOptionsResponse,
   SearchResultItem,
   TrashBulkItemRef,
   TrashBulkResponse,
   TrashEmptyResponse,
+  TrashItemType,
   TrashListResponse,
+  TrashRestoreContextResponse,
   TrashSort,
   TrashTypeFilter,
   WorkspaceBatchItemRef,
@@ -195,6 +201,55 @@ export function restoreFile(
     method: 'POST',
     body: JSON.stringify(newName ? { newName } : {}),
   });
+}
+
+/** POST /api/files/:id/restore — destination, chain and conflict options. */
+export function restoreFileWithOptions(
+  fileId: string,
+  payload: RestoreFileOptionsPayload
+): Promise<RestoreFileOptionsResponse> {
+  return apiFetch<RestoreFileOptionsResponse>(
+    `/api/files/${encodeURIComponent(fileId)}/restore`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+/** POST /api/folders/:id/restore — destination, chain and conflict options. */
+export function restoreFolderWithOptions(
+  folderId: string,
+  payload: RestoreFolderOptionsPayload
+): Promise<RestoreFolderOptionsResponse> {
+  return apiFetch<RestoreFolderOptionsResponse>(
+    `/api/folders/${encodeURIComponent(folderId)}/restore`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+/**
+ * GET /api/trash/restore-context — breadcrumbs, floor, conflict and parent
+ * chain metadata for the restore confirmation dialog.
+ */
+export function getTrashRestoreContext(
+  type: TrashItemType,
+  id: string,
+  targetParentId?: string | null
+): Promise<TrashRestoreContextResponse> {
+  const params = new URLSearchParams({ type, id });
+  if (targetParentId !== undefined) {
+    params.set(
+      'targetParentId',
+      targetParentId === null ? '__ROOT__' : targetParentId
+    );
+  }
+  return apiFetch<TrashRestoreContextResponse>(
+    `/api/trash/restore-context?${params.toString()}`
+  );
 }
 
 

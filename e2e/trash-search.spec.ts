@@ -327,6 +327,13 @@ test.describe('Trash search, filter, sort, pagination and retention UI (TOM-48)'
 
     const beforeRestore = await readRowCount(admin.page);
     await appleRow.getByRole('button', { name: '復元', exact: true }).click();
+    const restoreDialog = admin.page.getByRole('dialog', {
+      name: 'ゴミ箱から復元',
+    });
+    await expect(restoreDialog).toBeVisible();
+    await restoreDialog
+      .getByRole('button', { name: '復元する', exact: true })
+      .click();
     await expect(appleRow).toHaveCount(0);
     await expect
       .poll(() => readRowCount(admin.page))

@@ -12,6 +12,7 @@ import {
   purgeTrashItems,
 } from '../services/trash-purge';
 import { restoreTrashItems } from '../services/trash-restore';
+import { buildTrashRestoreContext } from '../services/trash-restore-context';
 import type { OidcHonoEnv } from '../types/oidc';
 
 const EMPTY_TRASH_CONFIRMATION = 'EMPTY_TRASH';
@@ -34,6 +35,59 @@ function handleTrashError(
 export const trashRoutes = new Hono<OidcHonoEnv>();
 
 trashRoutes.use('*', sessionAuthMiddleware({ required: true }));
+
+const ROOT_TARGET_SENTINEL = '__ROOT__';
+
+/**
+ * GET /api/trash/restore-context — restore confirmation projection.
+ *
+ * Returns the item's original breadcrumbs/path, destination classification
+ * floor, deleted-ancestor count, conflict suggestion and circular/depth checks.
+ * Parent names are redacted when the caller cannot read the destination.
+ */
+trashRoutes.get('/restore-context', async (c) => {
+  const user = getAuthenticatedUser(c);
+  const type = c.req.query('type');
+  const id = c.req.query('id');
+
+  if (type !== 'file' && type !== 'folder') {
+    return c.json(
+      { error: 'type must be file or folder', code: 'INVALID_ITEM_TYPE' },
+      400
+    );
+  }
+  if (!id || id.trim().length === 0) {
+    return c.json(
+      { error: 'id must be a non-empty string', code: 'INVALID_ITEM_ID' },
+      400
+    );
+  }
+
+  const rawTarget = c.req.query('targetParentId');
+  const target =
+    rawTarget === undefined
+      ? undefined
+      : {
+          provided: true,
+          parentId:
+            rawTarget === ROOT_TARGET_SENTINEL || rawTarget === 'null'
+              ? null
+              : rawTarget,
+        };
+
+  try {
+    const context = await buildTrashRestoreContext(
+      c.env.DB,
+      user,
+      type,
+      id.trim(),
+      target
+    );
+    return c.json(context);
+  } catch (err) {
+    return handleTrashError(c, err);
+  }
+});
 
 /** POST /api/trash/restore — per-item partial-success restore of up to 100 items. */
 trashRoutes.post('/restore', async (c) => {

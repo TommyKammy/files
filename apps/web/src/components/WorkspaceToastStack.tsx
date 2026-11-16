@@ -19,6 +19,7 @@ export function WorkspaceToastStack({
   return (
     <div
       aria-live="polite"
+      data-workspace-toast-stack="true"
       className="fixed bottom-5 right-5 z-50 flex w-full max-w-sm flex-col gap-2 px-4 sm:px-0"
     >
       {toasts.map((toast) => (

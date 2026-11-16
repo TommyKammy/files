@@ -12,3 +12,10 @@ export {
   restoreFolderSubtree,
   softDeleteFolderSubtree,
 } from './folder-closure/delete-restore';
+export {
+  restoreFolderWithOptions,
+} from './folder-closure/restore-options';
+export type {
+  FolderRestoreOptions,
+  RestoreFolderWithOptionsResult,
+} from './folder-closure/restore-options';

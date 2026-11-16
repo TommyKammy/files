@@ -9,12 +9,13 @@ import {
   createFolderWithClosures,
   type FolderRow,
   moveFolderSubtree,
-  restoreFolderSubtree,
   softDeleteFolderSubtree,
   validateFolderName,
 } from '../../services/folder-closure-service';
 import { buildSyncChangeStmt, parseExpectedVersionInput } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
+import { TrashRequestError } from '../../services/trash-items';
+import { restoreTrashFolder } from '../../services/trash-restore';
 import type { ClassificationLabel } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import { VALID_CLASSIFICATIONS } from '../../utils/classification';
@@ -227,29 +228,71 @@ export function registerFolderMutationRoutes(routes: Hono<OidcHonoEnv>) {
     }
   });
 
-  /** POST /api/folders/:id/restore — batch-timestamp subtree restore & FTS5 reindex */
+  /**
+   * POST /api/folders/:id/restore — batch-timestamp subtree restore, optional
+   * deleted-ancestor chain and destination move, with one atomic D1 batch.
+   */
   routes.post('/:id/restore', async (c) => {
     const user = getAuthenticatedUser(c);
     const queryPolicy = c.req.query('conflictPolicy');
-    const body = (await c.req.json().catch(() => ({}))) as { conflictPolicy?: string };
-    const rawPolicy = queryPolicy ?? body.conflictPolicy ?? 'fail';
-    const conflictPolicy = rawPolicy === 'rename' ? 'rename' : 'fail';
-    const targetFolderId = c.req.param('id');
+    const body = (await c.req.json().catch(() => ({}))) as {
+      conflictPolicy?: unknown;
+      targetParentId?: unknown;
+      restoreParentChain?: unknown;
+    } | null;
+    const rawPolicy = queryPolicy ?? body?.conflictPolicy ?? 'fail';
 
     try {
-      const result = await restoreFolderSubtree(
+      if (rawPolicy !== 'fail' && rawPolicy !== 'rename') {
+        throw new TrashRequestError(
+          400,
+          'INVALID_CONFLICT_POLICY',
+          "conflictPolicy must be 'fail' or 'rename'"
+        );
+      }
+
+      let target: { targetParentId?: string | null } = {};
+      if (body && Object.prototype.hasOwnProperty.call(body, 'targetParentId')) {
+        if (body.targetParentId === null) {
+          target = { targetParentId: null };
+        } else if (
+          typeof body.targetParentId === 'string' &&
+          body.targetParentId.trim().length > 0
+        ) {
+          target = { targetParentId: body.targetParentId.trim() };
+        } else {
+          throw new TrashRequestError(
+            400,
+            'INVALID_TARGET_FOLDER',
+            'targetParentId must be a non-empty string or null'
+          );
+        }
+      }
+
+      const result = await restoreTrashFolder(
         c.env.DB,
         user,
-        targetFolderId,
-        conflictPolicy
+        c.req.param('id'),
+        rawPolicy,
+        {
+          ...target,
+          restoreParentChain: body?.restoreParentChain === true,
+        }
       );
       await emitTenantSyncSignal(c, {
         tenantId: user.tenantId,
+        seq: result.syncSeq,
         eventKind: 'folder.restore',
-        scopeFolderIds: [targetFolderId],
+        scopeFolderIds: result.scopeFolderIds,
       });
-      return c.json(result);
+      return c.json({ ok: true, ...result });
     } catch (err) {
+      if (err instanceof TrashRequestError) {
+        return c.json(
+          { error: err.message, code: err.code },
+          err.status
+        );
+      }
       return handleFolderError(c, err);
     }
   });

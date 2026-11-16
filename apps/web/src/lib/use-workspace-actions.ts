@@ -14,7 +14,12 @@ import {
 import { useWorkspaceClipboardActions } from '@/lib/use-workspace-clipboard-actions';
 import { useWorkspaceShareActions } from '@/lib/use-workspace-share-actions';
 import { useWorkspaceTrashActions } from '@/lib/use-workspace-trash-actions';
-import type { AuthUser, ResourceRole } from '@/types/files';
+import type {
+  AuthUser,
+  FileItem,
+  FolderSummary,
+  ResourceRole,
+} from '@/types/files';
 
 export function useWorkspaceActions({
   syncStore,
@@ -35,8 +40,8 @@ export function useWorkspaceActions({
   setActiveModal,
   setClassificationPicker,
   setMoveCopyModal,
-  removeTrashFolder,
-  removeTrashFile,
+  onRequestRestoreFolder,
+  onRequestRestoreFile,
 }: {
   syncStore: WorkspaceSyncStore;
   clipboardStore: WorkspaceClipboardStore;
@@ -63,8 +68,8 @@ export function useWorkspaceActions({
       modeHint: 'move' | 'copy';
     } | null>
   >;
-  removeTrashFolder: (folderId: string) => void;
-  removeTrashFile: (fileId: string) => void;
+  onRequestRestoreFolder: (folder: FolderSummary) => void;
+  onRequestRestoreFile: (file: FileItem) => void;
 }) {
   const resolveRowRole = useCallback(
     (row: WorkspaceTableRow): ResourceRole => {
@@ -120,8 +125,8 @@ export function useWorkspaceActions({
     effectiveRole,
     setError,
     setSelectedKeys,
-    removeTrashFolder,
-    removeTrashFile,
+    onRequestRestoreFolder,
+    onRequestRestoreFile,
   });
 
   const shareActions = useWorkspaceShareActions({

@@ -9,7 +9,9 @@ export class FolderServiceError extends Error {
     public readonly status: 400 | 403 | 404 | 409,
     public readonly code: string,
     message: string,
-    public readonly latest?: FolderRow
+    public readonly latest?: FolderRow,
+    /** Restore-destination / rename recovery context for the JSON error body. */
+    public readonly details?: Record<string, unknown>
   ) {
     super(message);
     this.name = 'FolderServiceError';

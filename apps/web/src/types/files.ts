@@ -223,6 +223,90 @@ export interface TrashEmptyResponse {
   results: TrashBulkItemResult[];
 }
 
+export interface RestoreBreadcrumb {
+  id: string;
+  name: string;
+  classification: ClassificationLabel;
+  depth: number;
+  version: number;
+}
+
+export interface RestoreDestinationContext {
+  id: string | null;
+  name: string;
+  path: string;
+  breadcrumbs: RestoreBreadcrumb[];
+  classification: ClassificationLabel;
+  isDeleted: boolean;
+  deletedAncestorCount: number;
+  accessible: boolean;
+}
+
+export interface TrashRestoreConflict {
+  hasConflict: boolean;
+  suggestedName: string | null;
+}
+
+export interface TrashRestoreContextResponse {
+  type: TrashItemType;
+  item: {
+    id: string;
+    type: TrashItemType;
+    name: string;
+    classification: ClassificationLabel;
+    folderId: string | null;
+    parentId: string | null;
+  };
+  itemEffectiveRole: ResourceRole | null;
+  originalLocation: RestoreDestinationContext;
+  destination: RestoreDestinationContext;
+  conflict: TrashRestoreConflict;
+  classification: {
+    floor: ClassificationLabel;
+    willUpgrade: boolean;
+    upgradeCount: number;
+  };
+  restoreParentChainAvailable: boolean;
+  restoreParentChainDefault: boolean;
+  destinationChecks: {
+    circular: boolean;
+    maxDepthExceeded: boolean;
+    targetDeleted: boolean;
+    canRestoreToRoot: boolean;
+  };
+}
+
+export interface RestoreFileOptionsPayload {
+  targetFolderId?: string | null;
+  conflictPolicy?: 'fail' | 'rename';
+  restoreParentChain?: boolean;
+  expectedVersion?: number;
+  newName?: string;
+}
+
+export interface RestoreFolderOptionsPayload {
+  targetParentId?: string | null;
+  conflictPolicy?: 'fail' | 'rename';
+  restoreParentChain?: boolean;
+}
+
+export interface RestoreFileOptionsResponse {
+  ok: boolean;
+  file: FileItem;
+  destination: RestoreDestinationContext;
+  restoredAncestorIds: string[];
+  affectedFolderIds: Array<string | null>;
+}
+
+export interface RestoreFolderOptionsResponse {
+  ok: boolean;
+  folder: FolderSummary;
+  restoredAt: string;
+  destination: RestoreDestinationContext;
+  restoredAncestorIds: string[];
+  affectedFolderIds: Array<string | null>;
+}
+
 export interface BootstrapResponse {
   user: AuthUser;
   policy: TenantPolicyRow | null;

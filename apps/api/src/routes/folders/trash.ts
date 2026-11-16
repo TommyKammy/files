@@ -84,9 +84,12 @@ const TRASH_GRANTEE_MATCH_SQL = `(
 /**
  * Accessible top-level soft-deleted folders.
  *
- * A folder whose immediate parent is also deleted is intentionally excluded:
- * moving a folder to Trash soft-deletes the whole subtree with the same
- * timestamp, and only the subtree root should be shown at the top level.
+ * A folder whose immediate parent was deleted by the *same batch* is excluded:
+ * moving a folder to Trash soft-deletes the whole subtree with one timestamp,
+ * and only the subtree root should be shown at the top level. A folder deleted
+ * earlier (different `deleted_at`) is an independent Trash item and stays
+ * visible so it can be restored, optionally together with its now-deleted
+ * parent chain.
  */
 const TRASH_FOLDER_UNION_SQL = `
   SELECT 'folder' AS item_type,
@@ -135,13 +138,19 @@ const TRASH_FOLDER_UNION_SQL = `
     LEFT JOIN folders pf ON pf.id = f.parent_id
    WHERE f.tenant_id = ?
      AND f.deleted_at IS NOT NULL
-     AND (f.parent_id IS NULL OR pf.deleted_at IS NULL)`;
+     AND (
+       f.parent_id IS NULL
+       OR pf.deleted_at IS NULL
+       OR pf.deleted_at != f.deleted_at
+     )`;
 
 /**
  * Accessible top-level soft-deleted active files.
  *
  * `upload_state = 'active'` keeps pending/failed upload artifacts out of Trash.
- * The parent-folder predicate hides files that belong to a deleted subtree.
+ * Files deleted in the same batch as their parent folder belong to that
+ * subtree and are hidden; files deleted independently at an earlier timestamp
+ * remain visible Trash items.
  */
 const TRASH_FILE_UNION_SQL = `
   SELECT 'file' AS item_type,
@@ -199,7 +208,11 @@ const TRASH_FILE_UNION_SQL = `
    WHERE fl.tenant_id = ?
      AND fl.upload_state = 'active'
      AND fl.deleted_at IS NOT NULL
-     AND (fl.folder_id IS NULL OR pf.deleted_at IS NULL)`;
+     AND (
+       fl.folder_id IS NULL
+       OR pf.deleted_at IS NULL
+       OR pf.deleted_at != fl.deleted_at
+     )`;
 
 const TRASH_UNION_SQL = `${TRASH_FOLDER_UNION_SQL} UNION ALL ${TRASH_FILE_UNION_SQL}`;
 

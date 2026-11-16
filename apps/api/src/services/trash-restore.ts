@@ -1,6 +1,8 @@
 import type { AuthUser } from '../types/api';
+import { pickStricterClassification } from '../utils/classification';
 import { buildAuditLogStmt } from './audit';
 import { hasAtLeastRole, resolveTargetAccess } from './authorization';
+import { buildClassificationPolicyStatements } from './classification-updater';
 import {
   type FileRow,
   FileUploadError,
@@ -13,10 +15,17 @@ import {
 import {
   type FolderRow,
   FolderServiceError,
-  restoreFolderSubtree,
+  restoreFolderWithOptions,
 } from './folder-closure-service';
 import { buildSyncChangeStmt } from './sync-changes';
 import { extractLastSyncSeq } from './sync-notifier';
+import {
+  buildRestoreDestinationContext,
+  isPrivilegedAdmin,
+  loadDeletedAncestorChain,
+  resolveAncestorRestoreName,
+  type RestoreDestinationContext,
+} from './trash-restore-context';
 import {
   TrashRequestError,
   type TrashItemRefInput,
@@ -24,16 +33,34 @@ import {
 
 export type TrashConflictPolicy = 'fail' | 'rename';
 
+export interface RestoreFileOptions {
+  newName?: unknown;
+  conflictPolicy?: TrashConflictPolicy;
+  /** `undefined` keeps the original folder; `null` restores to the root. */
+  targetFolderId?: string | null;
+  restoreParentChain?: boolean;
+  expectedVersion?: number;
+}
+
 export interface RestoreTrashFileResult {
   file: FileRow;
   syncSeq: number | null;
   scopeFolderId: string | null;
+  scopeFolderIds: Array<string | null>;
+  destination: RestoreDestinationContext;
+  restoredAncestorIds: string[];
+  affectedFolderIds: Array<string | null>;
 }
 
 export interface RestoreTrashFolderResult {
   folder: FolderRow;
+  restoredAt: string;
   syncSeq: number | null;
   scopeFolderId: string | null;
+  scopeFolderIds: Array<string | null>;
+  destination: RestoreDestinationContext;
+  restoredAncestorIds: string[];
+  affectedFolderIds: Array<string | null>;
 }
 
 export interface TrashBulkItemResult {
@@ -60,22 +87,40 @@ function wrapFileUploadError(err: FileUploadError): never {
   throw new TrashRequestError(err.status, err.code, err.message);
 }
 
+interface AncestorRestorePlan {
+  folder: FolderRow;
+  name: string;
+  renamed: boolean;
+}
+
+function trashRestoreError(
+  status: 400 | 403 | 404 | 409 | 413,
+  code: string,
+  message: string,
+  details?: Record<string, unknown>
+): never {
+  throw new TrashRequestError(status, code, message, details);
+}
+
 /**
- * Restore one soft-deleted file with the exact authorization, parent-folder,
- * conflict, audit and sync rules used by `POST /api/files/:id/restore`.
+ * Restore one soft-deleted file with the authorization, destination, parent
+ * chain, conflict, classification, audit and sync rules shared by
+ * `POST /api/files/:id/restore` and `POST /api/trash/restore`.
  *
- * `newName` remains the single-file API's explicit override; bulk restore uses
- * `conflictPolicy: 'rename'` instead so both callers share this core.
+ * `newName` remains the single-file API's explicit override. `restoreParentChain`
+ * restores only the deleted folder rows on the file's ancestry path; unrelated
+ * siblings deleted in another batch are never touched.
  */
 export async function restoreTrashFile(
   db: D1Database,
   user: AuthUser,
   fileId: string,
-  options: {
-    newName?: unknown;
-    conflictPolicy?: TrashConflictPolicy;
-  } = {}
+  options: RestoreFileOptions = {}
 ): Promise<RestoreTrashFileResult> {
+  const conflictPolicy = options.conflictPolicy ?? 'fail';
+  const restoreParentChain = options.restoreParentChain === true;
+  const privilegedAdmin = isPrivilegedAdmin(user);
+
   const [access, file] = await Promise.all([
     resolveTargetAccess(db, user, 'file', fileId),
     db
@@ -90,26 +135,129 @@ export async function restoreTrashFile(
   if (file.deleted_at === null) {
     throw new TrashRequestError(409, 'NOT_IN_TRASH', 'File is not in trash');
   }
-
-  const isPrivilegedAdmin =
-    user.role === 'sec_admin' || user.role === 'sys_admin';
-  if (!isPrivilegedAdmin && !hasAtLeastRole(access.effectiveRole, 'editor')) {
+  if (!privilegedAdmin && !hasAtLeastRole(access.effectiveRole, 'editor')) {
     throw new TrashRequestError(403, 'FORBIDDEN', 'Forbidden');
   }
+  if (
+    options.expectedVersion !== undefined &&
+    file.meta_version !== options.expectedVersion
+  ) {
+    throw new TrashRequestError(
+      409,
+      'VERSION_CONFLICT',
+      `File version mismatch (expected ${options.expectedVersion}, actual ${file.meta_version})`,
+      { latest: file }
+    );
+  }
 
-  if (file.folder_id) {
-    const parent = await db
-      .prepare(
-        'SELECT deleted_at FROM folders WHERE tenant_id = ? AND id = ?'
-      )
-      .bind(user.tenantId, file.folder_id)
-      .first<{ deleted_at: string | null }>();
-    if (!parent || parent.deleted_at !== null) {
-      throw new TrashRequestError(
+  const explicitTarget = options.targetFolderId !== undefined;
+  const targetFolderId = explicitTarget
+    ? options.targetFolderId!
+    : file.folder_id;
+  const isMoving = targetFolderId !== file.folder_id;
+  const isOriginalDestination = targetFolderId === file.folder_id;
+
+  const destination = await buildRestoreDestinationContext(
+    db,
+    user,
+    targetFolderId
+  );
+  if (!destination) {
+    trashRestoreError(404, 'TARGET_NOT_FOUND', 'Destination folder not found');
+  }
+
+  if (destination.isDeleted) {
+    const chainCoversDestination =
+      isOriginalDestination && restoreParentChain;
+    if (!chainCoversDestination) {
+      trashRestoreError(
         409,
         'PARENT_FOLDER_DELETED',
-        'Parent folder is deleted; restore parent folder first'
+        'Parent folder is deleted; restore parent folder first',
+        { destination }
       );
+    }
+  }
+
+  if (isMoving && targetFolderId !== null) {
+    const destAccess = await resolveTargetAccess(
+      db,
+      user,
+      'folder',
+      targetFolderId
+    );
+    if (!destAccess || destAccess.deletedAt !== null) {
+      trashRestoreError(
+        409,
+        'PARENT_FOLDER_DELETED',
+        'Destination folder is deleted',
+        { destination }
+      );
+    }
+    if (!hasAtLeastRole(destAccess.effectiveRole, 'editor')) {
+      trashRestoreError(
+        403,
+        'FORBIDDEN',
+        'Editor permission required on destination folder',
+        { destination }
+      );
+    }
+  }
+
+  const ancestorPlans: AncestorRestorePlan[] = [];
+  if (isOriginalDestination && restoreParentChain) {
+    const chain = await loadDeletedAncestorChain(db, user.tenantId, file.folder_id);
+    for (const ancestor of chain) {
+      const ancestorAccess = await resolveTargetAccess(
+        db,
+        user,
+        'folder',
+        ancestor.id
+      );
+      if (
+        !privilegedAdmin &&
+        (!ancestorAccess ||
+          !hasAtLeastRole(ancestorAccess.effectiveRole, 'editor'))
+      ) {
+        trashRestoreError(
+          403,
+          'FORBIDDEN',
+          'Editor permission required on every deleted ancestor folder',
+          {
+            destination,
+            failedAncestorId: ancestor.id,
+            failedAncestorName: ancestor.name,
+            restoreParentChainRequired: true,
+          }
+        );
+      }
+
+      const suggestedName = await resolveAncestorRestoreName(
+        db,
+        user.tenantId,
+        ancestor.parent_id,
+        ancestor.name,
+        ancestor.id
+      );
+      if (suggestedName !== null && conflictPolicy !== 'rename') {
+        trashRestoreError(
+          409,
+          'NAME_CONFLICT',
+          `An active folder named "${ancestor.name}" already exists at the ancestor destination`,
+          {
+            destination,
+            failedAncestorId: ancestor.id,
+            failedAncestorName: ancestor.name,
+            suggestedName,
+            restoreParentChainRequired: true,
+          }
+        );
+      }
+      ancestorPlans.push({
+        folder: ancestor,
+        name: suggestedName ?? ancestor.name,
+        renamed: suggestedName !== null,
+      });
     }
   }
 
@@ -129,38 +277,110 @@ export async function restoreTrashFile(
   const conflict = await findActiveFileNameConflict(
     db,
     user.tenantId,
-    file.folder_id,
-    restoredName
+    targetFolderId,
+    restoredName,
+    file.id
   );
   if (conflict) {
-    if (options.conflictPolicy !== 'rename') {
+    const suggestedName = await resolveUniqueRestoredFileName(
+      db,
+      user.tenantId,
+      targetFolderId,
+      restoredName
+    );
+    if (conflictPolicy !== 'rename') {
       throw new TrashRequestError(
         409,
         'NAME_CONFLICT',
-        `An active file named "${restoredName}" already exists in destination folder`
+        `An active file named "${restoredName}" already exists in destination folder`,
+        { destination, suggestedName }
       );
     }
-    restoredName = await resolveUniqueRestoredFileName(
-      db,
-      user.tenantId,
-      file.folder_id,
-      restoredName
-    );
+    restoredName = suggestedName;
     restoredExt = validateFileNameAndExt(restoredName).extension;
   }
 
+  const nextClassification = pickStricterClassification(
+    file.classification,
+    destination.classification
+  );
   const nowIso = new Date().toISOString();
-  const batchResults = await db.batch([
+  const statements: D1PreparedStatement[] = [];
+
+  for (const plan of ancestorPlans) {
+    statements.push(
+      db
+        .prepare(
+          `UPDATE folders
+              SET deleted_at = NULL,
+                  deleted_by = NULL,
+                  name = ?,
+                  version = version + 1,
+                  updated_at = ?
+            WHERE tenant_id = ? AND id = ? AND deleted_at IS NOT NULL`
+        )
+        .bind(plan.name, nowIso, user.tenantId, plan.folder.id),
+      buildAuditLogStmt(db, {
+        tenantId: user.tenantId,
+        actorId: user.id,
+        actorEmail: user.email,
+        actorIp: user.ipAddress,
+        action: 'folder.restore',
+        targetType: 'folder',
+        targetId: plan.folder.id,
+        classificationSnapshot: plan.folder.classification,
+        metadata: {
+          restoredBatchDeletedAt: plan.folder.deleted_at,
+          restoredFor: 'file',
+          restoredTargetId: file.id,
+          reason: 'parent_chain',
+          renamedTo: plan.renamed ? plan.name : null,
+        },
+        nowIso,
+      }),
+      buildSyncChangeStmt(db, {
+        tenantId: user.tenantId,
+        entityType: 'folder',
+        entityId: plan.folder.id,
+        folderId: plan.folder.parent_id,
+        action: 'folder.restore',
+        payload: {
+          folder: {
+            ...plan.folder,
+            name: plan.name,
+            deleted_at: null,
+            deleted_by: null,
+            version: plan.folder.version + 1,
+            updated_at: nowIso,
+          },
+          reason: 'parent_chain',
+          restoredTargetId: file.id,
+        },
+        nowIso,
+      })
+    );
+  }
+
+  statements.push(
     db
       .prepare(
         `UPDATE files
-            SET deleted_at = NULL, deleted_by = NULL, name = ?, extension = ?,
-                meta_version = meta_version + 1, updated_by = ?, updated_at = ?
+            SET folder_id = ?,
+                deleted_at = NULL,
+                deleted_by = NULL,
+                name = ?,
+                extension = ?,
+                classification = ?,
+                meta_version = meta_version + 1,
+                updated_by = ?,
+                updated_at = ?
           WHERE tenant_id = ? AND id = ? AND deleted_at IS NOT NULL`
       )
       .bind(
+        targetFolderId,
         restoredName,
         restoredExt,
+        nextClassification,
         user.id,
         nowIso,
         user.tenantId,
@@ -175,11 +395,52 @@ export async function restoreTrashFile(
       .bind(
         file.id,
         user.tenantId,
-        file.classification,
+        nextClassification,
         restoredName,
         restoredExt ?? '',
         file.ai_reason ?? ''
-      ),
+      )
+  );
+
+  if (nextClassification !== file.classification) {
+    statements.push(
+      ...buildClassificationPolicyStatements(db, {
+        tenantId: user.tenantId,
+        fileId: file.id,
+        fromClassification: file.classification,
+        toClassification: nextClassification,
+        sizeBytes: file.size_bytes,
+        actorId: user.id,
+        nowIso,
+      })
+    );
+  }
+
+  // Moving a file to the workspace root removes inherited folder ACLs. Keep the
+  // restorer's explicit access exactly like `PATCH /api/files/:id`.
+  if (isMoving && targetFolderId === null && access.effectiveRole) {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO permissions (
+             id, tenant_id, target_type, target_id, grantee_type, grantee_id, role, granted_by, created_at
+           ) VALUES (?, ?, 'file', ?, 'user', ?, ?, ?, ?)
+           ON CONFLICT (target_type, target_id, grantee_type, grantee_id) DO NOTHING`
+        )
+        .bind(
+          crypto.randomUUID(),
+          user.tenantId,
+          file.id,
+          user.id,
+          access.effectiveRole,
+          user.id,
+          nowIso
+        )
+    );
+  }
+
+  const restoredAncestorIds = ancestorPlans.map((plan) => plan.folder.id);
+  statements.push(
     buildAuditLogStmt(db, {
       tenantId: user.tenantId,
       actorId: user.id,
@@ -188,10 +449,17 @@ export async function restoreTrashFile(
       action: 'file.restore',
       targetType: 'file',
       targetId: file.id,
-      classificationSnapshot: file.classification,
+      classificationSnapshot: nextClassification,
       metadata: {
         restoredName,
         originalName: restoredName === file.name ? undefined : file.name,
+        fromFolderId: file.folder_id,
+        toFolderId: targetFolderId,
+        restoredAncestorIds,
+        restoreParentChain,
+        classificationFloor: destination.classification,
+        fromClassification: file.classification,
+        toClassification: nextClassification,
       },
       nowIso,
     }),
@@ -199,52 +467,101 @@ export async function restoreTrashFile(
       tenantId: user.tenantId,
       entityType: 'file',
       entityId: file.id,
-      folderId: file.folder_id,
+      folderId: targetFolderId,
       action: 'file.restore',
       payload: {
         name: restoredName,
         extension: restoredExt,
-        folderId: file.folder_id,
+        folderId: targetFolderId,
+        previousFolderId: file.folder_id,
+        classification: nextClassification,
         deletedBy: null,
+        restoredAncestorIds,
         metaVersion: file.meta_version + 1,
         updatedAt: nowIso,
       },
       nowIso,
-    }),
-  ]);
+    })
+  );
+
+  if (isMoving && file.folder_id !== null) {
+    statements.push(
+      buildSyncChangeStmt(db, {
+        tenantId: user.tenantId,
+        entityType: 'file',
+        entityId: file.id,
+        folderId: file.folder_id,
+        action: 'file.moved_out',
+        payload: {
+          toFolderId: targetFolderId,
+          metaVersion: file.meta_version + 1,
+          updatedAt: nowIso,
+        },
+        nowIso,
+      })
+    );
+  }
+
+  const batchResults = await db.batch(statements);
 
   const restored = await db
     .prepare('SELECT * FROM files WHERE tenant_id = ? AND id = ?')
     .bind(user.tenantId, file.id)
     .first<FileRow>();
 
+  const finalDestination =
+    (await buildRestoreDestinationContext(db, user, targetFolderId)) ??
+    destination;
+
+  const scopeFolderIds = new Set<string | null>([file.folder_id, targetFolderId]);
+  const affectedFolderIds = new Set<string | null>([file.folder_id, targetFolderId]);
+  for (const plan of ancestorPlans) {
+    scopeFolderIds.add(plan.folder.parent_id);
+    scopeFolderIds.add(plan.folder.id);
+    affectedFolderIds.add(plan.folder.parent_id);
+    affectedFolderIds.add(plan.folder.id);
+  }
+
   return {
     file: restored!,
     syncSeq: extractLastSyncSeq(batchResults),
-    scopeFolderId: file.folder_id,
+    scopeFolderId: targetFolderId,
+    scopeFolderIds: [...scopeFolderIds],
+    destination: finalDestination,
+    restoredAncestorIds,
+    affectedFolderIds: [...affectedFolderIds],
   };
 }
 
 /**
- * Restore one soft-deleted folder subtree through the existing closure-table
- * service. Exposed here so single and bulk routes converge on one contract.
+ * Restore one soft-deleted folder subtree through the shared closure-table
+ * restore service. Exposed here so single and bulk routes converge on one
+ * contract.
  */
 export async function restoreTrashFolder(
   db: D1Database,
   user: AuthUser,
   folderId: string,
-  conflictPolicy: TrashConflictPolicy = 'fail'
+  conflictPolicy: TrashConflictPolicy = 'fail',
+  options: {
+    targetParentId?: string | null;
+    restoreParentChain?: boolean;
+  } = {}
 ): Promise<RestoreTrashFolderResult> {
-  const restored = await restoreFolderSubtree(
-    db,
-    user,
-    folderId,
-    conflictPolicy
-  );
+  const restored = await restoreFolderWithOptions(db, user, folderId, {
+    conflictPolicy,
+    targetParentId: options.targetParentId,
+    restoreParentChain: options.restoreParentChain,
+  });
   return {
     folder: restored.folder,
-    syncSeq: null,
-    scopeFolderId: restored.folder.parent_id,
+    restoredAt: restored.restoredAt,
+    syncSeq: restored.syncSeq,
+    scopeFolderId: restored.destination.id,
+    scopeFolderIds: restored.scopeFolderIds,
+    destination: restored.destination,
+    restoredAncestorIds: restored.restoredAncestorIds,
+    affectedFolderIds: restored.affectedFolderIds,
   };
 }
 
@@ -298,7 +615,9 @@ export async function restoreTrashItems(
         const result = await restoreTrashFile(db, user, item.id, {
           conflictPolicy,
         });
-        scopeFolderIds.add(result.scopeFolderId);
+        for (const folderId of result.scopeFolderIds) {
+          scopeFolderIds.add(folderId);
+        }
         if (result.syncSeq !== null) {
           lastSeq = Math.max(lastSeq ?? 0, result.syncSeq);
         }
@@ -317,7 +636,9 @@ export async function restoreTrashItems(
           item.id,
           conflictPolicy
         );
-        scopeFolderIds.add(result.scopeFolderId);
+        for (const folderId of result.scopeFolderIds) {
+          scopeFolderIds.add(folderId);
+        }
         if (result.syncSeq !== null) {
           lastSeq = Math.max(lastSeq ?? 0, result.syncSeq);
         }

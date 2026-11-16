@@ -11,7 +11,13 @@ export class TrashRequestError extends Error {
   constructor(
     public readonly status: 400 | 403 | 404 | 409 | 413,
     public readonly code: string,
-    message: string
+    message: string,
+    /**
+     * Optional machine-readable recovery context (restore destination,
+     * suggested rename, latest version, ...). Routes merge this into the JSON
+     * error body so the UI can re-select a destination without another fetch.
+     */
+    public readonly details?: Record<string, unknown>
   ) {
     super(message);
     this.name = 'TrashRequestError';

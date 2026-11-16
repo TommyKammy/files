@@ -20,8 +20,8 @@ export function useWorkspaceTrashActions({
   effectiveRole,
   setError,
   setSelectedKeys,
-  removeTrashFolder,
-  removeTrashFile,
+  onRequestRestoreFolder,
+  onRequestRestoreFile,
 }: {
   syncStore: WorkspaceSyncStore;
   isTrashView: boolean;
@@ -32,8 +32,8 @@ export function useWorkspaceTrashActions({
   effectiveRole: ResourceRole;
   setError: (message: string | null) => void;
   setSelectedKeys: Dispatch<SetStateAction<Set<string>>>;
-  removeTrashFolder: (folderId: string) => void;
-  removeTrashFile: (fileId: string) => void;
+  onRequestRestoreFolder: (folder: FolderSummary) => void;
+  onRequestRestoreFile: (file: FileItem) => void;
 }) {
   const trashSelectedOrFocused = useCallback(() => {
     if (isTrashView) return;
@@ -101,22 +101,23 @@ export function useWorkspaceTrashActions({
     [setError, syncStore]
   );
 
+  // Single-item restore now opens the confirmation dialog instead of applying
+  // an optimistic restore immediately. The dialog owns destination, parent
+  // chain and conflict policy, so the actual API mutation lives there.
   const handleRestoreFolder = useCallback(
     (folder: FolderSummary) => {
       setError(null);
-      removeTrashFolder(folder.id);
-      syncStore.optimisticRestoreFolder(folder, 'rename');
+      onRequestRestoreFolder(folder);
     },
-    [setError, removeTrashFolder, syncStore]
+    [onRequestRestoreFolder, setError]
   );
 
   const handleRestoreFile = useCallback(
     (file: FileItem) => {
       setError(null);
-      removeTrashFile(file.id);
-      syncStore.optimisticRestoreFile(file);
+      onRequestRestoreFile(file);
     },
-    [setError, removeTrashFile, syncStore]
+    [onRequestRestoreFile, setError]
   );
 
   return {
