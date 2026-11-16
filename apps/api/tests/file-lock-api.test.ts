@@ -71,13 +71,13 @@ describe('Files Drive lock REST API and WOPI/Drive mutual exclusion', () => {
          ) VALUES
            (?, ?, NULL, 'drive-a.docx', 'docx',
              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-             10, 'active', NULL, 1, 'internal', ?, ?),
+             10, 'active', 'drive-v-a', 1, 'internal', ?, ?),
            (?, ?, NULL, 'drive-b.docx', 'docx',
              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-             10, 'active', NULL, 1, 'internal', ?, ?),
+             10, 'active', 'drive-v-b', 1, 'internal', ?, ?),
            (?, ?, NULL, 'drive-conf.docx', 'docx',
              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-             10, 'active', NULL, 1, 'confidential', ?, ?)`
+             10, 'active', 'drive-v-conf', 1, 'confidential', ?, ?)`
       ).bind(
         FILE_A,
         TENANT_ID,
@@ -90,6 +90,31 @@ describe('Files Drive lock REST API and WOPI/Drive mutual exclusion', () => {
         FILE_CONF,
         TENANT_ID,
         USER_ID,
+        USER_ID
+      ),
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO file_versions (
+           id, tenant_id, file_id, version_num, r2_object_key, size_bytes,
+           mime_type, upload_status, uploaded_by
+         ) VALUES
+           ('drive-v-a', ?, ?, 1, ?, 10,
+             'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'completed', ?),
+           ('drive-v-b', ?, ?, 1, ?, 10,
+             'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'completed', ?),
+           ('drive-v-conf', ?, ?, 1, ?, 10,
+             'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'completed', ?)`
+      ).bind(
+        TENANT_ID,
+        FILE_A,
+        `tenants/${TENANT_ID}/objects/${FILE_A}/v1`,
+        USER_ID,
+        TENANT_ID,
+        FILE_B,
+        `tenants/${TENANT_ID}/objects/${FILE_B}/v1`,
+        USER_ID,
+        TENANT_ID,
+        FILE_CONF,
+        `tenants/${TENANT_ID}/objects/${FILE_CONF}/v1`,
         USER_ID
       ),
       env.DB.prepare(
@@ -115,6 +140,9 @@ describe('Files Drive lock REST API and WOPI/Drive mutual exclusion', () => {
         USER_ID
       ),
     ]);
+    await env.BUCKET.put(`tenants/${TENANT_ID}/objects/${FILE_A}/v1`, 'drive-a!!');
+    await env.BUCKET.put(`tenants/${TENANT_ID}/objects/${FILE_B}/v1`, 'drive-b!!');
+    await env.BUCKET.put(`tenants/${TENANT_ID}/objects/${FILE_CONF}/v1`, 'secret!!!');
   });
 
   it('acquires, reports and releases a desktop_exclusive lock', async () => {

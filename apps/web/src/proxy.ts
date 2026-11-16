@@ -31,6 +31,18 @@ function buildCsp(nonce: string | null) {
     'https://challenges.cloudflare.com',
     ...(collaboraOrigin ? [collaboraOrigin] : []),
   ].join(' ');
+  const collaboraSocketOrigin = collaboraOrigin
+    ? collaboraOrigin.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:')
+    : null;
+  const connectSrc = [
+    "'self'",
+    'https:',
+    'wss:',
+    ...(isDev ? ['ws:'] : []),
+    ...(collaboraSocketOrigin ? [collaboraSocketOrigin] : []),
+  ]
+    .filter((value, index, all) => all.indexOf(value) === index)
+    .join(' ');
   const scriptSrc = nonce
     ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${
         isDev ? " 'unsafe-eval'" : ''
@@ -45,7 +57,7 @@ function buildCsp(nonce: string | null) {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    `connect-src 'self' https: wss:${isDev ? ' ws:' : ''}`,
+    `connect-src ${connectSrc}`,
     "media-src 'self' blob: https:",
     "worker-src 'self' blob:",
     `frame-src ${frameSrc}`,

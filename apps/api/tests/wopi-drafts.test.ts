@@ -20,6 +20,7 @@ const PREVIEWER_ID = 'wopi-previewer';
 const OUTSIDER_ID = 'wopi-outsider';
 const FILE_ID = 'wopi-file-1';
 const DELETED_FILE_ID = 'wopi-file-deleted';
+const NO_CONTENT_FILE_ID = 'wopi-file-no-content';
 const INITIAL_KEY = `tenants/${TENANT_ID}/objects/${FILE_ID}/v1`;
 const INITIAL_BYTES = 100;
 
@@ -124,7 +125,10 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
              ?, 'active', 'wopi-v1', 1, 'internal', ?, ?, NULL),
            (?, ?, NULL, 'trashed.docx', 'docx',
              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-             50, 'active', NULL, 1, 'internal', ?, ?, '2026-01-01T00:00:00.000Z')`
+             50, 'active', NULL, 1, 'internal', ?, ?, '2026-01-01T00:00:00.000Z'),
+           (?, ?, NULL, 'no-content.docx', 'docx',
+             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+             50, 'active', 'missing-version', 1, 'internal', ?, ?, NULL)`
       ).bind(
         FILE_ID,
         TENANT_ID,
@@ -132,6 +136,10 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
         EDITOR_ID,
         EDITOR_ID,
         DELETED_FILE_ID,
+        TENANT_ID,
+        EDITOR_ID,
+        EDITOR_ID,
+        NO_CONTENT_FILE_ID,
         TENANT_ID,
         EDITOR_ID,
         EDITOR_ID
@@ -150,7 +158,8 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
            ('wopi-perm-editor', ?, 'file', ?, 'user', ?, 'editor', ?),
            ('wopi-perm-viewer', ?, 'file', ?, 'user', ?, 'viewer', ?),
            ('wopi-perm-previewer', ?, 'file', ?, 'user', ?, 'previewer', ?),
-           ('wopi-perm-deleted', ?, 'file', ?, 'user', ?, 'editor', ?)`
+           ('wopi-perm-deleted', ?, 'file', ?, 'user', ?, 'editor', ?),
+           ('wopi-perm-no-content', ?, 'file', ?, 'user', ?, 'editor', ?)`
       ).bind(
         TENANT_ID,
         FILE_ID,
@@ -166,6 +175,10 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
         EDITOR_ID,
         TENANT_ID,
         DELETED_FILE_ID,
+        EDITOR_ID,
+        EDITOR_ID,
+        TENANT_ID,
+        NO_CONTENT_FILE_ID,
         EDITOR_ID,
         EDITOR_ID
       ),
@@ -225,6 +238,20 @@ describe('WOPI sessions, draft autosave and version finalization', () => {
         `${editor.accessToken.slice(0, -2)}xx`
       )
     ).toBeNull();
+  });
+
+  it('rejects WOPI sessions for files whose current version has no stored content', async () => {
+    const testEnv = buildTestEnv();
+    const res = await app.fetch(
+      new Request(
+        `http://127.0.0.1:8787/api/files/${NO_CONTENT_FILE_ID}/wopi-session`,
+        { method: 'POST', headers: authHeaders() }
+      ),
+      testEnv
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe('WOPI_CONTENT_NOT_FOUND');
   });
 
   it('keeps 10 autosaves out of file_versions and finalizes exactly one version on unlock', async () => {

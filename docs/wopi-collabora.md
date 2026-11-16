@@ -114,3 +114,14 @@ The API/security matrix is covered by `vitest-pool-workers`
 (`file-lock-api.test.ts`, `wopi-host.test.ts`, `wopi-drafts.test.ts`).
 A Playwright two-browser Collabora editing spec and desktop-client
 integration are the remaining end-to-end validation items.
+
+## Benchmark-seeded files
+
+The local benchmark seed creates metadata-only rows (for example
+`file-0109999`) without corresponding `file_versions` / R2 objects.
+Opening those files cannot succeed and the API now returns
+`409 WOPI_CONTENT_NOT_FOUND` before creating a WOPI session, instead of
+letting Collabora show a misleading WebSocket/proxy error.
+
+For interactive editing tests, upload a real `.docx` / `.xlsx` / `.txt`
+file through the workspace, or seed both `file_versions` and the R2 object.

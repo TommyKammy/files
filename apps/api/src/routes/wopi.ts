@@ -6,6 +6,7 @@ import {
   resolveTargetAccess,
 } from '../services/authorization';
 import type { FileRow } from '../services/file-upload-common';
+import { getActiveWopiDraft } from '../services/wopi-drafts';
 import { issueWopiSessionToken } from '../services/wopi-token';
 import {
   buildWopiSrc,
@@ -46,6 +47,39 @@ wopiSessionRoutes.post('/:id/wopi-session', async (c) => {
 
   const role = access.effectiveRole!;
   const canWrite = hasAtLeastRole(role, 'editor');
+
+  const [currentVersion, activeDraft] = await Promise.all([
+    file.current_version_id
+      ? c.env.DB.prepare(
+          `SELECT id, r2_object_key FROM file_versions
+            WHERE tenant_id = ? AND id = ? LIMIT 1`
+        )
+          .bind(user.tenantId, file.current_version_id)
+          .first<{ id: string; r2_object_key: string }>()
+      : null,
+    getActiveWopiDraft(c.env.DB, user.tenantId, fileId),
+  ]);
+  if (!activeDraft) {
+    if (!currentVersion) {
+      return c.json(
+        {
+          error: 'このファイルには表示・編集できる実体がありません',
+          code: 'WOPI_CONTENT_NOT_FOUND',
+        },
+        409
+      );
+    }
+    const object = await c.env.BUCKET.head(currentVersion.r2_object_key);
+    if (!object) {
+      return c.json(
+        {
+          error: 'このファイルの実体がストレージに見つかりません',
+          code: 'WOPI_CONTENT_NOT_FOUND',
+        },
+        409
+      );
+    }
+  }
   const sessionId = crypto.randomUUID();
   const wopiSrc = buildWopiSrc(c.env, fileId);
   const discovery = await getWopiDiscovery(c.env).catch((err) => {
