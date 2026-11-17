@@ -44,8 +44,12 @@ export function AppShellRail({
   const dragCtx = useWorkspaceDrag();
 
   const [searchOpen, setSearchOpen] = useState(false);
+  // Every `/admin/*` deep link belongs to the governance view, even when a
+  // caller omits `activeView`. The explicit prop still wins for other views.
   const resolvedView =
-    activeView ?? (pathname.startsWith('/admin') ? 'admin' : 'workspace');
+    activeView === 'admin' || pathname.startsWith('/admin')
+      ? 'admin'
+      : (activeView ?? 'workspace');
   const isGuest = user?.userType === 'guest';
   const isAdmin =
     user?.userType !== 'guest' &&

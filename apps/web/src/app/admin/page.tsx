@@ -5,5 +5,5 @@ export default async function AdminPage() {
   // Keep the nonce and the rendered script tags in the same request.
   await connection();
 
-  return <HybridGovernanceDashboard />;
+  return <HybridGovernanceDashboard section="all" />;
 }

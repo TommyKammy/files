@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   adminEmergencyRevokeSharedLink,
@@ -36,15 +37,36 @@ import {
   PERMISSION_AUDIT_ACTION_PREFIXES,
   ROOT_FOLDER_AUDIT_ACTIONS,
 } from '@/lib/admin-audit';
+import {
+  ADMIN_AUDIT_PRESETS,
+  buildAdminAuditPresetHref,
+  getAdminSectionFetchPlan,
+  parseAdminAuditPreset,
+  type AdminConsoleSection,
+} from '@/lib/admin-console-nav';
 
-export function useGovernanceDashboard() {
+export function useGovernanceDashboard({
+  section = 'all',
+  auditPreset = null,
+}: {
+  section?: AdminConsoleSection;
+  auditPreset?: string | string[] | null;
+} = {}) {
+  const router = useRouter();
   const syncStore = getWorkspaceSyncStore();
   const snapshot = useWorkspaceSyncSnapshot();
   const user = snapshot.user;
   const authChecked = snapshot.authStatus !== 'unknown';
 
+  const initialAuditPreset = parseAdminAuditPreset(auditPreset);
+  const initialAuditPresetConfig = initialAuditPreset
+    ? ADMIN_AUDIT_PRESETS[initialAuditPreset]
+    : null;
+
   const [loading, setLoading] = useState(true);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(
+    section === 'users'
+  );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -100,17 +122,30 @@ export function useGovernanceDashboard() {
     id: string;
   } | null>(null);
   const [auditActionFilter, setAuditActionFilter] = useState('');
-  const [auditActionPreset, setAuditActionPreset] = useState<string[]>([]);
+  const [auditActionPreset, setAuditActionPreset] = useState<string[]>(
+    initialAuditPresetConfig ? [...initialAuditPresetConfig.actions] : []
+  );
   const [auditActionPrefixFilter, setAuditActionPrefixFilter] = useState('');
   const [auditActionPrefixPreset, setAuditActionPrefixPreset] = useState<
     string[]
-  >([]);
+  >(
+    initialAuditPresetConfig
+      ? [...initialAuditPresetConfig.actionPrefixes]
+      : []
+  );
   const [auditPresetKind, setAuditPresetKind] = useState<
     'permission' | 'guest' | null
-  >(null);
+  >(initialAuditPresetConfig?.presetKind ?? null);
   const [auditTargetType, setAuditTargetType] = useState('');
   const [auditStatusFilter, setAuditStatusFilter] = useState<'' | 'allowed' | 'blocked'>('');
   const [auditLoadingMore, setAuditLoadingMore] = useState(false);
+
+  // The reports page is a normal server-rendered route, so `auditPreset`
+  // arrives as a prop. Only re-apply when the raw query value changes; the
+  // initial state above already covers the first render.
+  const initialAuditPresetRaw =
+    (Array.isArray(auditPreset) ? auditPreset[0] : auditPreset) ?? null;
+  const appliedAuditPresetRef = useRef<string | null>(initialAuditPresetRaw);
 
   useEffect(() => {
     void syncStore.hydrateFromScopeHint();
@@ -130,6 +165,16 @@ export function useGovernanceDashboard() {
   const loadAll = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!authChecked || !user || !isPrivilegedAdmin) return;
+
+      const plan = getAdminSectionFetchPlan(section);
+      if (plan.completesImmediately) {
+        if (!options?.silent) {
+          setLoading(false);
+          setInitialLoadComplete(true);
+        }
+        return;
+      }
+
       if (!options?.silent) {
         setLoading(true);
         setError(null);
@@ -137,47 +182,72 @@ export function useGovernanceDashboard() {
       try {
         const [statsRes, aiRes, linksRes, policyRes, logsRes, conflictsRes] =
           await Promise.all([
-            fetchAdminStorageStats(),
-            fetchAdminAiSuggestions({
-              suggestedLabel: labelFilter === 'all' ? undefined : labelFilter,
-              limit: 50,
-            }),
-            fetchAdminSharedLinks(50),
-            fetchAdminPolicies(),
-            fetchAuditLogs({
-              action: auditActionFilter.trim() || undefined,
-              actions:
-                auditActionPreset.length > 0 ? auditActionPreset : undefined,
-              actionPrefixes: [
-                ...auditActionPrefixPreset,
-                ...(auditActionPrefixFilter.trim()
-                  ? [auditActionPrefixFilter.trim()]
-                  : []),
-              ].filter(Boolean),
-              targetType: auditTargetType || undefined,
-              status: auditStatusFilter || undefined,
-              limit: 50,
-            }),
-            fetchInheritanceConflicts(),
+            plan.storageStats ? fetchAdminStorageStats() : Promise.resolve(null),
+            plan.aiSuggestions
+              ? fetchAdminAiSuggestions({
+                  suggestedLabel:
+                    labelFilter === 'all' ? undefined : labelFilter,
+                  limit: 50,
+                })
+              : Promise.resolve(null),
+            plan.sharedLinks
+              ? fetchAdminSharedLinks(50)
+              : Promise.resolve(null),
+            plan.policies ? fetchAdminPolicies() : Promise.resolve(null),
+            plan.auditLogs
+              ? fetchAuditLogs({
+                  action: auditActionFilter.trim() || undefined,
+                  actions:
+                    auditActionPreset.length > 0
+                      ? auditActionPreset
+                      : undefined,
+                  actionPrefixes: [
+                    ...auditActionPrefixPreset,
+                    ...(auditActionPrefixFilter.trim()
+                      ? [auditActionPrefixFilter.trim()]
+                      : []),
+                  ].filter(Boolean),
+                  targetType: auditTargetType || undefined,
+                  status: auditStatusFilter || undefined,
+                  limit: 50,
+                })
+              : Promise.resolve(null),
+            plan.inheritanceConflicts
+              ? fetchInheritanceConflicts()
+              : Promise.resolve(null),
           ]);
-        setStats(statsRes);
-        setSuggestions(aiRes.suggestions);
-        setSelectedIds(new Set());
-        setSharedLinks(linksRes.links);
-        // Never clobber an in-progress advanced-role switch with a background
-        // realtime refresh (`admin.policy_updated` fires `loadAll({ silent })`).
-        if (!advancedRolesDirtyRef.current) {
-          setPolicy(policyRes.policy);
+
+        if (statsRes) {
+          setStats(statsRes);
         }
-        setClosedModeReport(policyRes.closedModeReport ?? null);
-        setPermissionInheritanceMode(
-          conflictsRes.permissionInheritanceMode ??
-            policyRes.permissionInheritanceMode ??
-            'additive'
-        );
-        setInheritanceConflictReport(conflictsRes.conflicts ?? []);
-        setAuditLogs(logsRes.logs);
-        setAuditCursor(logsRes.nextCursor);
+        if (aiRes) {
+          setSuggestions(aiRes.suggestions);
+          setSelectedIds(new Set());
+        }
+        if (linksRes) {
+          setSharedLinks(linksRes.links);
+        }
+        if (policyRes) {
+          // Never clobber an in-progress advanced-role switch with a
+          // background realtime refresh (`admin.policy_updated` fires
+          // `loadAll({ silent })`).
+          if (!advancedRolesDirtyRef.current) {
+            setPolicy(policyRes.policy);
+          }
+          setClosedModeReport(policyRes.closedModeReport ?? null);
+        }
+        if (conflictsRes) {
+          setPermissionInheritanceMode(
+            conflictsRes.permissionInheritanceMode ??
+              policyRes?.permissionInheritanceMode ??
+              'additive'
+          );
+          setInheritanceConflictReport(conflictsRes.conflicts ?? []);
+        }
+        if (logsRes) {
+          setAuditLogs(logsRes.logs);
+          setAuditCursor(logsRes.nextCursor);
+        }
       } catch (err) {
         if (!options?.silent) {
           setError(
@@ -189,10 +259,10 @@ export function useGovernanceDashboard() {
       } finally {
         if (!options?.silent) {
           setLoading(false);
-          // Mark the first bulk load complete only after every dashboard value
-          // has been applied in the same commit. The shell renders one compact
-          // loading surface until then, so child sections cannot shift content
-          // above them as their independent fetches resolve.
+          // Mark the first section load complete only after every value for
+          // this view has been applied in the same commit. The shell renders
+          // one compact loading surface until then, so child sections cannot
+          // shift content above them as their independent fetches resolve.
           setInitialLoadComplete(true);
         }
       }
@@ -201,6 +271,7 @@ export function useGovernanceDashboard() {
       authChecked,
       user,
       isPrivilegedAdmin,
+      section,
       labelFilter,
       auditActionFilter,
       auditActionPreset,
@@ -213,11 +284,29 @@ export function useGovernanceDashboard() {
 
   useEffect(() => {
     if (authChecked && isPrivilegedAdmin) {
-      loadAll();
+      void loadAll();
     } else if (authChecked) {
       setLoading(false);
+      setInitialLoadComplete(true);
     }
   }, [authChecked, isPrivilegedAdmin, loadAll]);
+
+  useEffect(() => {
+    const raw =
+      (Array.isArray(auditPreset) ? auditPreset[0] : auditPreset) ?? null;
+    if (appliedAuditPresetRef.current === raw) return;
+    appliedAuditPresetRef.current = raw;
+
+    const parsed = parseAdminAuditPreset(raw);
+    const config = parsed ? ADMIN_AUDIT_PRESETS[parsed] : null;
+    setAuditActionFilter('');
+    setAuditActionPrefixFilter('');
+    setAuditTargetType('');
+    setAuditStatusFilter('');
+    setAuditActionPreset(config ? [...config.actions] : []);
+    setAuditActionPrefixPreset(config ? [...config.actionPrefixes] : []);
+    setAuditPresetKind(config?.presetKind ?? null);
+  }, [auditPreset]);
 
   useEffect(() => {
     if (!authChecked || !isPrivilegedAdmin) return;
@@ -567,6 +656,10 @@ export function useGovernanceDashboard() {
   }
 
   function handleShowRootFolderAudit() {
+    if (section !== 'all') {
+      router.push(buildAdminAuditPresetHref('rootFolder'));
+      return;
+    }
     setAuditActionFilter('');
     setAuditActionPreset([...ROOT_FOLDER_AUDIT_ACTIONS]);
     setAuditActionPrefixFilter('');
@@ -589,6 +682,10 @@ export function useGovernanceDashboard() {
 
   /** Guest lifecycle preset: `guest.*` and `admin.guest.*`. */
   function handleShowGuestAudit() {
+    if (section !== 'all') {
+      router.push(buildAdminAuditPresetHref('guest'));
+      return;
+    }
     setAuditActionFilter('');
     setAuditActionPreset([]);
     setAuditStatusFilter('');

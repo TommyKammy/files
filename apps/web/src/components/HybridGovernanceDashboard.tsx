@@ -17,11 +17,23 @@ import { AuditLogSection } from '@/components/admin/AuditLogSection';
 import { GuestPolicySection } from '@/components/admin/GuestPolicySection';
 import { SharedLinksPolicySection } from '@/components/admin/SharedLinksPolicySection';
 import { StorageStatsSection } from '@/components/admin/StorageStatsSection';
+import { AdminConsoleShell } from '@/components/AdminConsoleShell';
 import { AppShellRail } from '@/components/AppShellRail';
+import {
+  adminSectionHasDashboardFetch,
+  getAdminConsoleNavItem,
+  type AdminConsoleSection,
+} from '@/lib/admin-console-nav';
 import { useGovernanceDashboard } from '@/lib/use-governance-dashboard';
 import { LocalDevQuickLoginPanel, SignInCard } from '@/components/SignInCard';
 
-export function HybridGovernanceDashboard() {
+export function HybridGovernanceDashboard({
+  section = 'all',
+  auditPreset = null,
+}: {
+  section?: AdminConsoleSection;
+  auditPreset?: string | string[] | null;
+}) {
   const {
     syncStore,
     user,
@@ -88,7 +100,12 @@ export function HybridGovernanceDashboard() {
     handleClearAuditPreset,
     handleClearAuditPrefixPreset,
     handleLoadMoreLogs,
-  } = useGovernanceDashboard();
+  } = useGovernanceDashboard({ section, auditPreset });
+
+  const navItem = getAdminConsoleNavItem(section);
+  const hasDashboardFetch = adminSectionHasDashboardFetch(section);
+  const showSection = (target: Exclude<AdminConsoleSection, 'all'>) =>
+    section === 'all' || section === target;
 
   if (!authChecked) {
     return (
@@ -162,156 +179,183 @@ export function HybridGovernanceDashboard() {
       <main
         id="governance-main"
         tabIndex={-1}
-        className="mb-2 mr-2 mt-2 min-w-0 flex-1 space-y-5 rounded-2xl border border-[#e7e7ea] bg-[#f9f9fa] px-5 py-4 lg:px-7"
+        className="mb-2 mr-2 mt-2 min-w-0 flex-1 rounded-2xl border border-[#e7e7ea] bg-[#f9f9fa] px-5 py-4 lg:px-7"
       >
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-[1rem] font-semibold tracking-[-0.01em] text-[#111214]">
-              ガバナンス & セキュリティ統合ダッシュボード
-            </h1>
-            <p className="text-[0.6875rem] text-[#55565a]">
-              D1 O(1) 統計・Workers AI 分類レビュー・緊急失効・不変監査ログ
-            </p>
-          </div>
+        <AdminConsoleShell user={user} section={section}>
+          <header className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h1 className="text-[1rem] font-semibold tracking-[-0.01em] text-[#111214]">
+                {navItem.heading}
+              </h1>
+              <p className="text-[0.6875rem] text-[#55565a]">
+                {navItem.summary}
+              </p>
+            </div>
 
-          <button
-            type="button"
-            onClick={() => void loadAll()}
-            disabled={loading}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>再読み込み</span>
-          </button>
-        </header>
-
-        {error && (
-          <div
-            role="alert"
-            className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700"
-          >
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {notice && (
-          <div
-            role="status"
-            className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800"
-          >
-            {notice}
-          </div>
-        )}
-
-        {!initialLoadComplete ? (
-          <div
-            role="status"
-            data-testid="governance-initial-loading"
-            className="flex min-h-[7rem] items-center justify-center gap-2 rounded-2xl border border-[#e7e7ea] bg-white px-5 py-6 text-[0.75rem] text-[#55565a] shadow-xs"
-          >
-            <Loader2 className="h-4 w-4 animate-spin text-[#5e6ad2]" />
-            <span>ガバナンスデータを一括読み込み中...</span>
-          </div>
-        ) : (
-          <>
-            {stats && (
-              <StorageStatsSection stats={stats} usedPct={usedPct} />
+            {hasDashboardFetch && (
+              <button
+                type="button"
+                onClick={() => void loadAll()}
+                disabled={loading}
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`}
+                />
+                <span>再読み込み</span>
+              </button>
             )}
+          </header>
 
-            <AiSuggestionQueue
-              suggestions={suggestions}
-              selectedIds={selectedIds}
-              labelFilter={labelFilter}
-              bulkBusy={bulkBusy}
-              onFilterChange={setLabelFilter}
-              onSelectAll={handleSelectAllSuggestions}
-              onBulkApprove={handleBulkApprove}
-              onSingleApprove={handleSingleApprove}
-              onToggleSelection={toggleSelection}
-            />
+          {error && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700"
+            >
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
-            <AccessControlSettingsSection
-              policy={policy}
-              saving={advancedRolesSaving}
-              error={advancedRolesError}
-              notice={advancedRolesNotice}
-              canManageFolderStructure={user.role === 'sys_admin'}
-              folderStructureSaving={folderStructureSaving}
-              folderStructureError={folderStructureError}
-              folderStructureNotice={folderStructureNotice}
-              closedModeReport={closedModeReport}
-              permissionInheritanceMode={permissionInheritanceMode}
-              inheritanceSaving={inheritanceSaving}
-              inheritanceError={inheritanceError}
-              inheritanceNotice={inheritanceNotice}
-              canManagePermissionInheritance={user.role === 'sys_admin'}
-              inheritanceConflictReport={inheritanceConflictReport}
-              invitePolicySaving={invitePolicySaving}
-              invitePolicyError={invitePolicyError}
-              invitePolicyNotice={invitePolicyNotice}
-              canManageInvitePolicy={user.role === 'sys_admin'}
-              onSave={handleAdvancedRolesUpdate}
-              onSaveFolderStructureMode={handleFolderStructureUpdate}
-              onSavePermissionInheritanceMode={handlePermissionInheritanceUpdate}
-              onSaveInvitePolicy={handleInvitePolicyUpdate}
-              onDirtyChange={setAdvancedRolesDirty}
-            />
+          {notice && (
+            <div
+              role="status"
+              className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800"
+            >
+              {notice}
+            </div>
+          )}
 
-            <SharedLinksPolicySection
-              sharedLinks={sharedLinks}
-              policy={policy}
-              policySaving={policySaving}
-              onEmergencyRevoke={handleEmergencyRevoke}
-              onPolicySubmit={handlePolicySubmit}
-              onPolicyChange={setPolicy}
-            />
+          {!initialLoadComplete ? (
+            <div
+              role="status"
+              data-testid="governance-initial-loading"
+              className="flex min-h-[7rem] items-center justify-center gap-2 rounded-2xl border border-[#e7e7ea] bg-white px-5 py-6 text-[0.75rem] text-[#55565a] shadow-xs"
+            >
+              <Loader2 className="h-4 w-4 animate-spin text-[#5e6ad2]" />
+              <span>
+                {section === 'all'
+                  ? 'ガバナンスデータを一括読み込み中...'
+                  : `${navItem.label}を読み込み中...`}
+              </span>
+            </div>
+          ) : (
+            <>
+              {showSection('insights') && stats && (
+                <StorageStatsSection stats={stats} usedPct={usedPct} />
+              )}
 
-            <AdminTrashSection user={user} />
+              {showSection('content') && (
+                <AiSuggestionQueue
+                  suggestions={suggestions}
+                  selectedIds={selectedIds}
+                  labelFilter={labelFilter}
+                  bulkBusy={bulkBusy}
+                  onFilterChange={setLabelFilter}
+                  onSelectAll={handleSelectAllSuggestions}
+                  onBulkApprove={handleBulkApprove}
+                  onSingleApprove={handleSingleApprove}
+                  onToggleSelection={toggleSelection}
+                />
+              )}
 
-            <AdminPermissionAuditSection
-              user={user}
-              onShowPermissionAudit={handleShowPermissionAudit}
-            />
+              {showSection('settings') && (
+                <AccessControlSettingsSection
+                  policy={policy}
+                  saving={advancedRolesSaving}
+                  error={advancedRolesError}
+                  notice={advancedRolesNotice}
+                  canManageFolderStructure={user.role === 'sys_admin'}
+                  folderStructureSaving={folderStructureSaving}
+                  folderStructureError={folderStructureError}
+                  folderStructureNotice={folderStructureNotice}
+                  closedModeReport={closedModeReport}
+                  permissionInheritanceMode={permissionInheritanceMode}
+                  inheritanceSaving={inheritanceSaving}
+                  inheritanceError={inheritanceError}
+                  inheritanceNotice={inheritanceNotice}
+                  canManagePermissionInheritance={user.role === 'sys_admin'}
+                  inheritanceConflictReport={inheritanceConflictReport}
+                  invitePolicySaving={invitePolicySaving}
+                  invitePolicyError={invitePolicyError}
+                  invitePolicyNotice={invitePolicyNotice}
+                  canManageInvitePolicy={user.role === 'sys_admin'}
+                  onSave={handleAdvancedRolesUpdate}
+                  onSaveFolderStructureMode={handleFolderStructureUpdate}
+                  onSavePermissionInheritanceMode={
+                    handlePermissionInheritanceUpdate
+                  }
+                  onSaveInvitePolicy={handleInvitePolicyUpdate}
+                  onDirtyChange={setAdvancedRolesDirty}
+                />
+              )}
 
-            <AdminRootFoldersSection
-              user={user}
-              onShowAuditLogs={handleShowRootFolderAudit}
-            />
+              {showSection('settings') && (
+                <SharedLinksPolicySection
+                  sharedLinks={sharedLinks}
+                  policy={policy}
+                  policySaving={policySaving}
+                  onEmergencyRevoke={handleEmergencyRevoke}
+                  onPolicySubmit={handlePolicySubmit}
+                  onPolicyChange={setPolicy}
+                />
+              )}
 
-            <GuestPolicySection
-              policy={policy}
-              canManage={user.role === 'sys_admin'}
-              onPolicyUpdated={setPolicy}
-            />
+              {showSection('content') && <AdminTrashSection user={user} />}
 
-            <AdminGuestsSection
-              user={user}
-              onShowAuditLogs={handleShowGuestAudit}
-            />
+              {showSection('reports') && (
+                <AdminPermissionAuditSection
+                  user={user}
+                  onShowPermissionAudit={handleShowPermissionAudit}
+                />
+              )}
 
-            <AuditLogSection
-              auditLogs={auditLogs}
-              auditCursor={auditCursor}
-              auditActionFilter={auditActionFilter}
-              auditActionPrefixFilter={auditActionPrefixFilter}
-              auditActionPrefixes={auditActionPrefixPreset}
-              auditPresetKind={auditPresetKind}
-              auditTargetType={auditTargetType}
-              auditStatusFilter={auditStatusFilter}
-              auditLoadingMore={auditLoadingMore}
-              auditPresetActions={auditActionPreset}
-              onActionFilterChange={setAuditActionFilter}
-              onActionPrefixFilterChange={setAuditActionPrefixFilter}
-              onTargetTypeChange={setAuditTargetType}
-              onStatusFilterChange={setAuditStatusFilter}
-              onLoadMore={handleLoadMoreLogs}
-              onClearPreset={handleClearAuditPreset}
-              onClearPrefixPreset={handleClearAuditPrefixPreset}
-            />
-          </>
-        )}
+              {showSection('content') && (
+                <AdminRootFoldersSection
+                  user={user}
+                  onShowAuditLogs={handleShowRootFolderAudit}
+                />
+              )}
 
+              {showSection('settings') && (
+                <GuestPolicySection
+                  policy={policy}
+                  canManage={user.role === 'sys_admin'}
+                  onPolicyUpdated={setPolicy}
+                />
+              )}
+
+              {showSection('users') && (
+                <AdminGuestsSection
+                  user={user}
+                  onShowAuditLogs={handleShowGuestAudit}
+                />
+              )}
+
+              {showSection('reports') && (
+                <AuditLogSection
+                  auditLogs={auditLogs}
+                  auditCursor={auditCursor}
+                  auditActionFilter={auditActionFilter}
+                  auditActionPrefixFilter={auditActionPrefixFilter}
+                  auditActionPrefixes={auditActionPrefixPreset}
+                  auditPresetKind={auditPresetKind}
+                  auditTargetType={auditTargetType}
+                  auditStatusFilter={auditStatusFilter}
+                  auditLoadingMore={auditLoadingMore}
+                  auditPresetActions={auditActionPreset}
+                  onActionFilterChange={setAuditActionFilter}
+                  onActionPrefixFilterChange={setAuditActionPrefixFilter}
+                  onTargetTypeChange={setAuditTargetType}
+                  onStatusFilterChange={setAuditStatusFilter}
+                  onLoadMore={handleLoadMoreLogs}
+                  onClearPreset={handleClearAuditPreset}
+                  onClearPrefixPreset={handleClearAuditPrefixPreset}
+                />
+              )}
+            </>
+          )}
+        </AdminConsoleShell>
       </main>
     </div>
   );
