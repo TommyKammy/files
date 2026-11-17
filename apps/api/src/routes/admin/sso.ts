@@ -1,3 +1,4 @@
+import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { getAuthenticatedUser } from '../../services/authorization';
 import { resolveClientIp } from '../../services/ip-allowlist';
@@ -13,6 +14,7 @@ import {
   getCallbackBaseOrigin,
   getClientSecretForProvider,
 } from '../auth/shared';
+import type { AuthUser } from '../../types/api';
 import type { IdpProviderConfig, OidcEnv, OidcHonoEnv } from '../../types/oidc';
 
 export interface AdminSsoProviderStatus {
@@ -69,6 +71,39 @@ async function probeDiscovery(
   }
 }
 
+export async function loadAdminSsoStatusPayload(
+  c: Context<OidcHonoEnv>,
+  user: AuthUser,
+  shouldProbe = false
+) {
+  const providers = buildConfiguredIdpProviders(c.env);
+  const providerStatuses = await Promise.all(
+    providers.map(async (provider) => {
+      const status = providerStatus(c.env, provider);
+      if (shouldProbe) {
+        const discovery = await probeDiscovery(provider);
+        status.discovery = discovery;
+        if (!status.jwksUri) {
+          status.jwksUri = discovery.jwksUri;
+        }
+      }
+      return status;
+    })
+  );
+
+  const ssoPolicy = await loadSsoPolicy(c.env.DB, user.tenantId);
+
+  return {
+    providers: providerStatuses,
+    callbackUrl: `${getCallbackBaseOrigin(c.env, c.req.url)}/auth/callback`,
+    environment: c.env.ENVIRONMENT ?? 'unconfigured',
+    allowDevAuth: c.env.ALLOW_DEV_AUTH === 'true',
+    requireSsoLogin: ssoPolicy.requireSsoLogin,
+    ssoAllowedDomains: ssoPolicy.allowedDomains,
+    clientIp: resolveClientIp(c),
+  };
+}
+
 export function registerAdminSsoRoutes(routes: Hono<OidcHonoEnv>) {
   /**
    * GET /api/admin/sso/status — read-only IdP visibility for sys_admin and
@@ -78,35 +113,9 @@ export function registerAdminSsoRoutes(routes: Hono<OidcHonoEnv>) {
    */
   routes.get('/sso/status', async (c) => {
     const user = getAuthenticatedUser(c);
-    const providers = buildConfiguredIdpProviders(c.env);
     const shouldProbe =
       c.req.query('probeDiscovery') === '1' ||
       c.req.query('probeDiscovery') === 'true';
-
-    const providerStatuses = await Promise.all(
-      providers.map(async (provider) => {
-        const status = providerStatus(c.env, provider);
-        if (shouldProbe) {
-          const discovery = await probeDiscovery(provider);
-          status.discovery = discovery;
-          if (!status.jwksUri) {
-            status.jwksUri = discovery.jwksUri;
-          }
-        }
-        return status;
-      })
-    );
-
-    const ssoPolicy = await loadSsoPolicy(c.env.DB, user.tenantId);
-
-    return c.json({
-      providers: providerStatuses,
-      callbackUrl: `${getCallbackBaseOrigin(c.env, c.req.url)}/auth/callback`,
-      environment: c.env.ENVIRONMENT ?? 'unconfigured',
-      allowDevAuth: c.env.ALLOW_DEV_AUTH === 'true',
-      requireSsoLogin: ssoPolicy.requireSsoLogin,
-      ssoAllowedDomains: ssoPolicy.allowedDomains,
-      clientIp: resolveClientIp(c),
-    });
+    return c.json(await loadAdminSsoStatusPayload(c, user, shouldProbe));
   });
 }

@@ -10,7 +10,7 @@ import {
   Scale,
   ShieldCheck,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   formatTosAudienceLabel,
   readBranding,
@@ -44,26 +44,32 @@ const MAX_FILE_REQUEST_BYTES = 10 * 1024 * 1024 * 1024;
 export function AdminComplianceSettingsSection({
   policy,
   canManage,
+  initialTos,
   onPolicyUpdated,
 }: {
   policy: TenantPolicyRow | null;
   canManage: boolean;
+  initialTos?: AdminTosPolicy | null;
   onPolicyUpdated: (policy: TenantPolicyRow | null) => void;
 }) {
   const persistedFileRequests = readFileRequestPolicy(policy);
   const persistedBranding = readBranding(policy);
   const persistedThresholds = readQuotaThresholds(policy);
 
-  const [tos, setTos] = useState<AdminTosPolicy | null>(null);
-  const [tosLoading, setTosLoading] = useState(true);
+  const lastInitialTosRef = useRef<AdminTosPolicy | null | undefined>(
+    initialTos
+  );
+  const [tos, setTos] = useState<AdminTosPolicy | null>(() => initialTos ?? null);
+  const [tosLoading, setTosLoading] = useState(() => initialTos === undefined);
   const [tosSaving, setTosSaving] = useState(false);
   const [tosError, setTosError] = useState<string | null>(null);
   const [tosNotice, setTosNotice] = useState<string | null>(null);
-  const [tosEnabled, setTosEnabled] = useState(false);
-  const [tosAudience, setTosAudience] =
-    useState<TosTargetAudience>('all_users');
-  const [tosTitle, setTosTitle] = useState('利用規約');
-  const [tosBody, setTosBody] = useState('');
+  const [tosEnabled, setTosEnabled] = useState(() => initialTos?.enabled ?? false);
+  const [tosAudience, setTosAudience] = useState<TosTargetAudience>(
+    () => initialTos?.targetAudience ?? 'all_users'
+  );
+  const [tosTitle, setTosTitle] = useState(() => initialTos?.title ?? '利用規約');
+  const [tosBody, setTosBody] = useState(() => initialTos?.bodyMarkdown ?? '');
   const [tosBumpVersion, setTosBumpVersion] = useState(false);
 
   const [allowFileRequests, setAllowFileRequests] = useState(
@@ -93,6 +99,19 @@ export function AdminComplianceSettingsSection({
   const [policyNotice, setPolicyNotice] = useState<string | null>(null);
 
   useEffect(() => {
+    if (initialTos !== undefined) {
+      if (initialTos && initialTos !== lastInitialTosRef.current) {
+        lastInitialTosRef.current = initialTos;
+        setTos(initialTos);
+        setTosEnabled(initialTos.enabled);
+        setTosAudience(initialTos.targetAudience);
+        setTosTitle(initialTos.title);
+        setTosBody(initialTos.bodyMarkdown);
+        setTosError(null);
+      }
+      setTosLoading(false);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       setTosLoading(true);
@@ -116,7 +135,7 @@ export function AdminComplianceSettingsSection({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialTos]);
 
   useEffect(() => {
     const nextFileRequests = readFileRequestPolicy(policy);

@@ -73,6 +73,7 @@ export function HybridGovernanceDashboard({
     labelFilter,
     bulkBusy,
     sharedLinks,
+    settingsBundle,
     policy,
     policySaving,
     advancedRolesSaving,
@@ -428,6 +429,9 @@ export function HybridGovernanceDashboard({
                 <AdminAuthControlSection
                   user={user}
                   policy={policy}
+                  initialSsoStatus={
+                    settingsBundle ? settingsBundle.ssoStatus : undefined
+                  }
                   onPolicyUpdated={setPolicy}
                 />
               )}
@@ -437,18 +441,35 @@ export function HybridGovernanceDashboard({
                 <AdminComplianceSettingsSection
                   policy={policy}
                   canManage={user.role === 'sys_admin'}
+                  initialTos={
+                    settingsBundle
+                      ? (settingsBundle.tos?.tos ?? null)
+                      : undefined
+                  }
                   onPolicyUpdated={setPolicy}
                 />
               )}
 
               {showSection('settings') &&
                 hasAdminCapability(user, 'admin.policies.read') && (
-                <AdminSiemSettingsSection canManage={user.role === 'sys_admin'} />
+                <AdminSiemSettingsSection
+                  canManage={user.role === 'sys_admin'}
+                  initialSiem={
+                    settingsBundle
+                      ? (settingsBundle.siem?.siem ?? null)
+                      : undefined
+                  }
+                />
               )}
 
               {showSection('settings') &&
                 hasAdminCapability(user, 'admin.users.read') && (
-                <AdminSessionsSection user={user} />
+                <AdminSessionsSection
+                  user={user}
+                  initialSessions={
+                    settingsBundle ? settingsBundle.sessions : undefined
+                  }
+                />
               )}
 
               {showSection('settings') &&
@@ -494,6 +515,11 @@ export function HybridGovernanceDashboard({
                 <GuestPolicySection
                   policy={policy}
                   canManage={user.role === 'sys_admin'}
+                  initialInvitations={
+                    settingsBundle
+                      ? (settingsBundle.guestInvitations?.invitations ?? null)
+                      : undefined
+                  }
                   onPolicyUpdated={setPolicy}
                 />
               )}

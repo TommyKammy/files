@@ -160,6 +160,7 @@ test.describe('Admin console multi-view navigation (TOM-63)', () => {
       expect(users.apiPaths).not.toContain(path);
     }
     expect(users.apiPaths).not.toContain('/api/admin/policies');
+    expect(users.apiPaths).not.toContain('/api/admin/settings-bundle');
     await users.page.close();
 
     // /admin/insights: the dedicated insights aggregate (including its O(1)
@@ -188,14 +189,25 @@ test.describe('Admin console multi-view navigation (TOM-63)', () => {
     }
     await content.page.close();
 
-    // /admin/settings: policies, shared links and inheritance conflicts.
+    // /admin/settings: consolidated settings-bundle only (no child waterfall).
     const settings = await openRoute('/admin/settings', 'ガバナンスと設定', [
+      '/api/admin/settings-bundle',
+    ]);
+    await settings.page.waitForLoadState('networkidle');
+    for (const path of forbidden) {
+      expect(settings.apiPaths).not.toContain(path);
+    }
+    for (const redundantPath of [
       '/api/admin/policies',
       '/api/admin/shared-links',
       '/api/admin/policies/inheritance-conflicts',
-    ]);
-    for (const path of forbidden) {
-      expect(settings.apiPaths).not.toContain(path);
+      '/api/admin/sso/status',
+      '/api/admin/tos',
+      '/api/admin/siem',
+      '/api/admin/sessions',
+      '/api/guests/invitations',
+    ]) {
+      expect(settings.apiPaths).not.toContain(redundantPath);
     }
     await settings.page.close();
 
@@ -212,6 +224,7 @@ test.describe('Admin console multi-view navigation (TOM-63)', () => {
     expect(reports.apiPaths).not.toContain('/api/admin/guests');
     expect(reports.apiPaths).not.toContain('/api/admin/insights');
     expect(reports.apiPaths).not.toContain('/api/admin/policies');
+    expect(reports.apiPaths).not.toContain('/api/admin/settings-bundle');
     expect(reports.apiPaths).not.toContain('/api/admin/sessions');
     expect(reports.apiPaths).not.toContain('/api/admin/groups');
     expect(reports.apiPaths).not.toContain('/api/admin/shared-links');

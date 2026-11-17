@@ -890,4 +890,87 @@ describe('Admin Co-Admin delegations (P13-1 / TOM-73)', () => {
     expect(plainMe.body.user.adminCapabilities).toEqual([]);
     expect(plainMe.body.user.adminScope).toBeNull();
   });
+
+  it('serves GET /api/admin/settings-bundle with strict role, capability and scope isolation', async () => {
+    const sysRes = await call<{
+      policies: { policy: Record<string, unknown> | null } | null;
+      sharedLinks: { links: Array<{ id: string }> } | null;
+      ssoStatus: { providers: unknown[] } | null;
+      tos: { tos: { enabled: boolean } } | null;
+      siem: { siem: { enabled: boolean } } | null;
+      sessions: { sessions: Array<{ id: string }> } | null;
+      guestInvitations: { invitations: unknown[] } | null;
+    }>('/api/admin/settings-bundle', SYS, { role: 'sys_admin' });
+    expect(sysRes.status).toBe(200);
+    expect(sysRes.body.policies?.policy).not.toBeNull();
+    expect(sysRes.body.sharedLinks?.links.map((l) => l.id)).toContain(LINK_SCOPE);
+    expect(sysRes.body.ssoStatus).not.toBeNull();
+    expect(sysRes.body.tos?.tos).not.toBeUndefined();
+    expect(sysRes.body.siem?.siem).not.toBeUndefined();
+    expect(sysRes.body.sessions?.sessions).toBeDefined();
+    expect(sysRes.body.guestInvitations?.invitations).toBeDefined();
+
+    // sec_admin sees settings surfaces, never tenant guest invitations
+    const secRes = await call<typeof sysRes.body>(
+      '/api/admin/settings-bundle',
+      SEC,
+      { role: 'sec_admin' }
+    );
+    expect(secRes.status).toBe(200);
+    expect(secRes.body.policies?.policy).not.toBeNull();
+    expect(secRes.body.sharedLinks).not.toBeNull();
+    expect(secRes.body.ssoStatus).not.toBeNull();
+    expect(secRes.body.tos).not.toBeNull();
+    expect(secRes.body.siem).not.toBeNull();
+    expect(secRes.body.sessions).not.toBeNull();
+    expect(secRes.body.guestInvitations).toBeNull();
+
+    // Co-Admin AUDITOR (admin.policies.read) sees only policies/ssoStatus/tos/siem
+    const auditorRes = await call<typeof sysRes.body>(
+      '/api/admin/settings-bundle',
+      AUDITOR
+    );
+    expect(auditorRes.status).toBe(200);
+    expect(auditorRes.body.policies).not.toBeNull();
+    expect(auditorRes.body.ssoStatus).not.toBeNull();
+    expect(auditorRes.body.tos).not.toBeNull();
+    expect(auditorRes.body.siem).not.toBeNull();
+    expect(auditorRes.body.sharedLinks).toBeNull();
+    expect(auditorRes.body.sessions).toBeNull();
+    expect(auditorRes.body.guestInvitations).toBeNull();
+
+    // Co-Admin CONTENT_OPERATOR (admin.links.revoke + scopeRootFolderId=ROOT_SCOPE)
+    // sees only scoped sharedLinks, never policies/tos/siem/sessions
+    const contentOpRes = await call<typeof sysRes.body>(
+      '/api/admin/settings-bundle',
+      CONTENT_OPERATOR
+    );
+    expect(contentOpRes.status).toBe(200);
+    expect(contentOpRes.body.policies).toBeNull();
+    expect(contentOpRes.body.ssoStatus).toBeNull();
+    expect(contentOpRes.body.tos).toBeNull();
+    expect(contentOpRes.body.siem).toBeNull();
+    expect(contentOpRes.body.sessions).toBeNull();
+    expect(contentOpRes.body.guestInvitations).toBeNull();
+    const scopedLinks = contentOpRes.body.sharedLinks?.links.map((l) => l.id) ?? [];
+    expect(scopedLinks).toContain(LINK_SCOPE);
+    expect(scopedLinks).not.toContain(LINK_OUTSIDE);
+
+    // Co-Admin GROUP_MANAGER (admin.users.read + scopeGroupId=GROUP_SCOPE)
+    // sees only group-scoped sessions
+    const groupMgrRes = await call<typeof sysRes.body>(
+      '/api/admin/settings-bundle',
+      GROUP_MANAGER
+    );
+    expect(groupMgrRes.status).toBe(200);
+    expect(groupMgrRes.body.policies).toBeNull();
+    expect(groupMgrRes.body.sharedLinks).toBeNull();
+    expect(groupMgrRes.body.sessions).not.toBeNull();
+    const scopedSessionIds = groupMgrRes.body.sessions?.sessions.map((s) => s.id) ?? [];
+    expect(scopedSessionIds).not.toContain(SESSION_OUTSIDE);
+
+    // Plain member & guest rejected
+    expect((await call('/api/admin/settings-bundle', PLAIN_MEMBER)).status).toBe(403);
+    expect((await call('/api/admin/settings-bundle', GUEST)).status).toBe(403);
+  });
 });

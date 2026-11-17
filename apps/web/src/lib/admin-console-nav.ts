@@ -189,6 +189,7 @@ export interface AdminSectionFetchPlan {
   policies: boolean;
   auditLogs: boolean;
   inheritanceConflicts: boolean;
+  settingsBundle: boolean;
   /**
    * True when every dashboard value is fetched by the section's own child
    * components, so the shell can stop showing its initial loading surface
@@ -200,8 +201,10 @@ export interface AdminSectionFetchPlan {
 /**
  * Section -> API mapping used by `useGovernanceDashboard`.
  *
- * `all` keeps the original bulk dashboard load. Focused routes deliberately
- * fetch less so deep links never pay for unrelated admin endpoints.
+ * `all` and `settings` hydrate every governance/settings section through the
+ * consolidated `/api/admin/settings-bundle` endpoint instead of fanning out a
+ * multi-stage waterfall of individual settings requests. Focused routes deliberately
+ * fetch only their own surfaces so deep links never pay for unrelated endpoints.
  */
 export const ADMIN_SECTION_FETCH_PLANS: Record<
   AdminConsoleSection,
@@ -211,10 +214,11 @@ export const ADMIN_SECTION_FETCH_PLANS: Record<
     insights: true,
     storageStats: true,
     aiSuggestions: true,
-    sharedLinks: true,
-    policies: true,
+    sharedLinks: false,
+    policies: false,
     auditLogs: true,
-    inheritanceConflicts: true,
+    inheritanceConflicts: false,
+    settingsBundle: true,
     completesImmediately: false,
   },
   insights: {
@@ -225,6 +229,7 @@ export const ADMIN_SECTION_FETCH_PLANS: Record<
     policies: false,
     auditLogs: false,
     inheritanceConflicts: false,
+    settingsBundle: false,
     completesImmediately: false,
   },
   content: {
@@ -235,6 +240,7 @@ export const ADMIN_SECTION_FETCH_PLANS: Record<
     policies: false,
     auditLogs: false,
     inheritanceConflicts: false,
+    settingsBundle: false,
     completesImmediately: false,
   },
   users: {
@@ -245,16 +251,18 @@ export const ADMIN_SECTION_FETCH_PLANS: Record<
     policies: false,
     auditLogs: false,
     inheritanceConflicts: false,
+    settingsBundle: false,
     completesImmediately: true,
   },
   settings: {
     insights: false,
     storageStats: false,
     aiSuggestions: false,
-    sharedLinks: true,
-    policies: true,
+    sharedLinks: false,
+    policies: false,
     auditLogs: false,
-    inheritanceConflicts: true,
+    inheritanceConflicts: false,
+    settingsBundle: true,
     completesImmediately: false,
   },
   reports: {
@@ -265,6 +273,7 @@ export const ADMIN_SECTION_FETCH_PLANS: Record<
     policies: false,
     auditLogs: true,
     inheritanceConflicts: false,
+    settingsBundle: false,
     completesImmediately: false,
   },
 };
@@ -305,6 +314,7 @@ export const ADMIN_SECTION_OWNED_API_PREFIXES: Record<
     '/api/admin/delegations',
   ],
   settings: [
+    '/api/admin/settings-bundle',
     '/api/admin/policies',
     '/api/admin/shared-links',
     '/api/admin/tos',
@@ -348,7 +358,8 @@ export function adminSectionHasDashboardFetch(
     plan.sharedLinks ||
     plan.policies ||
     plan.auditLogs ||
-    plan.inheritanceConflicts
+    plan.inheritanceConflicts ||
+    plan.settingsBundle
   );
 }
 

@@ -16,6 +16,7 @@ import {
   type GuestPolicy,
 } from '../services/external-guests';
 import {
+  listTenantGuestInvitations,
   loadGuestDetail,
   loadGuestInvitation,
   projectGuestInvitation,
@@ -252,31 +253,15 @@ guestsRoutes.get('/invitations', async (c) => {
     }
   }
 
-  const filters = [`gi.tenant_id = ?`];
-  const bindings: unknown[] = [user.tenantId];
-  if (targetType && targetId) {
-    filters.push('gi.target_type = ?', 'gi.target_id = ?');
-    bindings.push(targetType, targetId);
-  }
-
-  const rows = await c.env.DB.prepare(
-    `SELECT gi.*,
-            COALESCE(f.name, fl.name) AS target_name,
-            inviter.display_name AS invited_by_name
-       FROM guest_invitations gi
-       LEFT JOIN folders f
-         ON gi.target_type = 'folder' AND f.tenant_id = gi.tenant_id AND f.id = gi.target_id
-       LEFT JOIN files fl
-         ON gi.target_type = 'file' AND fl.tenant_id = gi.tenant_id AND fl.id = gi.target_id
-       LEFT JOIN users inviter ON inviter.id = gi.invited_by
-      WHERE ${filters.join(' AND ')}
-      ORDER BY gi.created_at DESC
-      LIMIT 100`
-  )
-    .bind(...bindings)
-    .all<GuestInvitationRow>();
-
-  return c.json({ invitations: rows.results.map(projectGuestInvitation) });
+  return c.json(
+    await listTenantGuestInvitations(
+      c.env.DB,
+      user.tenantId,
+      targetType && targetId
+        ? { targetType: targetType as 'folder' | 'file', targetId }
+        : undefined
+    )
+  );
 });
 
 /** POST /api/guests/invitations — create a guest account + single-use invitation. */

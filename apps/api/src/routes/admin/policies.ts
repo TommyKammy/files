@@ -128,40 +128,48 @@ function projectPolicy(
   };
 }
 
+export async function loadTenantPoliciesPayload(
+  db: D1Database,
+  tenantId: string
+) {
+  const [policy, folderStructureMode, permissionInheritanceMode, invitePolicy] =
+    await Promise.all([
+      db
+        .prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
+        .bind(tenantId)
+        .first<Record<string, unknown>>(),
+      getFolderStructureMode(db, tenantId),
+      getPermissionInheritanceMode(db, tenantId),
+      getTenantInvitePolicy(db, tenantId),
+    ]);
+  const [closedModeReport, inheritanceConflictReport] = await Promise.all([
+    folderStructureMode === 'closed'
+      ? buildClosedRootReport(db, tenantId)
+      : Promise.resolve(null),
+    findWaterfallInheritanceConflicts(db, tenantId),
+  ]);
+  return {
+    policy: policy
+      ? projectPolicy(
+          policy,
+          folderStructureMode,
+          permissionInheritanceMode,
+          invitePolicy
+        )
+      : null,
+    folderStructureMode,
+    permissionInheritanceMode,
+    invitePolicy,
+    ...(closedModeReport ? { closedModeReport } : {}),
+    inheritanceConflictReport,
+  };
+}
+
 export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET / PATCH /api/admin/policies — tenant governance policy settings */
   routes.get('/policies', async (c) => {
     const user = getAuthenticatedUser(c);
-    const [policy, folderStructureMode, permissionInheritanceMode, invitePolicy] =
-      await Promise.all([
-        c.env.DB.prepare('SELECT * FROM tenant_policies WHERE tenant_id = ?')
-          .bind(user.tenantId)
-          .first<Record<string, unknown>>(),
-        getFolderStructureMode(c.env.DB, user.tenantId),
-        getPermissionInheritanceMode(c.env.DB, user.tenantId),
-        getTenantInvitePolicy(c.env.DB, user.tenantId),
-      ]);
-    const [closedModeReport, inheritanceConflictReport] = await Promise.all([
-      folderStructureMode === 'closed'
-        ? buildClosedRootReport(c.env.DB, user.tenantId)
-        : Promise.resolve(null),
-      findWaterfallInheritanceConflicts(c.env.DB, user.tenantId),
-    ]);
-    return c.json({
-      policy: policy
-        ? projectPolicy(
-            policy,
-            folderStructureMode,
-            permissionInheritanceMode,
-            invitePolicy
-          )
-        : null,
-      folderStructureMode,
-      permissionInheritanceMode,
-      invitePolicy,
-      ...(closedModeReport ? { closedModeReport } : {}),
-      inheritanceConflictReport,
-    });
+    return c.json(await loadTenantPoliciesPayload(c.env.DB, user.tenantId));
   });
 
   /** GET /api/admin/policies/inheritance-conflicts — read-only review for sec_admin too */

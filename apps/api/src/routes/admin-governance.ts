@@ -21,6 +21,7 @@ import { registerAdminRootFolderRoutes } from './admin/root-folders';
 import { registerAdminReportRoutes } from './admin/reports';
 import { registerAdminScimTokenRoutes } from './admin/scim-tokens';
 import { registerAdminSessionRoutes } from './admin/sessions';
+import { registerAdminSettingsBundleRoutes } from './admin/settings-bundle';
 import { registerAdminSharedLinkRoutes } from './admin/shared-links';
 import { registerAdminSiemRoutes } from './admin/siem';
 import { registerAdminSsoRoutes } from './admin/sso';
@@ -193,6 +194,14 @@ guards.use(
   '/sso/status',
   requireAdminCapabilityForMethods('admin.policies.read', ['GET'])
 );
+guards.use(
+  '/settings-bundle',
+  requireAnyAdminCapability([
+    'admin.policies.read',
+    'admin.links.revoke',
+    'admin.users.read',
+  ])
+);
 
 guards.use(
   '/shared-links',
@@ -285,5 +294,6 @@ registerAdminPermissionRoutes(adminGovernanceRoutes);
 registerAdminTrashRoutes(adminGovernanceRoutes);
 registerAdminReportRoutes(adminGovernanceRoutes);
 registerAdminDelegationRoutes(adminGovernanceRoutes);
+registerAdminSettingsBundleRoutes(adminGovernanceRoutes);
 
 export { auditLogsRoutes } from './admin/audit-logs';

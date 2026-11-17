@@ -33,6 +33,7 @@ import {
 } from '@/lib/files-api';
 import { formatAuditDateTime } from '@/lib/formatters';
 import type {
+  AdminSessionListResponse,
   AdminSessionRow,
   AdminSessionSummary,
   AdminSessionUserTypeFilter,
@@ -69,8 +70,10 @@ function summaryCard(
 
 export function AdminSessionsSection({
   user,
+  initialSessions,
 }: {
   user: AuthUser | null;
+  initialSessions?: AdminSessionListResponse | null;
 }) {
   const role = user?.role;
   const canView = canViewAdminSessions(role, user?.adminCapabilities);
@@ -89,9 +92,18 @@ export function AdminSessionsSection({
     ip: string;
   }>({ userType: 'all', query: '', ip: '' });
 
-  const [sessions, setSessions] = useState<AdminSessionRow[]>([]);
-  const [summary, setSummary] = useState<AdminSessionSummary>(EMPTY_SUMMARY);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const lastInitialSessionsRef = useRef<
+    AdminSessionListResponse | null | undefined
+  >(initialSessions);
+  const [sessions, setSessions] = useState<AdminSessionRow[]>(
+    () => initialSessions?.sessions ?? []
+  );
+  const [summary, setSummary] = useState<AdminSessionSummary>(
+    () => initialSessions?.summary ?? EMPTY_SUMMARY
+  );
+  const [nextCursor, setNextCursor] = useState<string | null>(
+    () => initialSessions?.nextCursor ?? null
+  );
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,10 +162,31 @@ export function AdminSessionsSection({
     [applied, canView]
   );
 
+  const isInitialBundleState =
+    initialSessions !== undefined &&
+    reloadToken === 0 &&
+    applied.userType === 'all' &&
+    applied.query === '' &&
+    applied.ip === '';
+
   useEffect(() => {
-    if (!canView) return;
+    if (
+      isInitialBundleState &&
+      initialSessions &&
+      initialSessions !== lastInitialSessionsRef.current
+    ) {
+      lastInitialSessionsRef.current = initialSessions;
+      setSessions(initialSessions.sessions);
+      setSummary(initialSessions.summary);
+      setNextCursor(initialSessions.nextCursor);
+      setError(null);
+    }
+  }, [initialSessions, isInitialBundleState]);
+
+  useEffect(() => {
+    if (!canView || isInitialBundleState) return;
     void loadSessions({ append: false, cursor: null });
-  }, [canView, loadSessions, reloadToken]);
+  }, [canView, isInitialBundleState, loadSessions, reloadToken]);
 
   if (!canView) return null;
 

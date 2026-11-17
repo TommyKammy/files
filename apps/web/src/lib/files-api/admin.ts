@@ -38,6 +38,7 @@ import type {
   AdminSessionListQuery,
   AdminSessionListResponse,
   AdminSessionRevokeResponse,
+  AdminSettingsBundleResponse,
   AdminSharedLinkRow,
   AdminSiemSettings,
   AdminSsoStatusResponse,
@@ -124,6 +125,11 @@ export function adminEmergencyRevokeSharedLink(
 
 export function fetchAdminPolicies(): Promise<TenantPolicyResponse> {
   return apiFetch('/api/admin/policies');
+}
+
+/** GET /api/admin/settings-bundle — consolidated governance & settings read payload. */
+export function fetchAdminSettingsBundle(): Promise<AdminSettingsBundleResponse> {
+  return apiFetch('/api/admin/settings-bundle');
 }
 
 /** GET /api/admin/policies/inheritance-conflicts — sec_admin can review too. */

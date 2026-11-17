@@ -186,6 +186,10 @@ test('admin nav assigns compliance APIs to settings and file requests to content
   assert.equal(isAdminApiOwnedBySection('settings', '/api/admin/siem/test'), true);
   assert.equal(isAdminApiOwnedBySection('settings', '/api/admin/policies'), true);
   assert.equal(
+    isAdminApiOwnedBySection('settings', '/api/admin/settings-bundle'),
+    true
+  );
+  assert.equal(
     isAdminApiOwnedBySection('settings', '/api/admin/file-requests'),
     false
   );

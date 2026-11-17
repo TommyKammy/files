@@ -9,6 +9,7 @@ import {
   fetchAdminAiSuggestions,
   fetchAdminInsights,
   fetchAdminPolicies,
+  fetchAdminSettingsBundle,
   fetchAdminSharedLinks,
   fetchAdminStorageStats,
   fetchAuditLogs,
@@ -24,6 +25,7 @@ import type {
   AdminContentInspectPolicy,
   AdminInsightsRangeDays,
   AdminInsightsResponse,
+  AdminSettingsBundleResponse,
   AdminSharedLinkRow,
   AiSuggestionItem,
   AuditLogEntry,
@@ -97,6 +99,8 @@ export function useGovernanceDashboard({
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const [sharedLinks, setSharedLinks] = useState<AdminSharedLinkRow[]>([]);
+  const [settingsBundle, setSettingsBundle] =
+    useState<AdminSettingsBundleResponse | null>(null);
   const [policy, setPolicy] = useState<TenantPolicyRow | null>(null);
   const [policySaving, setPolicySaving] = useState(false);
   const [advancedRolesSaving, setAdvancedRolesSaving] = useState(false);
@@ -223,54 +227,71 @@ export function useGovernanceDashboard({
         setError(null);
       }
       try {
-        const [statsRes, aiRes, linksRes, policyRes, logsRes, conflictsRes, insightsRes] =
-          await Promise.all([
-            plan.storageStats && hasAdminCapability(user, 'admin.insights.read')
-              ? fetchAdminStorageStats()
-              : Promise.resolve(null),
-            plan.aiSuggestions && hasAdminCapability(user, 'admin.content.unlock')
-              ? fetchAdminAiSuggestions({
-                  suggestedLabel:
-                    labelFilter === 'all' ? undefined : labelFilter,
-                  limit: 50,
-                })
-              : Promise.resolve(null),
-            plan.sharedLinks && hasAdminCapability(user, 'admin.links.revoke')
-              ? fetchAdminSharedLinks(50)
-              : Promise.resolve(null),
-            plan.policies && hasAdminCapability(user, 'admin.policies.read')
-              ? fetchAdminPolicies()
-              : Promise.resolve(null),
-            plan.auditLogs && hasAdminCapability(user, 'admin.audit.read')
-              ? fetchAuditLogs({
-                  action: auditActionFilter.trim() || undefined,
-                  actions:
-                    auditActionPreset.length > 0
-                      ? auditActionPreset
-                      : undefined,
-                  actionPrefixes: [
-                    ...auditActionPrefixPreset,
-                    ...(auditActionPrefixFilter.trim()
-                      ? [auditActionPrefixFilter.trim()]
-                      : []),
-                  ].filter(Boolean),
-                  targetType: auditTargetType || undefined,
-                  status: auditStatusFilter || undefined,
-                  actorEmail: auditActorEmailFilter.trim() || undefined,
-                  targetId: auditTargetIdFilter.trim() || undefined,
-                  from: auditFromFilter || undefined,
-                  to: auditToFilter || undefined,
-                  limit: 50,
-                })
-              : Promise.resolve(null),
-            plan.inheritanceConflicts &&
-            hasAdminCapability(user, 'admin.policies.read')
-              ? fetchInheritanceConflicts()
-              : Promise.resolve(null),
-            plan.insights && hasAdminCapability(user, 'admin.insights.read')
-              ? fetchAdminInsights(insightsDaysRef.current)
-              : Promise.resolve(null),
-          ]);
+        const canFetchSettingsBundle =
+          plan.settingsBundle &&
+          (hasAdminCapability(user, 'admin.policies.read') ||
+            hasAdminCapability(user, 'admin.links.revoke') ||
+            hasAdminCapability(user, 'admin.users.read'));
+
+        const [
+          statsRes,
+          aiRes,
+          linksRes,
+          policyRes,
+          logsRes,
+          conflictsRes,
+          insightsRes,
+          settingsBundleRes,
+        ] = await Promise.all([
+          plan.storageStats && hasAdminCapability(user, 'admin.insights.read')
+            ? fetchAdminStorageStats()
+            : Promise.resolve(null),
+          plan.aiSuggestions && hasAdminCapability(user, 'admin.content.unlock')
+            ? fetchAdminAiSuggestions({
+                suggestedLabel:
+                  labelFilter === 'all' ? undefined : labelFilter,
+                limit: 50,
+              })
+            : Promise.resolve(null),
+          plan.sharedLinks && hasAdminCapability(user, 'admin.links.revoke')
+            ? fetchAdminSharedLinks(50)
+            : Promise.resolve(null),
+          plan.policies && hasAdminCapability(user, 'admin.policies.read')
+            ? fetchAdminPolicies()
+            : Promise.resolve(null),
+          plan.auditLogs && hasAdminCapability(user, 'admin.audit.read')
+            ? fetchAuditLogs({
+                action: auditActionFilter.trim() || undefined,
+                actions:
+                  auditActionPreset.length > 0
+                    ? auditActionPreset
+                    : undefined,
+                actionPrefixes: [
+                  ...auditActionPrefixPreset,
+                  ...(auditActionPrefixFilter.trim()
+                    ? [auditActionPrefixFilter.trim()]
+                    : []),
+                ].filter(Boolean),
+                targetType: auditTargetType || undefined,
+                status: auditStatusFilter || undefined,
+                actorEmail: auditActorEmailFilter.trim() || undefined,
+                targetId: auditTargetIdFilter.trim() || undefined,
+                from: auditFromFilter || undefined,
+                to: auditToFilter || undefined,
+                limit: 50,
+              })
+            : Promise.resolve(null),
+          plan.inheritanceConflicts &&
+          hasAdminCapability(user, 'admin.policies.read')
+            ? fetchInheritanceConflicts()
+            : Promise.resolve(null),
+          plan.insights && hasAdminCapability(user, 'admin.insights.read')
+            ? fetchAdminInsights(insightsDaysRef.current)
+            : Promise.resolve(null),
+          canFetchSettingsBundle
+            ? fetchAdminSettingsBundle()
+            : Promise.resolve(null),
+        ]);
 
         if (statsRes) {
           setStats(statsRes);
@@ -289,6 +310,25 @@ export function useGovernanceDashboard({
         if (aiRes) {
           setSuggestions(aiRes.suggestions);
           setSelectedIds(new Set());
+        }
+        if (settingsBundleRes) {
+          setSettingsBundle(settingsBundleRes);
+          const bundledPolicies = settingsBundleRes.policies;
+          if (bundledPolicies) {
+            if (!advancedRolesDirtyRef.current) {
+              setPolicy(bundledPolicies.policy);
+            }
+            setClosedModeReport(bundledPolicies.closedModeReport ?? null);
+            setPermissionInheritanceMode(
+              bundledPolicies.permissionInheritanceMode ?? 'additive'
+            );
+            setInheritanceConflictReport(
+              bundledPolicies.inheritanceConflictReport ?? []
+            );
+          }
+          if (settingsBundleRes.sharedLinks) {
+            setSharedLinks(settingsBundleRes.sharedLinks.links);
+          }
         }
         if (linksRes) {
           setSharedLinks(linksRes.links);
@@ -962,6 +1002,7 @@ export function useGovernanceDashboard({
     labelFilter,
     bulkBusy,
     sharedLinks,
+    settingsBundle,
     policy,
     policySaving,
     advancedRolesSaving,

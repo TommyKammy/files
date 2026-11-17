@@ -64,6 +64,7 @@ test('each focused route only fetches the APIs owned by its sections', () => {
     policies: false,
     auditLogs: false,
     inheritanceConflicts: false,
+    settingsBundle: false,
     completesImmediately: false,
   });
   assert.deepEqual(getAdminSectionFetchPlan('content'), {
@@ -74,6 +75,7 @@ test('each focused route only fetches the APIs owned by its sections', () => {
     policies: false,
     auditLogs: false,
     inheritanceConflicts: false,
+    settingsBundle: false,
     completesImmediately: false,
   });
   assert.deepEqual(getAdminSectionFetchPlan('users'), {
@@ -84,16 +86,18 @@ test('each focused route only fetches the APIs owned by its sections', () => {
     policies: false,
     auditLogs: false,
     inheritanceConflicts: false,
+    settingsBundle: false,
     completesImmediately: true,
   });
   assert.deepEqual(getAdminSectionFetchPlan('settings'), {
     insights: false,
     storageStats: false,
     aiSuggestions: false,
-    sharedLinks: true,
-    policies: true,
+    sharedLinks: false,
+    policies: false,
     auditLogs: false,
-    inheritanceConflicts: true,
+    inheritanceConflicts: false,
+    settingsBundle: true,
     completesImmediately: false,
   });
   assert.deepEqual(getAdminSectionFetchPlan('reports'), {
@@ -104,6 +108,7 @@ test('each focused route only fetches the APIs owned by its sections', () => {
     policies: false,
     auditLogs: true,
     inheritanceConflicts: false,
+    settingsBundle: false,
     completesImmediately: false,
   });
 
@@ -111,10 +116,11 @@ test('each focused route only fetches the APIs owned by its sections', () => {
   assert.equal(all.insights, true);
   assert.equal(all.storageStats, true);
   assert.equal(all.aiSuggestions, true);
-  assert.equal(all.sharedLinks, true);
-  assert.equal(all.policies, true);
+  assert.equal(all.sharedLinks, false);
+  assert.equal(all.policies, false);
   assert.equal(all.auditLogs, true);
-  assert.equal(all.inheritanceConflicts, true);
+  assert.equal(all.inheritanceConflicts, false);
+  assert.equal(all.settingsBundle, true);
   assert.equal(all.completesImmediately, false);
 
   assert.equal(adminSectionHasDashboardFetch('users'), false);

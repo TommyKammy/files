@@ -213,6 +213,7 @@ test('/admin/reports owns only audit + report APIs (nav isolation)', () => {
     policies: false,
     auditLogs: true,
     inheritanceConflicts: false,
+    settingsBundle: false,
     completesImmediately: false,
   });
   assert.equal(getAdminConsoleNavItem('reports').href, '/admin/reports');
@@ -230,6 +231,7 @@ test('/admin/reports owns only audit + report APIs (nav isolation)', () => {
     'sharedLinks',
     'policies',
     'inheritanceConflicts',
+    'settingsBundle',
   ] as const) {
     assert.equal(plan[key], false, `${key} must not load on /admin/reports`);
   }

@@ -37,16 +37,22 @@ function projectTosPolicy(row: TenantTosPolicyRow | null): TosPolicyProjection {
   };
 }
 
+export async function loadAdminTosPayload(
+  db: D1Database,
+  tenantId: string
+): Promise<{ tos: TosPolicyProjection }> {
+  const row = await db
+    .prepare('SELECT * FROM tenant_tos_policies WHERE tenant_id = ?')
+    .bind(tenantId)
+    .first<TenantTosPolicyRow>();
+  return { tos: projectTosPolicy(row) };
+}
+
 export function registerAdminTosRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET /api/admin/tos — sys_admin and sec_admin can review the policy. */
   routes.get('/tos', async (c) => {
     const user = getAuthenticatedUser(c);
-    const row = await c.env.DB.prepare(
-      'SELECT * FROM tenant_tos_policies WHERE tenant_id = ?'
-    )
-      .bind(user.tenantId)
-      .first<TenantTosPolicyRow>();
-    return c.json({ tos: projectTosPolicy(row) });
+    return c.json(await loadAdminTosPayload(c.env.DB, user.tenantId));
   });
 
   /** PUT /api/admin/tos — sys_admin only; content changes bump the version. */

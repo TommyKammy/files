@@ -59,16 +59,22 @@ function ProviderLabel({ provider }: { provider: 'okta' | 'entra_id' }) {
 export function AdminAuthControlSection({
   user,
   policy,
+  initialSsoStatus,
   onPolicyUpdated,
 }: {
   user: AuthUser;
   policy: TenantPolicyRow | null;
+  initialSsoStatus?: AdminSsoStatusResponse | null;
   onPolicyUpdated?: (policy: TenantPolicyRow) => void;
 }) {
   const canManage = canManageAuthControls(user.role);
 
-  const [status, setStatus] = useState<AdminSsoStatusResponse | null>(null);
-  const [statusLoading, setStatusLoading] = useState(true);
+  const [status, setStatus] = useState<AdminSsoStatusResponse | null>(
+    () => initialSsoStatus ?? null
+  );
+  const [statusLoading, setStatusLoading] = useState(
+    () => initialSsoStatus === undefined
+  );
   const [statusError, setStatusError] = useState<string | null>(null);
   const [probeLoading, setProbeLoading] = useState(false);
   const [callbackCopied, setCallbackCopied] = useState(false);
@@ -118,6 +124,14 @@ export function AdminAuthControlSection({
   ssoDirtyRef.current = ssoDirty;
 
   useEffect(() => {
+    if (initialSsoStatus !== undefined) {
+      if (initialSsoStatus) {
+        setStatus(initialSsoStatus);
+        setStatusError(null);
+      }
+      setStatusLoading(false);
+      return;
+    }
     let active = true;
     setStatusLoading(true);
     fetchAdminSsoStatus()
@@ -140,7 +154,7 @@ export function AdminAuthControlSection({
     return () => {
       active = false;
     };
-  }, []);
+  }, [initialSsoStatus]);
 
   useEffect(() => {
     if (ipDirtyRef.current) return;

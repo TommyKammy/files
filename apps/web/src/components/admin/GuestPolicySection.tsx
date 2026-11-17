@@ -41,6 +41,7 @@ const NATIVE_SWITCH_ATTRS = {
 interface GuestPolicySectionProps {
   policy: TenantPolicyRow | null;
   canManage: boolean;
+  initialInvitations?: GuestInvitationSummary[] | null;
   onPolicyUpdated: (policy: TenantPolicyRow | null) => void;
 }
 
@@ -68,6 +69,7 @@ function readNumberPolicy(
 export function GuestPolicySection({
   policy,
   canManage,
+  initialInvitations,
   onPolicyUpdated,
 }: GuestPolicySectionProps) {
   const persistedAllow = readBooleanPolicy(
@@ -120,7 +122,9 @@ export function GuestPolicySection({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const [invitations, setInvitations] = useState<GuestInvitationSummary[]>([]);
+  const [invitations, setInvitations] = useState<GuestInvitationSummary[]>(
+    () => initialInvitations ?? []
+  );
   const [invitationsLoading, setInvitationsLoading] = useState(false);
   const [invitationError, setInvitationError] = useState<string | null>(null);
   const [invitationNotice, setInvitationNotice] = useState<string | null>(null);
@@ -194,11 +198,16 @@ export function GuestPolicySection({
   }, [canManage]);
 
   useEffect(() => {
+    if (initialInvitations !== undefined) {
+      setInvitations(initialInvitations ?? []);
+      setInvitationError(null);
+      return;
+    }
     if (!hydratedRef.current) {
       hydratedRef.current = true;
       void loadInvitations();
     }
-  }, [loadInvitations]);
+  }, [initialInvitations, loadInvitations]);
 
   function addDomain() {
     const wildcardMessage = domainDraft.includes('*')

@@ -8,7 +8,7 @@ import {
   Send,
   ShieldCheck,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   readSiemEvents,
   SIEM_EVENT_CATEGORY_OPTIONS,
@@ -31,25 +31,43 @@ function errorText(err: unknown, fallback: string): string {
 
 export function AdminSiemSettingsSection({
   canManage,
+  initialSiem,
 }: {
   canManage: boolean;
+  initialSiem?: AdminSiemSettings | null;
 }) {
-  const [settings, setSettings] = useState<AdminSiemSettings | null>(null);
-  const [loading, setLoading] = useState(true);
+  const lastInitialSiemRef = useRef<AdminSiemSettings | null | undefined>(
+    initialSiem
+  );
+  const [settings, setSettings] = useState<AdminSiemSettings | null>(
+    () => initialSiem ?? null
+  );
+  const [loading, setLoading] = useState(() => initialSiem === undefined);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const [enabled, setEnabled] = useState(false);
-  const [url, setUrl] = useState('');
+  const [enabled, setEnabled] = useState(() => initialSiem?.enabled ?? false);
+  const [url, setUrl] = useState(() => initialSiem?.url ?? '');
   const [secret, setSecret] = useState('');
-  const [events, setEvents] = useState<string[]>([
-    'security_blocked',
-    'admin_mutation',
-  ]);
+  const [events, setEvents] = useState<string[]>(() =>
+    initialSiem ? readSiemEvents(initialSiem.events) : ['security_blocked', 'admin_mutation']
+  );
 
   useEffect(() => {
+    if (initialSiem !== undefined) {
+      if (initialSiem && initialSiem !== lastInitialSiemRef.current) {
+        lastInitialSiemRef.current = initialSiem;
+        setSettings(initialSiem);
+        setEnabled(initialSiem.enabled);
+        setUrl(initialSiem.url ?? '');
+        setEvents(readSiemEvents(initialSiem.events));
+        setError(null);
+      }
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       setLoading(true);
@@ -72,7 +90,7 @@ export function AdminSiemSettingsSection({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialSiem]);
 
   function toggleEvent(value: string, checked: boolean) {
     setEvents((current) =>

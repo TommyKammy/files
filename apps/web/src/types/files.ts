@@ -2669,3 +2669,13 @@ export interface AdminDelegationUpdateInput {
   scopeRootFolderId?: string | null;
   note?: string | null;
 }
+
+export interface AdminSettingsBundleResponse {
+  policies: TenantPolicyResponse | null;
+  sharedLinks: { links: AdminSharedLinkRow[] } | null;
+  ssoStatus: AdminSsoStatusResponse | null;
+  tos: { tos: AdminTosPolicy } | null;
+  siem: { siem: AdminSiemSettings } | null;
+  sessions: AdminSessionListResponse | null;
+  guestInvitations: { invitations: GuestInvitationSummary[] } | null;
+}

@@ -42,12 +42,19 @@ async function loadSiemRow(
     .first<SiemRowWithTimestamp>();
 }
 
+export async function loadAdminSiemPayload(
+  db: D1Database,
+  tenantId: string
+) {
+  const row = await loadSiemRow(db, tenantId);
+  return { siem: projectSiem(row) };
+}
+
 export function registerAdminSiemRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET /api/admin/siem — never returns the stored secret. */
   routes.get('/siem', async (c) => {
     const user = getAuthenticatedUser(c);
-    const row = await loadSiemRow(c.env.DB, user.tenantId);
-    return c.json({ siem: projectSiem(row) });
+    return c.json(await loadAdminSiemPayload(c.env.DB, user.tenantId));
   });
 
   /** PUT /api/admin/siem — sys_admin only. */

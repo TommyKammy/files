@@ -595,3 +595,36 @@ export async function loadGuestDetail(
     pendingInvitationId: pendingInvitation?.id ?? null,
   };
 }
+
+export async function listTenantGuestInvitations(
+  db: D1Database,
+  tenantId: string,
+  target?: { targetType: 'folder' | 'file'; targetId: string }
+) {
+  const filters = ['gi.tenant_id = ?'];
+  const bindings: unknown[] = [tenantId];
+  if (target) {
+    filters.push('gi.target_type = ?', 'gi.target_id = ?');
+    bindings.push(target.targetType, target.targetId);
+  }
+
+  const rows = await db
+    .prepare(
+      `SELECT gi.*,
+              COALESCE(f.name, fl.name) AS target_name,
+              inviter.display_name AS invited_by_name
+         FROM guest_invitations gi
+         LEFT JOIN folders f
+           ON gi.target_type = 'folder' AND f.tenant_id = gi.tenant_id AND f.id = gi.target_id
+         LEFT JOIN files fl
+           ON gi.target_type = 'file' AND fl.tenant_id = gi.tenant_id AND fl.id = gi.target_id
+         LEFT JOIN users inviter ON inviter.id = gi.invited_by
+        WHERE ${filters.join(' AND ')}
+        ORDER BY gi.created_at DESC
+        LIMIT 100`
+    )
+    .bind(...bindings)
+    .all<GuestInvitationRow>();
+
+  return { invitations: rows.results.map(projectGuestInvitation) };
+}
