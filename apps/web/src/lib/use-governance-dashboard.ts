@@ -48,11 +48,17 @@ import {
   ADMIN_AUDIT_PRESETS,
   buildAdminAuditPresetHref,
   canViewAdminConsoleSection,
-  getAdminSectionFetchPlan,
   getAdminSectionOwnedApiPrefixes,
   parseAdminAuditPreset,
   type AdminConsoleSection,
 } from '@/lib/admin-console-nav';
+import {
+  buildAdminTabHref,
+  getAdminTabFetchPlan,
+  getVisibleAdminTabs,
+  parseAdminTabQuery,
+  resolveActiveAdminTab,
+} from '@/lib/admin-console-tabs';
 import { hasAdminCapability } from '@/lib/admin-delegations';
 import {
   ADMIN_INSIGHTS_DEFAULT_DAYS,
@@ -61,15 +67,30 @@ import {
 export function useGovernanceDashboard({
   section = 'all',
   auditPreset = null,
+  initialTab = null,
 }: {
   section?: AdminConsoleSection;
   auditPreset?: string | string[] | null;
+  initialTab?: string | string[] | null;
 } = {}) {
   const router = useRouter();
   const syncStore = getWorkspaceSyncStore();
   const snapshot = useWorkspaceSyncSnapshot();
   const user = snapshot.user;
   const authChecked = snapshot.authStatus !== 'unknown';
+
+  const [selectedTabId, setSelectedTabId] = useState<string | null>(
+    parseAdminTabQuery(initialTab)
+  );
+  const visibleTabs = getVisibleAdminTabs(user, section);
+  const activeTab = resolveActiveAdminTab(user, section, selectedTabId, {
+    auditPreset,
+  });
+  const activeTabId = activeTab?.id ?? null;
+  const tabFetchPlan = useMemo(
+    () => getAdminTabFetchPlan(section, activeTabId),
+    [section, activeTabId]
+  );
 
   const initialAuditPreset = parseAdminAuditPreset(auditPreset);
   const initialAuditPresetConfig = initialAuditPreset
@@ -78,7 +99,8 @@ export function useGovernanceDashboard({
 
   const [loading, setLoading] = useState(true);
   const [initialLoadComplete, setInitialLoadComplete] = useState(
-    section === 'users'
+    getAdminTabFetchPlan(section, parseAdminTabQuery(initialTab))
+      .completesImmediately
   );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -181,6 +203,9 @@ export function useGovernanceDashboard({
   const initialAuditPresetRaw =
     (Array.isArray(auditPreset) ? auditPreset[0] : auditPreset) ?? null;
   const appliedAuditPresetRef = useRef<string | null>(initialAuditPresetRaw);
+  const initialTabRaw =
+    (Array.isArray(initialTab) ? initialTab[0] : initialTab) ?? null;
+  const appliedInitialTabRef = useRef<string | null>(initialTabRaw);
 
   useEffect(() => {
     void syncStore.hydrateFromScopeHint();
@@ -213,7 +238,7 @@ export function useGovernanceDashboard({
         return;
       }
 
-      const plan = getAdminSectionFetchPlan(section);
+      const plan = tabFetchPlan;
       if (plan.completesImmediately) {
         if (!options?.silent) {
           setLoading(false);
@@ -379,6 +404,7 @@ export function useGovernanceDashboard({
       isPrivilegedAdmin,
       section,
       sectionAllowed,
+      tabFetchPlan,
       labelFilter,
       auditActionFilter,
       auditActionPreset,
@@ -418,6 +444,37 @@ export function useGovernanceDashboard({
     setAuditActionPrefixPreset(config ? [...config.actionPrefixes] : []);
     setAuditPresetKind(config?.presetKind ?? null);
   }, [auditPreset]);
+
+  // Adopt a new `?tab=` value when the server component passes a changed
+  // search param (client-side navigation or history restore).
+  useEffect(() => {
+    const raw =
+      (Array.isArray(initialTab) ? initialTab[0] : initialTab) ?? null;
+    if (appliedInitialTabRef.current === raw) return;
+    appliedInitialTabRef.current = raw;
+    setSelectedTabId(parseAdminTabQuery(raw));
+  }, [initialTab]);
+
+  const selectTab = useCallback(
+    (tabId: string) => {
+      setSelectedTabId(tabId);
+      if (typeof window === 'undefined') return;
+
+      // Preserve unrelated query params (e.g. `auditPreset`) while replacing
+      // the current history entry so tab switches do not pollute Back.
+      const extraParams: Record<string, string> = {};
+      const url = new URL(window.location.href);
+      url.searchParams.forEach((value, key) => {
+        if (key !== 'tab') extraParams[key] = value;
+      });
+      const href = buildAdminTabHref(section, tabId, extraParams);
+      const current = `${window.location.pathname}${window.location.search}`;
+      if (current !== href) {
+        window.history.replaceState(window.history.state, '', href);
+      }
+    },
+    [section]
+  );
 
   useEffect(() => {
     if (!authChecked || !isPrivilegedAdmin) return;
@@ -991,6 +1048,11 @@ export function useGovernanceDashboard({
     sectionAllowed,
     loading,
     initialLoadComplete,
+    visibleTabs,
+    activeTab,
+    activeTabId,
+    tabFetchPlan,
+    selectTab,
     error,
     notice,
     stats,

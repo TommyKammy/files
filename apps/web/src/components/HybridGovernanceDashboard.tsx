@@ -10,19 +10,20 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useEffect } from 'react';
 import { AdminQuotaWarningBanner } from '@/components/admin/AdminQuotaWarningBanner';
+import {
+  AdminSectionTabs,
+  AdminTabPanel,
+} from '@/components/admin/AdminSectionTabs';
 import { AdminConsoleShell } from '@/components/AdminConsoleShell';
 import { AppShellRail } from '@/components/AppShellRail';
 import {
-  adminSectionHasDashboardFetch,
   canViewAdminConsoleSection,
   getAdminConsoleNavItem,
   getVisibleAdminNavItems,
   type AdminConsoleSection,
 } from '@/lib/admin-console-nav';
-import {
-  canAccessAdminSurface,
-  hasAdminCapability,
-} from '@/lib/admin-delegations';
+import type { AdminSectionFetchPlan } from '@/lib/admin-console-nav';
+import { hasAdminCapability } from '@/lib/admin-delegations';
 import { readQuotaThresholds } from '@/lib/admin-compliance';
 import { useGovernanceDashboard } from '@/lib/use-governance-dashboard';
 import { LocalDevQuickLoginPanel, SignInCard } from '@/components/SignInCard';
@@ -165,12 +166,27 @@ const ADMIN_SECTION_PRELOADERS: Record<
   reports: [loadAdminReports, loadAdminPermissionAudit, loadAuditLog],
 };
 
+function tabPlanHasFetch(plan: AdminSectionFetchPlan): boolean {
+  return (
+    plan.insights ||
+    plan.storageStats ||
+    plan.aiSuggestions ||
+    plan.sharedLinks ||
+    plan.policies ||
+    plan.auditLogs ||
+    plan.inheritanceConflicts ||
+    plan.settingsBundle
+  );
+}
+
 export function HybridGovernanceDashboard({
   section = 'all',
   auditPreset = null,
+  initialTab = null,
 }: {
   section?: AdminConsoleSection;
   auditPreset?: string | string[] | null;
+  initialTab?: string | string[] | null;
 }) {
   const {
     syncStore,
@@ -181,6 +197,11 @@ export function HybridGovernanceDashboard({
     sectionAllowed,
     loading,
     initialLoadComplete,
+    visibleTabs,
+    activeTab,
+    activeTabId,
+    tabFetchPlan,
+    selectTab,
     error,
     notice,
     stats,
@@ -259,7 +280,7 @@ export function HybridGovernanceDashboard({
     handleClearAuditPrefixPreset,
     handleClearAuditFilters,
     handleLoadMoreLogs,
-  } = useGovernanceDashboard({ section, auditPreset });
+  } = useGovernanceDashboard({ section, auditPreset, initialTab });
 
   useEffect(() => {
     // Preload the active route's dynamic chunks alongside auth/bundle fetches
@@ -274,10 +295,7 @@ export function HybridGovernanceDashboard({
   }, [section]);
 
   const navItem = getAdminConsoleNavItem(section);
-  const hasDashboardFetch = adminSectionHasDashboardFetch(section);
-  const showSection = (target: Exclude<AdminConsoleSection, 'all'>) =>
-    (section === 'all' || section === target) &&
-    canAccessAdminSurface(user, target);
+  const hasDashboardFetch = tabPlanHasFetch(tabFetchPlan);
 
   if (!authChecked) {
     return (
@@ -396,6 +414,389 @@ export function HybridGovernanceDashboard({
     critical: stats?.quotaCriticalThresholdPct ?? policyThresholds.critical,
   };
 
+  const insightsPanel = (
+    <AdminInsightsDashboardSection
+      insights={insights}
+      stats={stats}
+      usedPct={usedPct}
+      days={insightsDays}
+      loading={insightsLoading}
+      onDaysChange={(days) => {
+        void handleInsightsDaysChange(days);
+      }}
+    />
+  );
+
+  const aiClassificationPanel =
+    hasAdminCapability(user, 'admin.content.unlock') && (
+      <AiSuggestionQueue
+        suggestions={suggestions}
+        selectedIds={selectedIds}
+        labelFilter={labelFilter}
+        bulkBusy={bulkBusy}
+        onFilterChange={setLabelFilter}
+        onSelectAll={handleSelectAllSuggestions}
+        onBulkApprove={handleBulkApprove}
+        onSingleApprove={handleSingleApprove}
+        onToggleSelection={toggleSelection}
+      />
+    );
+
+  const contentManagerPanel =
+    hasAdminCapability(user, 'admin.content.unlock') && (
+      <AdminContentManagerSection />
+    );
+
+  const fileRequestsPanel =
+    hasAdminCapability(user, 'admin.content.unlock') && (
+      <AdminFileRequestsSection />
+    );
+
+  const trashPanel =
+    hasAdminCapability(user, 'admin.trash.manage') && (
+      <AdminTrashSection user={user} />
+    );
+
+  const rootFoldersPanel =
+    hasAdminCapability(user, 'admin.root_folders.read') && (
+      <AdminRootFoldersSection
+        user={user}
+        onShowAuditLogs={handleShowRootFolderAudit}
+      />
+    );
+
+  const accessControlPanel =
+    hasAdminCapability(user, 'admin.policies.edit') && (
+      <AccessControlSettingsSection
+        policy={policy}
+        saving={advancedRolesSaving}
+        error={advancedRolesError}
+        notice={advancedRolesNotice}
+        canManageFolderStructure={user.role === 'sys_admin'}
+        folderStructureSaving={folderStructureSaving}
+        folderStructureError={folderStructureError}
+        folderStructureNotice={folderStructureNotice}
+        closedModeReport={closedModeReport}
+        permissionInheritanceMode={permissionInheritanceMode}
+        inheritanceSaving={inheritanceSaving}
+        inheritanceError={inheritanceError}
+        inheritanceNotice={inheritanceNotice}
+        canManagePermissionInheritance={user.role === 'sys_admin'}
+        inheritanceConflictReport={inheritanceConflictReport}
+        invitePolicySaving={invitePolicySaving}
+        invitePolicyError={invitePolicyError}
+        invitePolicyNotice={invitePolicyNotice}
+        canManageInvitePolicy={user.role === 'sys_admin'}
+        inspectPolicySaving={inspectPolicySaving}
+        inspectPolicyError={inspectPolicyError}
+        inspectPolicyNotice={inspectPolicyNotice}
+        canManageInspectPolicy={user.role === 'sys_admin'}
+        onSave={handleAdvancedRolesUpdate}
+        onSaveFolderStructureMode={handleFolderStructureUpdate}
+        onSavePermissionInheritanceMode={handlePermissionInheritanceUpdate}
+        onSaveInvitePolicy={handleInvitePolicyUpdate}
+        onSaveAdminContentInspectPolicy={
+          handleAdminContentInspectPolicyUpdate
+        }
+        onDirtyChange={setAdvancedRolesDirty}
+      />
+    );
+
+  const authControlPanel =
+    hasAdminCapability(user, 'admin.policies.read') && (
+      <AdminAuthControlSection
+        user={user}
+        policy={policy}
+        initialSsoStatus={
+          settingsBundle ? settingsBundle.ssoStatus : undefined
+        }
+        onPolicyUpdated={setPolicy}
+      />
+    );
+
+  const compliancePanel =
+    hasAdminCapability(user, 'admin.policies.read') && (
+      <AdminComplianceSettingsSection
+        policy={policy}
+        canManage={user.role === 'sys_admin'}
+        initialTos={
+          settingsBundle ? (settingsBundle.tos?.tos ?? null) : undefined
+        }
+        onPolicyUpdated={setPolicy}
+      />
+    );
+
+  const siemPanel =
+    hasAdminCapability(user, 'admin.policies.read') && (
+      <AdminSiemSettingsSection
+        canManage={user.role === 'sys_admin'}
+        initialSiem={
+          settingsBundle ? (settingsBundle.siem?.siem ?? null) : undefined
+        }
+      />
+    );
+
+  const sessionsPanel =
+    hasAdminCapability(user, 'admin.users.read') && (
+      <AdminSessionsSection
+        user={user}
+        initialSessions={
+          settingsBundle ? settingsBundle.sessions : undefined
+        }
+      />
+    );
+
+  const sharedLinksPanel =
+    hasAdminCapability(user, 'admin.links.revoke') && (
+      <SharedLinksPolicySection
+        sharedLinks={sharedLinks}
+        policy={policy}
+        policySaving={policySaving}
+        onEmergencyRevoke={handleEmergencyRevoke}
+        onPolicySubmit={handlePolicySubmit}
+        onPolicyChange={setPolicy}
+      />
+    );
+
+  const guestPolicyPanel =
+    (hasAdminCapability(user, 'admin.policies.read') ||
+      hasAdminCapability(user, 'admin.guests.manage')) && (
+      <GuestPolicySection
+        policy={policy}
+        canManage={user.role === 'sys_admin'}
+        initialInvitations={
+          settingsBundle
+            ? (settingsBundle.guestInvitations?.invitations ?? null)
+            : undefined
+        }
+        onPolicyUpdated={setPolicy}
+      />
+    );
+
+  const membersPanel =
+    (hasAdminCapability(user, 'admin.users.read') ||
+      hasAdminCapability(user, 'admin.users.suspend')) && (
+      <AdminMembersSection
+        user={user}
+        onShowAuditLogs={handleShowMemberAudit}
+      />
+    );
+
+  const groupsPanel =
+    (hasAdminCapability(user, 'admin.users.read') ||
+      hasAdminCapability(user, 'admin.groups.manage')) && (
+      <AdminGroupsSection user={user} />
+    );
+
+  const scimPanel =
+    hasAdminCapability(user, 'admin.users.read') && (
+      <AdminScimTokensSection user={user} />
+    );
+
+  const guestsPanel =
+    hasAdminCapability(user, 'admin.guests.manage') && (
+      <AdminGuestsSection
+        user={user}
+        onShowAuditLogs={handleShowGuestAudit}
+      />
+    );
+
+  const delegationsPanel = (
+    <AdminDelegationsSection user={user} />
+  );
+
+  const reportsPanel =
+    hasAdminCapability(user, 'admin.reports.run') && (
+      <AdminReportsSection />
+    );
+
+  const permissionAuditPanel =
+    hasAdminCapability(user, 'admin.permissions.audit') && (
+      <AdminPermissionAuditSection
+        user={user}
+        onShowPermissionAudit={handleShowPermissionAudit}
+      />
+    );
+
+  const auditLogPanel =
+    hasAdminCapability(user, 'admin.audit.read') && (
+      <AuditLogSection
+        auditLogs={auditLogs}
+        auditCursor={auditCursor}
+        auditActionFilter={auditActionFilter}
+        auditActionPrefixFilter={auditActionPrefixFilter}
+        auditActionPrefixes={auditActionPrefixPreset}
+        auditPresetKind={auditPresetKind}
+        auditTargetType={auditTargetType}
+        auditStatusFilter={auditStatusFilter}
+        auditActorEmailFilter={auditActorEmailFilter}
+        auditTargetIdFilter={auditTargetIdFilter}
+        auditFromFilter={auditFromFilter}
+        auditToFilter={auditToFilter}
+        auditLoadingMore={auditLoadingMore}
+        auditPresetActions={auditActionPreset}
+        onActionFilterChange={setAuditActionFilter}
+        onActionPrefixFilterChange={setAuditActionPrefixFilter}
+        onTargetTypeChange={setAuditTargetType}
+        onStatusFilterChange={setAuditStatusFilter}
+        onActorEmailFilterChange={setAuditActorEmailFilter}
+        onTargetIdFilterChange={setAuditTargetIdFilter}
+        onFromFilterChange={setAuditFromFilter}
+        onToFilterChange={setAuditToFilter}
+        onClearFilters={handleClearAuditFilters}
+        onLoadMore={handleLoadMoreLogs}
+        onClearPreset={handleClearAuditPreset}
+        onClearPrefixPreset={handleClearAuditPrefixPreset}
+      />
+    );
+
+  // Only the selected tab's panels are mounted. This keeps focused routes
+  // from paying for every child section's independent fetches.
+  const activeTabContent = (() => {
+    const tabId = activeTab?.id;
+    if (!tabId) return null;
+
+    if (section === 'all') {
+      switch (tabId) {
+        case 'overview':
+          return insightsPanel;
+        case 'content':
+          return (
+            <>
+              {aiClassificationPanel}
+              {contentManagerPanel}
+              {fileRequestsPanel}
+              {trashPanel}
+              {rootFoldersPanel}
+            </>
+          );
+        case 'users':
+          return (
+            <div className="space-y-4">
+              {membersPanel}
+              {groupsPanel}
+              {scimPanel}
+              {guestsPanel}
+              {delegationsPanel}
+            </div>
+          );
+        case 'settings':
+          return (
+            <>
+              {accessControlPanel}
+              {authControlPanel}
+              {compliancePanel}
+              {sessionsPanel}
+              {sharedLinksPanel}
+              {guestPolicyPanel}
+            </>
+          );
+        case 'integrations':
+          return (
+            <>
+              {authControlPanel}
+              {scimPanel}
+              {siemPanel}
+            </>
+          );
+        case 'reports':
+          return (
+            <>
+              {reportsPanel}
+              {permissionAuditPanel}
+              {auditLogPanel}
+            </>
+          );
+        default:
+          return null;
+      }
+    }
+
+    if (section === 'content') {
+      switch (tabId) {
+        case 'manager':
+          return contentManagerPanel;
+        case 'root-folders':
+          return rootFoldersPanel;
+        case 'trash':
+          return trashPanel;
+        case 'file-requests':
+          return fileRequestsPanel;
+        case 'ai-classification':
+          return aiClassificationPanel;
+        default:
+          return null;
+      }
+    }
+
+    if (section === 'users') {
+      switch (tabId) {
+        case 'members':
+          return (
+            <>
+              {membersPanel}
+              {scimPanel}
+            </>
+          );
+        case 'groups':
+          return groupsPanel;
+        case 'guests':
+          return guestsPanel;
+        case 'delegations':
+          return delegationsPanel;
+        default:
+          return null;
+      }
+    }
+
+    if (section === 'settings') {
+      switch (tabId) {
+        case 'sharing':
+          return (
+            <>
+              {sharedLinksPanel}
+              {guestPolicyPanel}
+            </>
+          );
+        case 'access':
+          return accessControlPanel;
+        case 'security':
+          return (
+            <>
+              {authControlPanel}
+              {sessionsPanel}
+            </>
+          );
+        case 'compliance':
+          return compliancePanel;
+        case 'integrations':
+          return (
+            <>
+              {scimPanel}
+              {siemPanel}
+            </>
+          );
+        default:
+          return null;
+      }
+    }
+
+    if (section === 'reports') {
+      switch (tabId) {
+        case 'audit-logs':
+          return auditLogPanel;
+        case 'permissions':
+          return permissionAuditPanel;
+        case 'jobs':
+          return reportsPanel;
+        default:
+          return null;
+      }
+    }
+
+    return null;
+  })();
+
   return (
     <div className="flex min-h-screen bg-[#efeff1] text-slate-900">
       <a
@@ -437,6 +838,16 @@ export function HybridGovernanceDashboard({
             )}
           </header>
 
+          {visibleTabs.length > 0 && (
+            <AdminSectionTabs
+              section={section}
+              tabs={visibleTabs}
+              activeTabId={activeTabId}
+              onSelectTab={selectTab}
+              ariaLabel={`${navItem.label}のセクション内タブ`}
+            />
+          )}
+
           {section !== 'insights' && stats && stats.quotaBytes > 0 && (
             <AdminQuotaWarningBanner
               usedPct={usedPct}
@@ -476,243 +887,12 @@ export function HybridGovernanceDashboard({
                   : `${navItem.label}を読み込み中...`}
               </span>
             </div>
+          ) : visibleTabs.length > 0 && activeTab ? (
+            <AdminTabPanel section={section} tabId={activeTab.id}>
+              {activeTabContent}
+            </AdminTabPanel>
           ) : (
-            <>
-              {showSection('insights') && (
-                <AdminInsightsDashboardSection
-                  insights={insights}
-                  stats={stats}
-                  usedPct={usedPct}
-                  days={insightsDays}
-                  loading={insightsLoading}
-                  onDaysChange={(days) => {
-                    void handleInsightsDaysChange(days);
-                  }}
-                />
-              )}
-
-              {showSection('content') &&
-                hasAdminCapability(user, 'admin.content.unlock') && (
-                <AiSuggestionQueue
-                  suggestions={suggestions}
-                  selectedIds={selectedIds}
-                  labelFilter={labelFilter}
-                  bulkBusy={bulkBusy}
-                  onFilterChange={setLabelFilter}
-                  onSelectAll={handleSelectAllSuggestions}
-                  onBulkApprove={handleBulkApprove}
-                  onSingleApprove={handleSingleApprove}
-                  onToggleSelection={toggleSelection}
-                />
-              )}
-
-              {showSection('content') &&
-                hasAdminCapability(user, 'admin.content.unlock') && (
-                  <AdminContentManagerSection />
-                )}
-
-              {showSection('content') &&
-                hasAdminCapability(user, 'admin.content.unlock') && (
-                  <AdminFileRequestsSection />
-                )}
-
-              {showSection('settings') &&
-                hasAdminCapability(user, 'admin.policies.edit') && (
-                <AccessControlSettingsSection
-                  policy={policy}
-                  saving={advancedRolesSaving}
-                  error={advancedRolesError}
-                  notice={advancedRolesNotice}
-                  canManageFolderStructure={user.role === 'sys_admin'}
-                  folderStructureSaving={folderStructureSaving}
-                  folderStructureError={folderStructureError}
-                  folderStructureNotice={folderStructureNotice}
-                  closedModeReport={closedModeReport}
-                  permissionInheritanceMode={permissionInheritanceMode}
-                  inheritanceSaving={inheritanceSaving}
-                  inheritanceError={inheritanceError}
-                  inheritanceNotice={inheritanceNotice}
-                  canManagePermissionInheritance={user.role === 'sys_admin'}
-                  inheritanceConflictReport={inheritanceConflictReport}
-                  invitePolicySaving={invitePolicySaving}
-                  invitePolicyError={invitePolicyError}
-                  invitePolicyNotice={invitePolicyNotice}
-                  canManageInvitePolicy={user.role === 'sys_admin'}
-                  inspectPolicySaving={inspectPolicySaving}
-                  inspectPolicyError={inspectPolicyError}
-                  inspectPolicyNotice={inspectPolicyNotice}
-                  canManageInspectPolicy={user.role === 'sys_admin'}
-                  onSave={handleAdvancedRolesUpdate}
-                  onSaveFolderStructureMode={handleFolderStructureUpdate}
-                  onSavePermissionInheritanceMode={
-                    handlePermissionInheritanceUpdate
-                  }
-                  onSaveInvitePolicy={handleInvitePolicyUpdate}
-                  onSaveAdminContentInspectPolicy={
-                    handleAdminContentInspectPolicyUpdate
-                  }
-                  onDirtyChange={setAdvancedRolesDirty}
-                />
-              )}
-
-              {showSection('settings') &&
-                hasAdminCapability(user, 'admin.policies.read') && (
-                <AdminAuthControlSection
-                  user={user}
-                  policy={policy}
-                  initialSsoStatus={
-                    settingsBundle ? settingsBundle.ssoStatus : undefined
-                  }
-                  onPolicyUpdated={setPolicy}
-                />
-              )}
-
-              {showSection('settings') &&
-                hasAdminCapability(user, 'admin.policies.read') && (
-                <AdminComplianceSettingsSection
-                  policy={policy}
-                  canManage={user.role === 'sys_admin'}
-                  initialTos={
-                    settingsBundle
-                      ? (settingsBundle.tos?.tos ?? null)
-                      : undefined
-                  }
-                  onPolicyUpdated={setPolicy}
-                />
-              )}
-
-              {showSection('settings') &&
-                hasAdminCapability(user, 'admin.policies.read') && (
-                <AdminSiemSettingsSection
-                  canManage={user.role === 'sys_admin'}
-                  initialSiem={
-                    settingsBundle
-                      ? (settingsBundle.siem?.siem ?? null)
-                      : undefined
-                  }
-                />
-              )}
-
-              {showSection('settings') &&
-                hasAdminCapability(user, 'admin.users.read') && (
-                <AdminSessionsSection
-                  user={user}
-                  initialSessions={
-                    settingsBundle ? settingsBundle.sessions : undefined
-                  }
-                />
-              )}
-
-              {showSection('settings') &&
-                hasAdminCapability(user, 'admin.links.revoke') && (
-                <SharedLinksPolicySection
-                  sharedLinks={sharedLinks}
-                  policy={policy}
-                  policySaving={policySaving}
-                  onEmergencyRevoke={handleEmergencyRevoke}
-                  onPolicySubmit={handlePolicySubmit}
-                  onPolicyChange={setPolicy}
-                />
-              )}
-
-              {showSection('content') &&
-                hasAdminCapability(user, 'admin.trash.manage') && (
-                  <AdminTrashSection user={user} />
-                )}
-
-              {showSection('reports') &&
-                hasAdminCapability(user, 'admin.reports.run') && (
-                  <AdminReportsSection />
-                )}
-
-              {showSection('reports') &&
-                hasAdminCapability(user, 'admin.permissions.audit') && (
-                <AdminPermissionAuditSection
-                  user={user}
-                  onShowPermissionAudit={handleShowPermissionAudit}
-                />
-              )}
-
-              {showSection('content') &&
-                hasAdminCapability(user, 'admin.root_folders.read') && (
-                <AdminRootFoldersSection
-                  user={user}
-                  onShowAuditLogs={handleShowRootFolderAudit}
-                />
-              )}
-
-              {showSection('settings') &&
-                hasAdminCapability(user, 'admin.policies.read') && (
-                <GuestPolicySection
-                  policy={policy}
-                  canManage={user.role === 'sys_admin'}
-                  initialInvitations={
-                    settingsBundle
-                      ? (settingsBundle.guestInvitations?.invitations ?? null)
-                      : undefined
-                  }
-                  onPolicyUpdated={setPolicy}
-                />
-              )}
-
-              {showSection('users') && (
-                <div className="space-y-4">
-                  {(hasAdminCapability(user, 'admin.users.read') ||
-                    hasAdminCapability(user, 'admin.users.suspend')) && (
-                    <AdminMembersSection
-                      user={user}
-                      onShowAuditLogs={handleShowMemberAudit}
-                    />
-                  )}
-                  {(hasAdminCapability(user, 'admin.users.read') ||
-                    hasAdminCapability(user, 'admin.groups.manage')) && (
-                    <AdminGroupsSection user={user} />
-                  )}
-                  {hasAdminCapability(user, 'admin.users.read') && (
-                    <AdminScimTokensSection user={user} />
-                  )}
-                  {hasAdminCapability(user, 'admin.guests.manage') && (
-                    <AdminGuestsSection
-                      user={user}
-                      onShowAuditLogs={handleShowGuestAudit}
-                    />
-                  )}
-                  <AdminDelegationsSection user={user} />
-                </div>
-              )}
-
-              {showSection('reports') &&
-                hasAdminCapability(user, 'admin.audit.read') && (
-                <AuditLogSection
-                  auditLogs={auditLogs}
-                  auditCursor={auditCursor}
-                  auditActionFilter={auditActionFilter}
-                  auditActionPrefixFilter={auditActionPrefixFilter}
-                  auditActionPrefixes={auditActionPrefixPreset}
-                  auditPresetKind={auditPresetKind}
-                  auditTargetType={auditTargetType}
-                  auditStatusFilter={auditStatusFilter}
-                  auditActorEmailFilter={auditActorEmailFilter}
-                  auditTargetIdFilter={auditTargetIdFilter}
-                  auditFromFilter={auditFromFilter}
-                  auditToFilter={auditToFilter}
-                  auditLoadingMore={auditLoadingMore}
-                  auditPresetActions={auditActionPreset}
-                  onActionFilterChange={setAuditActionFilter}
-                  onActionPrefixFilterChange={setAuditActionPrefixFilter}
-                  onTargetTypeChange={setAuditTargetType}
-                  onStatusFilterChange={setAuditStatusFilter}
-                  onActorEmailFilterChange={setAuditActorEmailFilter}
-                  onTargetIdFilterChange={setAuditTargetIdFilter}
-                  onFromFilterChange={setAuditFromFilter}
-                  onToFilterChange={setAuditToFilter}
-                  onClearFilters={handleClearAuditFilters}
-                  onLoadMore={handleLoadMoreLogs}
-                  onClearPreset={handleClearAuditPreset}
-                  onClearPrefixPreset={handleClearAuditPrefixPreset}
-                />
-              )}
-            </>
+            <>{insightsPanel}</>
           )}
         </AdminConsoleShell>
       </main>
