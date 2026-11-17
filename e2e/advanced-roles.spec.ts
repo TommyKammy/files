@@ -138,6 +138,10 @@ test.describe('高度ロール UI / アップロード専用・プレビュー�
         name: 'ガバナンス & セキュリティ統合ダッシュボード',
       })
     ).toBeVisible();
+    await admin.page.getByTestId('admin-tab-settings').click();
+    await expect(
+      admin.page.getByTestId('admin-tabpanel-settings')
+    ).toBeVisible();
 
     const section = admin.page
       .locator('section')

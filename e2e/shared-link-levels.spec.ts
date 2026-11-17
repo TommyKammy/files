@@ -83,6 +83,10 @@ test.describe('TOM-56 shared-link permission levels', () => {
           name: 'ガバナンス & セキュリティ統合ダッシュボード',
         })
       ).toBeVisible();
+      await admin.page.getByTestId('admin-tab-settings').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-settings')
+      ).toBeVisible();
 
       const editToggle = admin.page.locator('#policy-allow-shared-link-edit');
       const viewerToggle = admin.page.locator('#policy-allow-viewer-share-links');

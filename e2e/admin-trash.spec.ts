@@ -96,6 +96,10 @@ test.describe('Admin tenant Trash UI (TOM-51)', () => {
         name: 'ガバナンス & セキュリティ統合ダッシュボード',
       })
     ).toBeVisible();
+    await secAdmin.page.getByTestId('admin-tab-content').click();
+    await expect(
+      secAdmin.page.getByTestId('admin-tabpanel-content')
+    ).toBeVisible();
     await expect(
       secAdmin.page.getByRole('heading', { name: 'ゴミ箱管理', exact: true })
     ).toBeVisible();
@@ -235,6 +239,10 @@ test.describe('Admin tenant Trash UI (TOM-51)', () => {
     await softDeleteFile(member, file.id);
 
     await secAdmin.page.goto('/admin');
+    await secAdmin.page.getByTestId('admin-tab-content').click();
+    await expect(
+      secAdmin.page.getByTestId('admin-tabpanel-content')
+    ).toBeVisible();
     await expect(
       secAdmin.page.getByRole('heading', { name: 'ゴミ箱管理', exact: true })
     ).toBeVisible();
@@ -268,6 +276,10 @@ test.describe('Admin tenant Trash UI (TOM-51)', () => {
     expect(forbiddenDelete.status()).toBe(403);
 
     await sysAdmin.page.goto('/admin');
+    await sysAdmin.page.getByTestId('admin-tab-content').click();
+    await expect(
+      sysAdmin.page.getByTestId('admin-tabpanel-content')
+    ).toBeVisible();
     await expect(
       sysAdmin.page.getByRole('heading', { name: 'ゴミ箱管理', exact: true })
     ).toBeVisible();

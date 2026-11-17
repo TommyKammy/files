@@ -131,6 +131,10 @@ test.describe('ゲスト管理・監査・ドメインポリシー (P10-3 / TOM-
       guestContext = authenticated.context;
 
       await admin.page.goto('/admin');
+      await admin.page.getByTestId('admin-tab-users').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-users')
+      ).toBeVisible();
       const section = admin.page.getByTestId('admin-guests-section');
       await expect(section).toBeVisible();
       await expect(section.getByTestId('guest-rbac-notice')).toContainText(
@@ -333,6 +337,8 @@ test.describe('ゲスト管理・監査・ドメインポリシー (P10-3 / TOM-
       expect((await policyForbidden.json()).code).toBe('SYS_ADMIN_REQUIRED');
 
       await sec.page.goto('/admin');
+      await sec.page.getByTestId('admin-tab-users').click();
+      await expect(sec.page.getByTestId('admin-tabpanel-users')).toBeVisible();
       const section = sec.page.getByTestId('admin-guests-section');
       await expect(section).toBeVisible();
       await expect(section.getByTestId('guest-rbac-notice')).toContainText(
@@ -434,6 +440,10 @@ test.describe('ゲスト管理・監査・ドメインポリシー (P10-3 / TOM-
       // Suspend first so the UI resume path is exercised.
       await suspendAdminGuestApi(admin, guestId);
       await admin.page.goto('/admin');
+      await admin.page.getByTestId('admin-tab-users').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-users')
+      ).toBeVisible();
       const section = admin.page.getByTestId('admin-guests-section');
       const row = section.locator(
         `[data-testid="admin-guest-row"][data-guest-id="${guestId}"]`
@@ -493,6 +503,10 @@ test.describe('ゲスト管理・監査・ドメインポリシー (P10-3 / TOM-
       // Remove the guest domain with suspend_existing: the live browser session
       // must be rejected on the very next request.
       await admin.page.reload();
+      await admin.page.getByTestId('admin-tab-settings').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-settings')
+      ).toBeVisible();
       const policySection = admin.page.getByTestId('guest-policy-section');
       await expect(policySection).toBeVisible();
       await policySection
@@ -525,6 +539,10 @@ test.describe('ゲスト管理・監査・ドメインポリシー (P10-3 / TOM-
 
       // Full offboarding removes even the suspended account's invitations and
       // permissions while keeping the users row for FK integrity.
+      await admin.page.getByTestId('admin-tab-users').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-users')
+      ).toBeVisible();
       await admin.page.reload();
       const afterDomainRow = admin.page.locator(
         `[data-testid="admin-guest-row"][data-guest-id="${guestId}"]`

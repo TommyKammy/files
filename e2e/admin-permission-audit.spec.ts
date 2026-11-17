@@ -178,6 +178,10 @@ test.describe('アクセス権監査・一括付与・オーナー移管 (TOM-57
       expect(classification.status(), 'PATCH file classification').toBe(200);
 
       await admin.page.goto('/admin');
+      await admin.page.getByTestId('admin-tab-reports').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-reports')
+      ).toBeVisible();
       const section = admin.page.locator('#admin-permission-audit');
       await expect(section).toBeVisible();
       await expect(
@@ -307,6 +311,10 @@ test.describe('アクセス権監査・一括付与・オーナー移管 (TOM-57
       await archiveRoot(admin, archivedId);
 
       await admin.page.goto('/admin');
+      await admin.page.getByTestId('admin-tab-reports').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-reports')
+      ).toBeVisible();
       const section = admin.page.locator('#admin-permission-audit');
       const rootsPanel = section.getByRole('tabpanel', {
         name: 'ルートフォルダ健全性・一括操作',
@@ -482,6 +490,10 @@ test.describe('アクセス権監査・一括付与・オーナー移管 (TOM-57
       cleanup.registerFolder(rootId);
 
       await secAdmin.page.goto('/admin');
+      await secAdmin.page.getByTestId('admin-tab-reports').click();
+      await expect(
+        secAdmin.page.getByTestId('admin-tabpanel-reports')
+      ).toBeVisible();
       const section = secAdmin.page.locator('#admin-permission-audit');
       await expect(section).toBeVisible();
       await expect(

@@ -368,6 +368,10 @@ test.describe('ウォーターフォール継承 & 途中階層パス表示 (TOM
           name: 'ガバナンス & セキュリティ統合ダッシュボード',
         })
       ).toBeVisible();
+      await admin.page.getByTestId('admin-tab-settings').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-settings')
+      ).toBeVisible();
       const accessSection = admin.page
         .locator('section')
         .filter({

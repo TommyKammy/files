@@ -150,6 +150,10 @@ test.describe('フォルダ構成モード & ルートフォルダ管理 (TOM-53
           name: 'ガバナンス & セキュリティ統合ダッシュボード',
         })
       ).toBeVisible();
+      await admin.page.getByTestId('admin-tab-settings').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-settings')
+      ).toBeVisible();
 
       const accessSection = admin.page
         .locator('section')
@@ -167,6 +171,10 @@ test.describe('フォルダ構成モード & ルートフォルダ管理 (TOM-53
         accessSection.locator('input[name="folderStructureMode"][value="open"]')
       ).toBeChecked();
 
+      await admin.page.getByTestId('admin-tab-content').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-content')
+      ).toBeVisible();
       await admin.page
         .getByRole('button', { name: '新規ルートフォルダ作成', exact: true })
         .click();
@@ -226,6 +234,10 @@ test.describe('フォルダ構成モード & ルートフォルダ管理 (TOM-53
         ])
       );
 
+      await admin.page.getByTestId('admin-tab-settings').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-settings')
+      ).toBeVisible();
       await accessSection
         .locator('input[name="folderStructureMode"][value="closed"]')
         .check();
@@ -260,6 +272,10 @@ test.describe('フォルダ構成モード & ルートフォルダ管理 (TOM-53
           .first()
           .locator('input[name="folderStructureMode"][value="closed"]')
       ).toBeChecked();
+      await admin.page.getByTestId('admin-tab-content').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-content')
+      ).toBeVisible();
       await expect(
         admin.page
           .getByTestId('admin-root-folder-row')
@@ -363,6 +379,10 @@ test.describe('フォルダ構成モード & ルートフォルダ管理 (TOM-53
       cleanup.registerFolder(root.id);
 
       await sec.page.goto('/admin');
+      await sec.page.getByTestId('admin-tab-settings').click();
+      await expect(
+        sec.page.getByTestId('admin-tabpanel-settings')
+      ).toBeVisible();
       const accessSection = sec.page
         .locator('section')
         .filter({
@@ -385,6 +405,10 @@ test.describe('フォルダ構成モード & ルートフォルダ管理 (TOM-53
         })
       ).toHaveCount(0);
 
+      await sec.page.getByTestId('admin-tab-content').click();
+      await expect(
+        sec.page.getByTestId('admin-tabpanel-content')
+      ).toBeVisible();
       await expect(
         sec.page.getByRole('heading', { name: 'ルートフォルダ管理' })
       ).toBeVisible();
@@ -434,6 +458,10 @@ test.describe('フォルダ構成モード & ルートフォルダ管理 (TOM-53
       cleanup.registerFolder(root.id);
 
       await admin.page.goto('/admin');
+      await admin.page.getByTestId('admin-tab-content').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-content')
+      ).toBeVisible();
       const row = admin.page
         .getByTestId('admin-root-folder-row')
         .filter({ hasText: name });
@@ -477,6 +505,10 @@ test.describe('フォルダ構成モード & ルートフォルダ管理 (TOM-53
         auditSection.getByText('所有者移管').first()
       ).toBeVisible();
 
+      await admin.page.getByTestId('admin-tab-content').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-content')
+      ).toBeVisible();
       const refreshedRow = admin.page
         .getByTestId('admin-root-folder-row')
         .filter({ hasText: name });
