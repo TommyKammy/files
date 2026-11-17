@@ -546,7 +546,10 @@ function toRecord(
 async function loadAllRootRecords(
   db: D1Database,
   tenantId: string,
-  options: { status: 'active' | 'archived' | 'all' } = { status: 'all' }
+  options: {
+    status: 'active' | 'archived' | 'all';
+    includeMetrics?: boolean;
+  } = { status: 'all' }
 ): Promise<AdminRootFolderRecord[]> {
   const deletedFilter =
     options.status === 'active'
@@ -572,9 +575,12 @@ async function loadAllRootRecords(
     .all<RootFolderRow>();
 
   const ids = rows.results.map((row) => row.id);
+  const includeMetrics = options.includeMetrics !== false;
   const [grants, metrics] = await Promise.all([
     loadPermissionRows(db, tenantId, ids),
-    loadRootMetrics(db, tenantId, ids),
+    includeMetrics
+      ? loadRootMetrics(db, tenantId, ids)
+      : Promise.resolve(new Map<string, { itemCount: number; totalBytes: number }>()),
   ]);
   const grantsByRoot = new Map<string, PermissionGrantRow[]>();
   for (const grant of grants) {
@@ -593,6 +599,7 @@ async function loadAllRootRecords(
 /**
  * Tenant root-folder inventory for the admin governance console. `search`
  * matches the folder name or any direct owner/co-owner name/email.
+ * Pass `includeMetrics: false` for lightweight dropdown/selector consumers.
  */
 export async function listAdminRootFolders(
   db: D1Database,
@@ -601,11 +608,13 @@ export async function listAdminRootFolders(
     status?: 'active' | 'archived' | 'all';
     search?: string;
     ownerMissingOnly?: boolean;
+    includeMetrics?: boolean;
   } = {}
 ): Promise<AdminRootFolderListResult> {
   const folderStructureMode = await getFolderStructureMode(db, tenantId);
   const all = await loadAllRootRecords(db, tenantId, {
     status: filters.status ?? 'all',
+    includeMetrics: filters.includeMetrics,
   });
 
   const search = filters.search?.trim().toLowerCase() ?? '';

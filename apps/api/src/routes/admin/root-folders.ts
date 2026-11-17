@@ -56,6 +56,10 @@ function isTruthyFlag(value: string | undefined): boolean {
   return value === '1' || value === 'true';
 }
 
+function isFalsyFlag(value: string | undefined): boolean {
+  return value === '0' || value === 'false';
+}
+
 function parseStatusFilter(
   c: { req: { query: (name: string) => string | undefined } }
 ): 'active' | 'archived' | 'all' | null {
@@ -87,10 +91,12 @@ export function registerAdminRootFolderRoutes(routes: Hono<OidcHonoEnv>) {
         400
       );
     }
+    const rawIncludeMetrics = c.req.query('includeMetrics');
     const result = await listAdminRootFolders(c.env.DB, user.tenantId, {
       status,
       search: c.req.query('search'),
       ownerMissingOnly: isTruthyFlag(c.req.query('ownerMissingOnly')),
+      includeMetrics: rawIncludeMetrics === undefined ? true : !isFalsyFlag(rawIncludeMetrics),
     });
     const scopeRootFolderId = getAdminScope(user)?.rootFolderId ?? null;
     if (scopeRootFolderId) {

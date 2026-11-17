@@ -1062,6 +1062,17 @@ describe('TOM-53 folder structure mode (open / closed)', () => {
       )
     ).toBe(true);
 
+    const lightweightList = await call(
+      '/api/admin/root-folders?status=active&includeMetrics=0',
+      { user: USERS.sys, role: 'sys_admin' }
+    );
+    expect(lightweightList.status).toBe(200);
+    const lightweightRoots = lightweightList.body.roots as Array<
+      Record<string, unknown>
+    >;
+    expect(lightweightRoots.length).toBeGreaterThanOrEqual(1);
+    expect(lightweightRoots.every((r) => r.itemCount === 0 && r.totalBytes === 0)).toBe(true);
+
     await setMode('open');
   });
 });

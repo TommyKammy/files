@@ -105,21 +105,16 @@ export function AdminDelegationsSection({ user }: { user: AuthUser | null }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const [optionsLoaded, setOptionsLoaded] = useState(false);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+
   const load = useCallback(async () => {
     if (!canManage) return;
     setLoading(true);
     setError(null);
     try {
-      const [delegations, memberList, groupList, rootList] = await Promise.all([
-        fetchAdminDelegations(),
-        fetchAdminMembers({ role: 'member', status: 'active', limit: 200 }),
-        fetchAdminGroups({ limit: 500 }),
-        fetchAdminRootFolders({ status: 'active' }),
-      ]);
+      const delegations = await fetchAdminDelegations();
       setData(delegations);
-      setMembers(memberList.users);
-      setGroups(groupList.groups);
-      setRoots(rootList.roots);
     } catch (err) {
       setError(
         err instanceof ApiClientError
@@ -130,6 +125,35 @@ export function AdminDelegationsSection({ user }: { user: AuthUser | null }) {
       setLoading(false);
     }
   }, [canManage]);
+
+  const loadFormOptions = useCallback(async (force = false) => {
+    if (!canManage) return;
+    if (optionsLoaded && !force) return;
+    setOptionsLoading(true);
+    try {
+      // Load selector candidates lazily when opening the grant/edit modal so
+      // mounting `/admin/users` only hits `GET /api/admin/delegations`. Root
+      // folder counts are omitted (`includeMetrics: false`) since only IDs and
+      // names are rendered in the dropdown.
+      const [memberList, groupList, rootList] = await Promise.all([
+        fetchAdminMembers({ role: 'member', status: 'active', limit: 200 }),
+        fetchAdminGroups({ limit: 500 }),
+        fetchAdminRootFolders({ status: 'active', includeMetrics: false }),
+      ]);
+      setMembers(memberList.users);
+      setGroups(groupList.groups);
+      setRoots(rootList.roots);
+      setOptionsLoaded(true);
+    } catch (err) {
+      setFormError(
+        err instanceof ApiClientError
+          ? adminDelegationErrorMessage(err.code, err.message)
+          : '選択候補の読み込みに失敗しました'
+      );
+    } finally {
+      setOptionsLoading(false);
+    }
+  }, [canManage, optionsLoaded]);
 
   useEffect(() => {
     void load();
@@ -155,6 +179,7 @@ export function AdminDelegationsSection({ user }: { user: AuthUser | null }) {
     setForm(EMPTY_FORM);
     setFormError(null);
     setFormOpen(true);
+    void loadFormOptions();
   }
 
   function openEdit(delegation: AdminDelegationRow) {
@@ -162,6 +187,7 @@ export function AdminDelegationsSection({ user }: { user: AuthUser | null }) {
     setForm(toFormState(delegation));
     setFormError(null);
     setFormOpen(true);
+    void loadFormOptions();
   }
 
   function closeForm() {
@@ -469,7 +495,7 @@ export function AdminDelegationsSection({ user }: { user: AuthUser | null }) {
                 <select
                   data-testid="delegation-user-select"
                   value={form.userId}
-                  disabled={Boolean(editing)}
+                  disabled={Boolean(editing) || optionsLoading}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
@@ -478,7 +504,9 @@ export function AdminDelegationsSection({ user }: { user: AuthUser | null }) {
                   }
                   className="mt-1 h-8 w-full rounded-md border border-[#d7d7dc] bg-white px-2 text-[0.75rem] disabled:bg-[#f2f2f4]"
                 >
-                  <option value="">選択してください</option>
+                  <option value="">
+                    {optionsLoading ? '選択候補を読み込み中...' : '選択してください'}
+                  </option>
                   {selectableMembers.map((member) => (
                     <option key={member.id} value={member.id}>
                       {member.displayName} ({member.email})

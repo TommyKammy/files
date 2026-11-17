@@ -218,6 +218,7 @@ export function fetchAdminRootFolders(params?: {
   status?: 'active' | 'archived' | 'all';
   includeArchived?: boolean;
   ownerMissingOnly?: boolean;
+  includeMetrics?: boolean;
 }): Promise<AdminRootFolderListResponse> {
   const qs = new URLSearchParams();
   if (params?.search?.trim()) qs.set('search', params.search.trim());
@@ -226,6 +227,7 @@ export function fetchAdminRootFolders(params?: {
     qs.set('includeArchived', params.includeArchived ? '1' : '0');
   }
   if (params?.ownerMissingOnly) qs.set('ownerMissingOnly', '1');
+  if (params?.includeMetrics === false) qs.set('includeMetrics', '0');
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   return apiFetch(`/api/admin/root-folders${suffix}`);
 }
