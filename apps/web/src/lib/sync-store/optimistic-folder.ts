@@ -191,17 +191,29 @@ export function optimisticToggleFolderPin(
   folder: FolderSummary,
   options?: { skipUndo?: boolean }
 ): { ok: boolean; error?: string } {
-  const parentView = ctx.getDirectoryView(folder.parent_id);
-  const effectiveRole = folder.effectiveRole ?? parentView.effectiveRole;
+  // Stale UI props and Undo callbacks can carry an outdated version and pin
+  // state. Always resolve the latest cached record before computing the next
+  // toggle so the queued PATCH targets the current server version.
+  const cached = ctx.foldersById.get(folder.id);
+  const current: FolderSummary = cached
+    ? {
+        ...cached,
+        effectiveRole: folder.effectiveRole ?? cached.effectiveRole,
+        capabilities: folder.capabilities ?? cached.capabilities,
+      }
+    : folder;
+
+  const parentView = ctx.getDirectoryView(current.parent_id);
+  const effectiveRole = current.effectiveRole ?? parentView.effectiveRole;
   const roleCheck = checkCapabilityGuard(effectiveRole, 'folder.rename');
   if (!roleCheck.ok) {
     return { ok: false, error: roleCheck.message };
   }
 
-  const prevFolder: FolderSummary = { ...folder };
-  const nextPinned = folder.is_pinned === 1 ? 0 : 1;
+  const prevFolder: FolderSummary = { ...current };
+  const nextPinned = current.is_pinned === 1 ? 0 : 1;
   const updated: FolderSummary = {
-    ...folder,
+    ...current,
     is_pinned: nextPinned,
     updated_at: new Date(ctx.now()).toISOString(),
   };
@@ -212,29 +224,29 @@ export function optimisticToggleFolderPin(
       {
         label: 'ピン留め変更を取り消す',
         applyUndo: () => {
-          const current = ctx.foldersById.get(updated.id) ?? updated;
-          optimisticToggleFolderPin(ctx, current, { skipUndo: true });
+          const latest = ctx.foldersById.get(updated.id) ?? updated;
+          optimisticToggleFolderPin(ctx, latest, { skipUndo: true });
         },
       },
       nextPinned === 1
-        ? `「${folder.name}」をピン留めしました`
-        : `「${folder.name}」のピン留めを解除しました`
+        ? `「${current.name}」をピン留めしました`
+        : `「${current.name}」のピン留めを解除しました`
     );
   }
 
   ctx.outbox.enqueue({
     id: makeClientMutationId('mut'),
     entityType: 'folder',
-    entityId: folder.id,
+    entityId: current.id,
     kind: 'folder.patch',
     payload: { isPinned: nextPinned === 1 },
-    expectedVersion: folder.version,
+    expectedVersion: current.version,
     createdAt: ctx.now(),
     retryCount: 0,
     rollback: {
       folder: prevFolder,
       existedBefore: true,
-      parentId: folder.parent_id,
+      parentId: current.parent_id,
     },
   });
 

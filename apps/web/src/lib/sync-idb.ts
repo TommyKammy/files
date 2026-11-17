@@ -67,6 +67,8 @@ export interface WorkingSetPruneInput {
   filesById: Map<string, FileItem>;
   rootFolderIds: string[];
   pinnedFolderIds: string[];
+  /** Pending outbox mutations whose target entities must not be evicted. */
+  outboxItems?: OutboxMutationRecord[];
   activeDirKey?: string;
   maxDirectories?: number;
 }
@@ -156,6 +158,17 @@ export function pruneWorkingSetInMemory(input: WorkingSetPruneInput): {
     ...input.pinnedFolderIds,
   ]);
   const referencedFiles = new Set<string>();
+  const pendingFolderIds = new Set<string>();
+
+  // Keep folders with pending mutations alive even when their directory is
+  // not otherwise referenced (e.g. unpinning from Quick Access while the PATCH
+  // is still in flight).
+  for (const item of input.outboxItems ?? []) {
+    if (item.entityType === 'folder') {
+      referencedFolders.add(item.entityId);
+      pendingFolderIds.add(item.entityId);
+    }
+  }
 
   for (const dir of input.directories.values()) {
     if (dir.folderId) referencedFolders.add(dir.folderId);
@@ -178,7 +191,11 @@ export function pruneWorkingSetInMemory(input: WorkingSetPruneInput): {
     const dropCount = input.foldersById.size - WORKING_SET_MAX_FOLDERS;
     for (let i = 0; i < dropCount; i++) {
       const id = sorted[i].id;
-      if (!pinnedSet.has(id) && id !== input.activeDirKey) {
+      if (
+        !pinnedSet.has(id) &&
+        id !== input.activeDirKey &&
+        !pendingFolderIds.has(id)
+      ) {
         input.foldersById.delete(id);
         evictedFolderIds.push(id);
       }

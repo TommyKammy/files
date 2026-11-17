@@ -1431,6 +1431,27 @@ export class WorkspaceSyncStore {
       upsertFileInCache: (file) => this.upsertFileInCache(file),
       markCachedSubtreeStale: (folderId) =>
         this.markCachedSubtreeStale(folderId),
+      getQueuedFolderPatch: (folderId) => {
+        const queued = this.outbox
+          .getQueuedItems()
+          .find(
+            (queuedItem) =>
+              queuedItem.entityType === 'folder' &&
+              queuedItem.entityId === folderId &&
+              queuedItem.kind === 'folder.patch'
+          );
+        if (!queued) return null;
+        return {
+          name:
+            typeof queued.payload.name === 'string'
+              ? queued.payload.name
+              : undefined,
+          isPinned:
+            typeof queued.payload.isPinned === 'boolean'
+              ? queued.payload.isPinned
+              : undefined,
+        };
+      },
       scheduleAsyncCopyJobPoll: (jobId, refreshFolderIds, totalItems) =>
         this.scheduleAsyncCopyJobPoll(jobId, refreshFolderIds, totalItems),
       syncDelta: () => {
@@ -1478,6 +1499,8 @@ export class WorkspaceSyncStore {
         upsertFileInCache: (file) => this.upsertFileInCache(file),
         markCachedSubtreeStale: (folderId) =>
           this.markCachedSubtreeStale(folderId),
+        setResolvedVersion: (entityType, entityId, version) =>
+          this.outbox.setResolvedVersion(entityType, entityId, version),
         pushToast: (toast, ttlMs) => this.pushToast(toast, ttlMs),
         syncDelta: () => {
           void this.syncDelta();
@@ -1535,6 +1558,7 @@ export class WorkspaceSyncStore {
       set pinnedFolderIds(value) {
         self.pinnedFolderIds = value;
       },
+      getOutboxItems: () => this.outbox.getQueuedItems(),
       get bootstrapDone() {
         return self.bootstrapDone;
       },

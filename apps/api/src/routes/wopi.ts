@@ -8,6 +8,10 @@ import { can } from '../services/capabilities';
 import type { FileRow } from '../services/file-upload-common';
 import { getFileLockState } from '../services/file-lock';
 import { getActiveWopiDraft } from '../services/wopi-drafts';
+import {
+  ensureLocalDevDocxContent,
+  isDocxFile,
+} from '../services/wopi-local-docx';
 import { issueWopiSessionToken } from '../services/wopi-token';
 import {
   buildWopiSrc,
@@ -75,8 +79,33 @@ wopiSessionRoutes.post('/:id/wopi-session', async (c) => {
       : null,
     getActiveWopiDraft(c.env.DB, user.tenantId, fileId),
   ]);
-  if (!activeDraft) {
-    if (!currentVersion) {
+
+  let effectiveCurrentVersion = currentVersion;
+  let effectiveActiveDraft = activeDraft;
+
+  // Collabora cannot open arbitrary fixture bytes. In local dev, make sure the
+  // file has a real .docx object and retire drafts that are not ZIP archives.
+  if (
+    c.env.ENVIRONMENT === 'local' &&
+    Boolean(c.env.COLLABORA_URL) &&
+    isDocxFile(file)
+  ) {
+    try {
+      const ensured = await ensureLocalDevDocxContent(
+        c.env,
+        file,
+        currentVersion,
+        activeDraft
+      );
+      effectiveCurrentVersion = ensured.currentVersion;
+      effectiveActiveDraft = ensured.activeDraft;
+    } catch (err) {
+      console.warn('[wopi] Failed to prepare local dev .docx content:', err);
+    }
+  }
+
+  if (!effectiveActiveDraft) {
+    if (!effectiveCurrentVersion) {
       return c.json(
         {
           error: 'このファイルには表示・編集できる実体がありません',
@@ -85,7 +114,9 @@ wopiSessionRoutes.post('/:id/wopi-session', async (c) => {
         409
       );
     }
-    const object = await c.env.BUCKET.head(currentVersion.r2_object_key);
+    const object = await c.env.BUCKET.head(
+      effectiveCurrentVersion.r2_object_key
+    );
     if (!object) {
       return c.json(
         {

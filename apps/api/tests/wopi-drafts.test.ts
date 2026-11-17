@@ -46,6 +46,9 @@ function buildTestEnv(overrides: Partial<OidcEnv> = {}): OidcEnv {
     STORAGE_MODE: 'local_proxy',
     LOCAL_PROXY_SECRET: 'wopi-test-secret',
     WOPI_TOKEN_SECRET: 'wopi-token-test-secret',
+    // Keep unit tests independent of a developer's local .dev.vars, which may
+    // point at a Collabora instance and enable local .docx seeding.
+    COLLABORA_URL: undefined,
     JOBS_QUEUE: { send: async () => {} } as unknown as Queue,
     ...overrides,
   } as OidcEnv;

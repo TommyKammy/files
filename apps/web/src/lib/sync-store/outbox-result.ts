@@ -46,6 +46,10 @@ export interface OutboxSuccessContext {
   upsertFolderInCache: (folder: FolderSummary) => void;
   upsertFileInCache: (file: FileItem) => void;
   markCachedSubtreeStale: (folderId: string) => void;
+  getQueuedFolderPatch?: (folderId: string) => {
+    name?: string;
+    isPinned?: boolean;
+  } | null;
   scheduleAsyncCopyJobPoll: (
     jobId: string,
     refreshFolderIds: Array<string | null>,
@@ -253,12 +257,23 @@ export function applyOutboxSuccess(
 
   if (result?.folder) {
     const existing = ctx.foldersById.get(result.folder.id);
-    ctx.upsertFolderInCache({
+    const queuedPatch =
+      ctx.getQueuedFolderPatch?.(result.folder.id) ?? null;
+    const merged: FolderSummary = {
       ...result.folder,
       effectiveRole: result.folder.effectiveRole ?? existing?.effectiveRole,
       capabilities: result.folder.capabilities ?? existing?.capabilities,
       optimistic: false,
-    });
+    };
+    // An earlier PATCH completing must not clobber a newer mutation that is
+    // still queued for the same folder (e.g. pin -> immediately unpin).
+    if (queuedPatch?.name !== undefined) {
+      merged.name = queuedPatch.name;
+    }
+    if (queuedPatch?.isPinned !== undefined) {
+      merged.is_pinned = queuedPatch.isPinned ? 1 : 0;
+    }
+    ctx.upsertFolderInCache(merged);
   } else if (result?.file) {
     ctx.upsertFileInCache({
       ...result.file,
@@ -279,6 +294,11 @@ export interface OutboxRollbackContext {
   upsertFolderInCache: (folder: FolderSummary) => void;
   upsertFileInCache: (file: FileItem) => void;
   markCachedSubtreeStale: (folderId: string) => void;
+  setResolvedVersion?: (
+    entityType: 'folder' | 'file',
+    entityId: string,
+    version: number
+  ) => void;
   pushToast: (toast: Omit<WorkspaceToastItem, 'id'>, ttlMs?: number) => void;
   syncDelta: () => void;
 }
@@ -385,6 +405,20 @@ export function applyOutboxRollback(
         item.entityId,
         item.rollback?.parentId ?? null
       );
+    }
+  }
+
+  if (latestFromServer) {
+    if (item.entityType === 'folder') {
+      const version = (latestFromServer as FolderSummary).version;
+      if (typeof version === 'number') {
+        ctx.setResolvedVersion?.('folder', latestFromServer.id, version);
+      }
+    } else {
+      const version = (latestFromServer as FileItem).meta_version;
+      if (typeof version === 'number') {
+        ctx.setResolvedVersion?.('file', latestFromServer.id, version);
+      }
     }
   }
 

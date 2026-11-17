@@ -11,6 +11,10 @@ import {
 import { isFileConfidential } from '../../../services/shared-link-upload';
 import { getActiveWopiDraft } from '../../../services/wopi-drafts';
 import {
+  ensureLocalDevDocxContent,
+  isDocxFile,
+} from '../../../services/wopi-local-docx';
+import {
   buildWopiSrc,
   getWopiDiscovery,
   resolveWopiActionUrl,
@@ -132,8 +136,30 @@ export function registerPublicShareWopiRoutes(routes: Hono<OidcHonoEnv>) {
         : null,
       getActiveWopiDraft(c.env.DB, link.tenant_id, file.id),
     ]);
-    if (!activeDraft) {
-      if (!currentVersion) {
+    let effectiveCurrentVersion = currentVersion;
+    let effectiveActiveDraft = activeDraft;
+
+    if (
+      c.env.ENVIRONMENT === 'local' &&
+      Boolean(c.env.COLLABORA_URL) &&
+      isDocxFile(file)
+    ) {
+      try {
+        const ensured = await ensureLocalDevDocxContent(
+          c.env,
+          file,
+          currentVersion,
+          activeDraft
+        );
+        effectiveCurrentVersion = ensured.currentVersion;
+        effectiveActiveDraft = ensured.activeDraft;
+      } catch (err) {
+        console.warn('[wopi] Failed to prepare local dev .docx content:', err);
+      }
+    }
+
+    if (!effectiveActiveDraft) {
+      if (!effectiveCurrentVersion) {
         return c.json(
           {
             error: 'このファイルには表示・編集できる実体がありません',
@@ -142,7 +168,9 @@ export function registerPublicShareWopiRoutes(routes: Hono<OidcHonoEnv>) {
           409
         );
       }
-      const object = await c.env.BUCKET.head(currentVersion.r2_object_key);
+      const object = await c.env.BUCKET.head(
+        effectiveCurrentVersion.r2_object_key
+      );
       if (!object) {
         return c.json(
           {

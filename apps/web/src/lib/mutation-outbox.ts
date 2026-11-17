@@ -182,6 +182,19 @@ export class MutationOutbox {
     return this.queue.map((item) => ({ ...item, payload: { ...item.payload } }));
   }
 
+  /**
+   * Records the authoritative server version for an entity, e.g. after a
+   * conflict rollback, so subsequent queued mutations target that version.
+   */
+  setResolvedVersion(
+    entityType: 'folder' | 'file',
+    entityId: string,
+    version: number
+  ): void {
+    if (!Number.isFinite(version)) return;
+    this.resolvedVersions.set(entityKeyFor(entityType, entityId), version);
+  }
+
   enqueue(next: OutboxMutationRecord): void {
     this.disposed = false;
     const coalesced = this.tryCoalesceIntoQueue(next);

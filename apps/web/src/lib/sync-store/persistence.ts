@@ -8,6 +8,7 @@ import type {
   AuthUser,
   FileItem,
   FolderSummary,
+  OutboxMutationRecord,
   TenantPolicyRow,
 } from '@/types/files';
 
@@ -28,6 +29,7 @@ export interface PersistenceContext {
   rootFolderIds: string[];
   rootNextCursor: string | null;
   pinnedFolderIds: string[];
+  getOutboxItems: () => OutboxMutationRecord[];
   bootstrapDone: boolean;
   hydratedScopeKey: string | null;
   activeDirectoryNotice: string | null;
@@ -73,6 +75,7 @@ export function invalidateAllCachedDirectories(
     filesById: ctx.filesById,
     rootFolderIds: ctx.rootFolderIds,
     pinnedFolderIds: ctx.pinnedFolderIds,
+    outboxItems: ctx.getOutboxItems(),
     activeDirKey: ctx.activeDirKey,
     maxDirectories: ctx.maxDirectories,
   });
@@ -85,6 +88,7 @@ export function pruneAndSchedulePersist(ctx: PersistenceContext): void {
     filesById: ctx.filesById,
     rootFolderIds: ctx.rootFolderIds,
     pinnedFolderIds: ctx.pinnedFolderIds,
+    outboxItems: ctx.getOutboxItems(),
     activeDirKey: ctx.activeDirKey,
     maxDirectories: ctx.maxDirectories,
   });

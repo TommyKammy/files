@@ -13,7 +13,9 @@ function createNonce() {
 }
 
 function getCollaboraFrameOrigin(): string | null {
-  const raw = process.env.COLLABORA_URL?.trim();
+  const raw =
+    process.env.COLLABORA_URL?.trim() ||
+    (isDev ? 'http://localhost:9980' : '');
   if (!raw) return null;
   try {
     const url = new URL(raw);

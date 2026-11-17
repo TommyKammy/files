@@ -5,6 +5,6 @@ OIDC_STATE_COOKIE_KEY=dev-only-32byte-hex-or-base64-key-change-me
 ALLOW_DEV_AUTH=true
 WOPI_TOKEN_SECRET=dev-only-wopi-token-secret-change-me
 WOPI_ALLOWED_CLIENT_IPS=
-WOPI_HOST_ORIGIN=http://127.0.0.1:8787
+WOPI_HOST_ORIGIN=http://host.docker.internal:8787
 COLLABORA_URL=http://localhost:9980
 WOPI_DISCOVERY_URL=

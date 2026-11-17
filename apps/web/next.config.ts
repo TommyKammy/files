@@ -56,6 +56,10 @@ const nextConfig: NextConfig = {
         source: '/scim/:path*',
         destination: `${apiOrigin}/scim/:path*`,
       },
+      {
+        source: '/wopi/:path*',
+        destination: `${apiOrigin}/wopi/:path*`,
+      },
     ];
   },
 };

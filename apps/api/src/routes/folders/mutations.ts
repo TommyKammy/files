@@ -81,249 +81,253 @@ export function registerFolderMutationRoutes(routes: Hono<OidcHonoEnv>) {
 
   /** PATCH /api/folders/:id — rename/pin or update the folder invite policy override */
   routes.patch('/:id', async (c) => {
-    const user = getAuthenticatedUser(c);
-    const folderId = c.req.param('id');
-    const body = (await c.req.json().catch(() => null)) as {
-      name?: unknown;
-      isPinned?: boolean;
-      invitePolicy?: unknown;
-      expectedVersion?: number;
-    } | null;
+    try {
+      const user = getAuthenticatedUser(c);
+      const folderId = c.req.param('id');
+      const body = (await c.req.json().catch(() => null)) as {
+        name?: unknown;
+        isPinned?: boolean;
+        invitePolicy?: unknown;
+        expectedVersion?: number;
+      } | null;
 
-    if (!body) {
-      return c.json({ error: 'Invalid JSON body' }, 400);
-    }
-    if (
-      body.invitePolicy !== undefined &&
-      body.invitePolicy !== null &&
-      !isInvitePolicy(body.invitePolicy)
-    ) {
-      return c.json(
-        {
-          error: "invitePolicy must be 'owners', 'editors', 'admins' or null",
-          code: 'INVALID_INVITE_POLICY',
-        },
-        400
-      );
-    }
-
-    const access = await resolveTargetAccess(c.env.DB, user, 'folder', folderId);
-    if (!access || access.deletedAt !== null) {
-      return c.json({ error: 'Folder not found' }, 404);
-    }
-
-    const hasInvitePolicyUpdate = body.invitePolicy !== undefined;
-    const hasFolderFieldUpdate =
-      body.name !== undefined ||
-      body.isPinned !== undefined ||
-      !hasInvitePolicyUpdate;
-
-    // Rename and pinning both mutate the folder itself; `folder.rename` is the
-    // editor-tier capability (`uploader`-family roles can only create).
-    if (hasFolderFieldUpdate && !can(access.capabilities, 'folder.rename')) {
-      return c.json({ error: 'Forbidden' }, 403);
-    }
-    // Folder invite policy is a permission-management concern: co_owner / owner
-    // (or an explicit folder.settings holder) only.
-    if (
-      hasInvitePolicyUpdate &&
-      !can(access.capabilities, 'permission.manage') &&
-      !can(access.capabilities, 'folder.settings')
-    ) {
-      return c.json(
-        {
-          error: 'Only co_owner or owner can update the folder invite policy',
-          code: 'MANAGE_PERMISSION_REQUIRED',
-        },
-        403
-      );
-    }
-
-    const existing = await c.env.DB.prepare(
-      `SELECT ${FOLDER_CHILD_COLS} FROM folders WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL`
-    )
-      .bind(user.tenantId, folderId)
-      .first<FolderRow>();
-    if (!existing) {
-      return c.json({ error: 'Folder not found' }, 404);
-    }
-
-    if (body.expectedVersion !== undefined && existing.version !== body.expectedVersion) {
-      return c.json({ error: 'Version conflict', code: 'VERSION_CONFLICT', latest: existing }, 409);
-    }
-
-    let nextName = existing.name;
-    if (body.name !== undefined) {
-      try {
-        nextName = validateFolderName(body.name);
-      } catch (err) {
-        return handleFolderError(c, err);
+      if (!body) {
+        return c.json({ error: 'Invalid JSON body' }, 400);
       }
-      if (nextName !== existing.name) {
-        const dup = await c.env.DB.prepare(
-          `SELECT id FROM folders
-            WHERE tenant_id = ?
-              AND COALESCE(parent_id, '__ROOT__') = COALESCE(?, '__ROOT__')
-              AND name = ? AND deleted_at IS NULL AND id != ?`
-        )
-          .bind(user.tenantId, existing.parent_id, nextName, folderId)
-          .first<{ id: string }>();
-        if (dup) {
-          return c.json({ error: 'Folder name already exists', code: 'NAME_CONFLICT' }, 409);
-        }
-      }
-    }
-
-    const nextPinned =
-      body.isPinned !== undefined ? (body.isPinned ? 1 : 0) : existing.is_pinned;
-
-    const resolvedPolicy = await resolveEffectiveInvitePolicy(
-      c.env.DB,
-      user.tenantId,
-      folderId
-    );
-    const previousInvitePolicy = resolvedPolicy.ownPolicy;
-    let nextInvitePolicy = previousInvitePolicy;
-    let effectiveInvitePolicy = resolvedPolicy.effectivePolicy;
-
-    if (hasInvitePolicyUpdate) {
-      const requestedPolicy = body.invitePolicy as
-        | 'owners'
-        | 'editors'
-        | 'admins'
-        | null;
       if (
-        requestedPolicy !== null &&
-        invitePolicyStrictness(requestedPolicy) <
-          invitePolicyStrictness(resolvedPolicy.parentFloor)
+        body.invitePolicy !== undefined &&
+        body.invitePolicy !== null &&
+        !isInvitePolicy(body.invitePolicy)
       ) {
         return c.json(
           {
-            error: `The folder invite policy cannot be weaker than the inherited "${resolvedPolicy.parentFloor}" policy`,
-            code: 'INVITE_POLICY_CANNOT_RELAX',
-            inheritedFloor: resolvedPolicy.parentFloor,
-            parentFloor: resolvedPolicy.parentFloor,
+            error: "invitePolicy must be 'owners', 'editors', 'admins' or null",
+            code: 'INVALID_INVITE_POLICY',
           },
-          409
+          400
         );
       }
-      nextInvitePolicy = requestedPolicy;
-      effectiveInvitePolicy =
-        requestedPolicy === null
-          ? resolvedPolicy.parentFloor
-          : stricterInvitePolicy(resolvedPolicy.parentFloor, requestedPolicy);
-    }
 
-    const nowIso = new Date().toISOString();
-    const statements: D1PreparedStatement[] = [
-      c.env.DB.prepare(
-        `UPDATE folders
-            SET name = ?, is_pinned = ?, invite_policy = ?,
-                version = version + 1, updated_at = ?
-          WHERE tenant_id = ? AND id = ?`
-      ).bind(
-        nextName,
-        nextPinned,
-        nextInvitePolicy,
-        nowIso,
+      const access = await resolveTargetAccess(c.env.DB, user, 'folder', folderId);
+      if (!access || access.deletedAt !== null) {
+        return c.json({ error: 'Folder not found' }, 404);
+      }
+
+      const hasInvitePolicyUpdate = body.invitePolicy !== undefined;
+      const hasFolderFieldUpdate =
+        body.name !== undefined ||
+        body.isPinned !== undefined ||
+        !hasInvitePolicyUpdate;
+
+      // Rename and pinning both mutate the folder itself; `folder.rename` is the
+      // editor-tier capability (`uploader`-family roles can only create).
+      if (hasFolderFieldUpdate && !can(access.capabilities, 'folder.rename')) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+      // Folder invite policy is a permission-management concern: co_owner / owner
+      // (or an explicit folder.settings holder) only.
+      if (
+        hasInvitePolicyUpdate &&
+        !can(access.capabilities, 'permission.manage') &&
+        !can(access.capabilities, 'folder.settings')
+      ) {
+        return c.json(
+          {
+            error: 'Only co_owner or owner can update the folder invite policy',
+            code: 'MANAGE_PERMISSION_REQUIRED',
+          },
+          403
+        );
+      }
+
+      const existing = await c.env.DB.prepare(
+        `SELECT ${FOLDER_CHILD_COLS} FROM folders WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL`
+      )
+        .bind(user.tenantId, folderId)
+        .first<FolderRow>();
+      if (!existing) {
+        return c.json({ error: 'Folder not found' }, 404);
+      }
+
+      if (body.expectedVersion !== undefined && existing.version !== body.expectedVersion) {
+        return c.json({ error: 'Version conflict', code: 'VERSION_CONFLICT', latest: existing }, 409);
+      }
+
+      let nextName = existing.name;
+      if (body.name !== undefined) {
+        try {
+          nextName = validateFolderName(body.name);
+        } catch (err) {
+          return handleFolderError(c, err);
+        }
+        if (nextName !== existing.name) {
+          const dup = await c.env.DB.prepare(
+            `SELECT id FROM folders
+              WHERE tenant_id = ?
+                AND COALESCE(parent_id, '__ROOT__') = COALESCE(?, '__ROOT__')
+                AND name = ? AND deleted_at IS NULL AND id != ?`
+          )
+            .bind(user.tenantId, existing.parent_id, nextName, folderId)
+            .first<{ id: string }>();
+          if (dup) {
+            return c.json({ error: 'Folder name already exists', code: 'NAME_CONFLICT' }, 409);
+          }
+        }
+      }
+
+      const nextPinned =
+        body.isPinned !== undefined ? (body.isPinned ? 1 : 0) : existing.is_pinned;
+
+      const resolvedPolicy = await resolveEffectiveInvitePolicy(
+        c.env.DB,
         user.tenantId,
         folderId
-      ),
-    ];
+      );
+      const previousInvitePolicy = resolvedPolicy.ownPolicy;
+      let nextInvitePolicy = previousInvitePolicy;
+      let effectiveInvitePolicy = resolvedPolicy.effectivePolicy;
 
-    if (hasInvitePolicyUpdate) {
+      if (hasInvitePolicyUpdate) {
+        const requestedPolicy = body.invitePolicy as
+          | 'owners'
+          | 'editors'
+          | 'admins'
+          | null;
+        if (
+          requestedPolicy !== null &&
+          invitePolicyStrictness(requestedPolicy) <
+            invitePolicyStrictness(resolvedPolicy.parentFloor)
+        ) {
+          return c.json(
+            {
+              error: `The folder invite policy cannot be weaker than the inherited "${resolvedPolicy.parentFloor}" policy`,
+              code: 'INVITE_POLICY_CANNOT_RELAX',
+              inheritedFloor: resolvedPolicy.parentFloor,
+              parentFloor: resolvedPolicy.parentFloor,
+            },
+            409
+          );
+        }
+        nextInvitePolicy = requestedPolicy;
+        effectiveInvitePolicy =
+          requestedPolicy === null
+            ? resolvedPolicy.parentFloor
+            : stricterInvitePolicy(resolvedPolicy.parentFloor, requestedPolicy);
+      }
+
+      const nowIso = new Date().toISOString();
+      const statements: D1PreparedStatement[] = [
+        c.env.DB.prepare(
+          `UPDATE folders
+              SET name = ?, is_pinned = ?, invite_policy = ?,
+                  version = version + 1, updated_at = ?
+            WHERE tenant_id = ? AND id = ?`
+        ).bind(
+          nextName,
+          nextPinned,
+          nextInvitePolicy,
+          nowIso,
+          user.tenantId,
+          folderId
+        ),
+      ];
+
+      if (hasInvitePolicyUpdate) {
+        statements.push(
+          buildAuditLogStmt(c.env.DB, {
+            tenantId: user.tenantId,
+            actorId: user.id,
+            actorEmail: user.email,
+            actorIp: user.ipAddress,
+            action: 'folder.invite_policy_updated',
+            targetType: 'folder',
+            targetId: folderId,
+            classificationSnapshot: existing.classification,
+            metadata: {
+              previousPolicy: previousInvitePolicy,
+              invitePolicy: nextInvitePolicy,
+              effectivePolicy: effectiveInvitePolicy,
+              inheritedFloor: resolvedPolicy.parentFloor,
+            },
+            nowIso,
+          })
+        );
+      }
+
+      if (hasFolderFieldUpdate) {
+        statements.push(
+          buildAuditLogStmt(c.env.DB, {
+            tenantId: user.tenantId,
+            actorId: user.id,
+            actorEmail: user.email,
+            actorIp: user.ipAddress,
+            action: 'folder.update',
+            targetType: 'folder',
+            targetId: folderId,
+            classificationSnapshot: existing.classification,
+            metadata: { name: nextName, isPinned: nextPinned === 1 },
+            nowIso,
+          })
+        );
+      }
+
       statements.push(
-        buildAuditLogStmt(c.env.DB, {
+        buildSyncChangeStmt(c.env.DB, {
           tenantId: user.tenantId,
-          actorId: user.id,
-          actorEmail: user.email,
-          actorIp: user.ipAddress,
-          action: 'folder.invite_policy_updated',
-          targetType: 'folder',
-          targetId: folderId,
-          classificationSnapshot: existing.classification,
-          metadata: {
-            previousPolicy: previousInvitePolicy,
+          entityType: 'folder',
+          entityId: folderId,
+          folderId: existing.parent_id,
+          action: 'folder.update',
+          payload: {
+            name: nextName,
+            isPinned: nextPinned,
             invitePolicy: nextInvitePolicy,
-            effectivePolicy: effectiveInvitePolicy,
-            inheritedFloor: resolvedPolicy.parentFloor,
+            effectiveInvitePolicy,
+            version: existing.version + 1,
+            updatedAt: nowIso,
           },
           nowIso,
         })
       );
-    }
 
-    if (hasFolderFieldUpdate) {
-      statements.push(
-        buildAuditLogStmt(c.env.DB, {
-          tenantId: user.tenantId,
-          actorId: user.id,
-          actorEmail: user.email,
-          actorIp: user.ipAddress,
-          action: 'folder.update',
-          targetType: 'folder',
-          targetId: folderId,
-          classificationSnapshot: existing.classification,
-          metadata: { name: nextName, isPinned: nextPinned === 1 },
-          nowIso,
-        })
-      );
-    }
+      const batchResults = await c.env.DB.batch(statements);
 
-    statements.push(
-      buildSyncChangeStmt(c.env.DB, {
+      const scopeFolderIds = [existing.parent_id, folderId];
+      if (hasInvitePolicyUpdate) {
+        const descendants = await c.env.DB.prepare(
+          `SELECT descendant_id FROM folder_closures
+            WHERE tenant_id = ? AND ancestor_id = ? AND depth > 0`
+        )
+          .bind(user.tenantId, folderId)
+          .all<{ descendant_id: string }>();
+        scopeFolderIds.push(...descendants.results.map((row) => row.descendant_id));
+      }
+
+      await emitTenantSyncSignal(c, {
         tenantId: user.tenantId,
-        entityType: 'folder',
-        entityId: folderId,
-        folderId: existing.parent_id,
-        action: 'folder.update',
-        payload: {
+        seq: extractLastSyncSeq(batchResults),
+        eventKind: 'folder.update',
+        scopeFolderIds,
+      });
+
+      return c.json({
+        folder: {
+          ...existing,
           name: nextName,
-          isPinned: nextPinned,
-          invitePolicy: nextInvitePolicy,
-          effectiveInvitePolicy,
+          is_pinned: nextPinned,
+          invite_policy: nextInvitePolicy,
           version: existing.version + 1,
-          updatedAt: nowIso,
+          updated_at: nowIso,
         },
-        nowIso,
-      })
-    );
-
-    const batchResults = await c.env.DB.batch(statements);
-
-    const scopeFolderIds = [existing.parent_id, folderId];
-    if (hasInvitePolicyUpdate) {
-      const descendants = await c.env.DB.prepare(
-        `SELECT descendant_id FROM folder_closures
-          WHERE tenant_id = ? AND ancestor_id = ? AND depth > 0`
-      )
-        .bind(user.tenantId, folderId)
-        .all<{ descendant_id: string }>();
-      scopeFolderIds.push(...descendants.results.map((row) => row.descendant_id));
+        invitePolicy: {
+          folderOwnPolicy: nextInvitePolicy,
+          effectivePolicy: effectiveInvitePolicy,
+          inheritedFloor: resolvedPolicy.parentFloor,
+        },
+      });
+    } catch (err) {
+      return handleFolderError(c, err);
     }
-
-    await emitTenantSyncSignal(c, {
-      tenantId: user.tenantId,
-      seq: extractLastSyncSeq(batchResults),
-      eventKind: 'folder.update',
-      scopeFolderIds,
-    });
-
-    return c.json({
-      folder: {
-        ...existing,
-        name: nextName,
-        is_pinned: nextPinned,
-        invite_policy: nextInvitePolicy,
-        version: existing.version + 1,
-        updated_at: nowIso,
-      },
-      invitePolicy: {
-        folderOwnPolicy: nextInvitePolicy,
-        effectivePolicy: effectiveInvitePolicy,
-        inheritedFloor: resolvedPolicy.parentFloor,
-      },
-    });
   });
 
   /** POST /api/folders/:id/move — O(1) cycle check, closure table update, strictness propagation */

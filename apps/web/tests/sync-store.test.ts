@@ -516,6 +516,96 @@ test('pruneWorkingSetInMemory evicts oldest non-pinned directories and sweeps or
   assert.equal(foldersById.has('pinned-1'), true);
 });
 
+test('pinning then unpinning while the first PATCH is in-flight keeps the folder unpinned and advances expectedVersion', async () => {
+  const folder = makeFolder('pin-folder', {
+    name: 'Pin Docs',
+    is_pinned: 0,
+    version: 1,
+  });
+  const calls: Array<{ expectedVersion?: number; isPinned?: boolean }> = [];
+  let signalFirstStarted!: () => void;
+  const firstStarted = new Promise<void>((resolve) => {
+    signalFirstStarted = resolve;
+  });
+  let releaseFirst!: () => void;
+  const firstResponse = new Promise<{ folder: FolderSummary }>((resolve) => {
+    releaseFirst = () =>
+      resolve({
+        folder: {
+          ...folder,
+          is_pinned: 1,
+          version: 2,
+          updated_at: '2026-11-15T01:00:00.000Z',
+        },
+      });
+  });
+
+  const store = new WorkspaceSyncStore({
+    persistence: new MemorySyncPersistence(),
+    outboxCoalesceMs: 5,
+    fetchBootstrap: async () => ({
+      user: makeUser(),
+      policy: makePolicy(),
+      rootFolders: [folder],
+      pinnedFolders: [],
+      currentSeq: 1,
+      purgedBeforeSeq: 0,
+    }),
+    updateFolderFn: async (_folderId, payload) => {
+      calls.push({
+        expectedVersion: payload.expectedVersion,
+        isPinned: payload.isPinned,
+      });
+      if (calls.length === 1) {
+        signalFirstStarted();
+        return firstResponse;
+      }
+      return {
+        folder: {
+          ...folder,
+          is_pinned: payload.isPinned ? 1 : 0,
+          version: (payload.expectedVersion ?? folder.version) + 1,
+        },
+      };
+    },
+  });
+
+  await store.bootstrap({ force: true });
+
+  // The stale record a UI row or Undo callback may still hold after a re-render.
+  const staleFolder = { ...folder };
+
+  assert.equal(store.optimisticToggleFolderPin(staleFolder).ok, true);
+  const afterPin = store
+    .getDirectoryView(null)
+    .folders.find((f) => f.id === folder.id);
+  assert.equal(afterPin?.is_pinned, 1);
+
+  await firstStarted;
+
+  // Unpin immediately while the first PATCH is still in-flight.
+  assert.equal(store.optimisticToggleFolderPin(staleFolder).ok, true);
+  const afterUnpin = store
+    .getDirectoryView(null)
+    .folders.find((f) => f.id === folder.id);
+  assert.equal(afterUnpin?.is_pinned, 0);
+
+  releaseFirst();
+  await store.flushOutbox();
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.isPinned, true);
+  assert.equal(calls[1]?.isPinned, false);
+  assert.equal(calls[1]?.expectedVersion, 2);
+
+  const settled = store
+    .getDirectoryView(null)
+    .folders.find((f) => f.id === folder.id);
+  assert.equal(settled?.is_pinned, 0);
+  assert.equal(settled?.version, 3);
+  await store.flushPersistence();
+});
+
 test('IntentPrefetcher enforces debounce cancel, concurrency limit (2), 30s TTL, and never calls content-url', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
 
