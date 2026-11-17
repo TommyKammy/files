@@ -17,6 +17,11 @@ import {
   updateAdminUser,
   type AdminUserFilters,
 } from '../../services/admin-users';
+import {
+  AdminOffboardingError,
+  loadAdminOffboardingPreview,
+  offboardAdminMember,
+} from '../../services/admin-offboarding';
 import { getAuthenticatedUser } from '../../services/authorization';
 import { emitTenantSyncSignal } from '../../services/sync-notifier';
 import type { OidcHonoEnv } from '../../types/oidc';
@@ -40,6 +45,9 @@ function adminUserErrorResponse(
   err: unknown
 ): Response {
   if (err instanceof AdminUserError) {
+    return c.json({ error: err.message, code: err.code }, err.status);
+  }
+  if (err instanceof AdminOffboardingError) {
     return c.json({ error: err.message, code: err.code }, err.status);
   }
   if (err instanceof AdminBulkIdempotencyError) {
@@ -163,6 +171,118 @@ export function registerAdminUserRoutes(routes: Hono<OidcHonoEnv>) {
         );
       }
       return c.json(detail);
+    } catch (err) {
+      return adminUserErrorResponse(c, err);
+    }
+  });
+
+  /**
+   * GET /api/admin/users/:id/offboarding-preview — read-only inventory.
+   * sys_admin and sec_admin can review; execution is sys_admin only.
+   */
+  routes.get('/users/:id/offboarding-preview', async (c) => {
+    const user = getAuthenticatedUser(c);
+    if (user.role !== 'sys_admin' && user.role !== 'sec_admin') {
+      return c.json(
+        {
+          error: 'Only sys_admin or sec_admin can preview offboarding',
+          code: 'OFFBOARDING_PREVIEW_FORBIDDEN',
+        },
+        403
+      );
+    }
+    try {
+      const preview = await loadAdminOffboardingPreview(
+        c.env,
+        user.tenantId,
+        c.req.param('id')
+      );
+      return c.json(preview);
+    } catch (err) {
+      return adminUserErrorResponse(c, err);
+    }
+  });
+
+  /**
+   * POST /api/admin/users/:id/offboard — sys_admin-only bulk ownership transfer.
+   * The service returns replay responses for the same Idempotency-Key/payload.
+   */
+  routes.post('/users/:id/offboard', async (c) => {
+    const user = getAuthenticatedUser(c);
+    if (user.role !== 'sys_admin') {
+      return c.json(
+        {
+          error: 'Only sys_admin can offboard internal members',
+          code: 'SYS_ADMIN_REQUIRED',
+        },
+        403
+      );
+    }
+    const body = (await c.req.json().catch(() => null)) as
+      | Record<string, unknown>
+      | null;
+    if (!body) {
+      return c.json({ error: 'JSON body required', code: 'INVALID_BODY' }, 400);
+    }
+
+    try {
+      const result = await offboardAdminMember({
+        env: c.env,
+        tenantId: user.tenantId,
+        userId: c.req.param('id'),
+        actor: user,
+        transferToUserId:
+          body.transferToUserId ?? body.transfer_to_user_id,
+        sharedLinksAction:
+          body.sharedLinksAction ?? body.shared_links_action,
+        fileRequestsAction:
+          body.fileRequestsAction ?? body.file_requests_action,
+        userAction: body.userAction ?? body.user_action,
+        suspendOrRemoveUser:
+          body.suspendOrRemoveUser ?? body.suspend_or_remove_user,
+        revokeDirectPermissions:
+          body.revokeDirectPermissions ?? body.revoke_direct_permissions,
+        removeGroupMemberships:
+          body.removeGroupMemberships ?? body.remove_group_memberships,
+        releaseHeldLocks: body.releaseHeldLocks ?? body.release_held_locks,
+        confirmation: body.confirmation ?? body.confirm,
+        idempotencyKey: resolveIdempotencyKey(
+          body.idempotencyKey ?? body.idempotency_key,
+          c.req.header('Idempotency-Key')
+        ),
+      });
+      if (!result.replayed) {
+        if (result.options.userAction === 'suspend') {
+          await emitTenantSyncSignal(c, {
+            tenantId: user.tenantId,
+            seq: result.syncSeq,
+            eventKind: 'user.suspended',
+            targetUserId: c.req.param('id'),
+            revoked: true,
+            metadata: {
+              offboarded: true,
+              transferToUserId: result.transferTarget?.id ?? null,
+            },
+          });
+        }
+        // A separate tenant-wide invalidation lets connected successors pick
+        // up the transferred folder/link/request ownership immediately.
+        await emitTenantSyncSignal(c, {
+          tenantId: user.tenantId,
+          seq: result.syncSeq,
+          eventKind: 'admin.user.offboard',
+          metadata: {
+            targetUserId: c.req.param('id'),
+            transferToUserId: result.transferTarget?.id ?? null,
+            transferredFolderCount: result.summary.transferredFolderCount,
+            sharedLinksTransferred: result.summary.sharedLinksTransferred,
+            sharedLinksRevoked: result.summary.sharedLinksRevoked,
+            fileRequestsTransferred: result.summary.fileRequestsTransferred,
+            fileRequestsDeactivated: result.summary.fileRequestsDeactivated,
+          },
+        });
+      }
+      return c.json(result);
     } catch (err) {
       return adminUserErrorResponse(c, err);
     }

@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Upload,
   UserCheck,
+  UserMinus,
   UserPlus,
   Users,
   UserX,
@@ -30,6 +31,11 @@ import {
   useState,
 } from 'react';
 import { ModalShell } from '@/components/ModalShell';
+import { AdminMemberOffboardingModal } from '@/components/admin/AdminMemberOffboardingModal';
+import {
+  memberCanOpenOffboarding,
+  memberOffboardingOpenGuardReason,
+} from '@/lib/admin-offboarding';
 import {
   ADMIN_MEMBER_BULK_ACTION_LABELS,
   ADMIN_MEMBER_CSV_SAMPLE,
@@ -79,6 +85,7 @@ import type {
   AdminMemberSortBy,
   AdminMemberStatusFilter,
   AdminMemberUpdateInput,
+  AdminOffboardingResponse,
   AuthUser,
   UserRole,
 } from '@/types/files';
@@ -215,6 +222,12 @@ export function AdminMembersSection({
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkResult, setBulkResult] =
     useState<AdminMemberBulkImportResponse | null>(null);
+
+  const [offboardingMember, setOffboardingMember] =
+    useState<AdminMemberRow | null>(null);
+
+  const activeSysAdminCount =
+    data?.summary.activeSysAdminCount ?? data?.summary.byRole.sys_admin ?? 0;
 
   const loadList = useCallback(
     async (nextQuery: AdminMemberListQuery) => {
@@ -480,6 +493,45 @@ export function AdminMembersSection({
     setModalError(null);
     setModalResult(null);
     setIdempotencyKey('');
+  }
+
+  function offboardingGuard(member: AdminMemberRow): string | null {
+    return memberOffboardingOpenGuardReason({
+      viewerRole: role,
+      viewerId: user?.id,
+      member,
+      activeSysAdminCount,
+    });
+  }
+
+  function openOffboarding(member: AdminMemberRow) {
+    if (!memberCanOpenOffboarding({
+      viewerRole: role,
+      viewerId: user?.id,
+      member,
+      activeSysAdminCount,
+    })) {
+      return;
+    }
+    // The offboarding wizard owns the modal surface; close the detail drawer
+    // first so two native <dialog> elements never stack.
+    if (detailMemberId) {
+      setDetailMemberId(null);
+      setDetail(null);
+      setDetailError(null);
+      setEditError(null);
+      setEditResult(null);
+    }
+    setOffboardingMember(member);
+  }
+
+  function closeOffboarding() {
+    setOffboardingMember(null);
+  }
+
+  function handleOffboardingCompleted(result: AdminOffboardingResponse) {
+    setNotice(result.notice);
+    void loadList(query);
   }
 
   async function executeAction() {
@@ -994,6 +1046,7 @@ export function AdminMembersSection({
             ) : (
               displayMembers.map((member) => {
                 const quotaState = memberQuotaState(member);
+                const offboardingReason = offboardingGuard(member);
                 return (
                   <tr
                     key={member.id}
@@ -1091,6 +1144,23 @@ export function AdminMembersSection({
                         >
                           <UserCheck className="h-2.5 w-2.5" aria-hidden="true" />
                           再開
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="member-action-offboard"
+                          disabled={!memberCanOpenOffboarding({
+                            viewerRole: role,
+                            viewerId: user?.id,
+                            member,
+                            activeSysAdminCount,
+                          })}
+                          title={offboardingReason ?? '退職/移管 (オフボーディング)'}
+                          aria-describedby={`${baseId}-rbac`}
+                          onClick={() => openOffboarding(member)}
+                          className="inline-flex items-center gap-1 rounded border border-rose-300 bg-white px-1.5 py-0.5 text-[0.5625rem] font-medium text-rose-800 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <UserMinus className="h-2.5 w-2.5" aria-hidden="true" />
+                          退職/移管
                         </button>
                       </div>
                     </td>
@@ -1610,6 +1680,26 @@ export function AdminMembersSection({
                     >
                       再開
                     </button>
+                    <button
+                      type="button"
+                      data-testid="member-action-offboard"
+                      disabled={!memberCanOpenOffboarding({
+                        viewerRole: role,
+                        viewerId: user?.id,
+                        member: detail.user,
+                        activeSysAdminCount,
+                      })}
+                      title={
+                        offboardingGuard(detail.user) ??
+                        '退職/移管 (オフボーディング)'
+                      }
+                      aria-describedby={`${baseId}-rbac`}
+                      onClick={() => openOffboarding(detail.user)}
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-rose-300 bg-white px-2.5 text-[0.6875rem] font-medium text-rose-800 hover:bg-rose-50 disabled:opacity-40"
+                    >
+                      <UserMinus className="h-3 w-3" aria-hidden="true" />
+                      退職/移管
+                    </button>
                   </div>
                 </>
               )}
@@ -1896,6 +1986,16 @@ export function AdminMembersSection({
             </div>
           </div>
         </ModalShell>
+      )}
+      {offboardingMember && (
+        <AdminMemberOffboardingModal
+          member={offboardingMember}
+          viewerId={user?.id ?? null}
+          viewerRole={role ?? null}
+          activeSysAdminCount={activeSysAdminCount}
+          onClose={closeOffboarding}
+          onCompleted={handleOffboardingCompleted}
+        />
       )}
     </section>
   );

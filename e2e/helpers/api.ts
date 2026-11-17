@@ -1253,3 +1253,132 @@ export async function bulkImportAdminMembersApi(
   assertOk(res, 'POST /api/admin/users/bulk-import');
   return (await res.json()) as AdminMemberBulkImportLike;
 }
+
+/* ------------------------------------------------------------------ */
+/* P11-4 / TOM-70 member offboarding helpers                           */
+/* ------------------------------------------------------------------ */
+
+export interface AdminOffboardingPreviewLike {
+  user: {
+    id: string;
+    email: string;
+    status: 'active' | 'suspended';
+    userType: 'member' | 'guest';
+    offboardedAt: string | null;
+  };
+  ownedFolders: Array<{
+    id: string;
+    name: string;
+    soleOwner: boolean;
+    effectiveOwnerCount: number;
+    isRoot: boolean;
+  }>;
+  ownedFolderCount: number;
+  soleOwnerCount: number;
+  directPermissions: {
+    total: number;
+    folder: number;
+    file: number;
+    folderCount: number;
+    fileCount: number;
+  };
+  activeSharedLinks: Array<{
+    id: string;
+    targetType: 'folder' | 'file';
+    targetId: string;
+    targetName: string | null;
+  }>;
+  activeFileRequests: Array<{ id: string; title: string; folderId: string }>;
+  heldLocks: Array<{ fileId: string; mode: string }>;
+  activeSessionCount: number;
+  activeWopiSessionCount: number;
+  groupMembershipCount: number;
+  transferCandidates: Array<{
+    id: string;
+    email: string;
+    displayName: string;
+    role: AdminMemberRole;
+  }>;
+  generatedAt: string;
+}
+
+export interface AdminOffboardingSummariesLike {
+  ownedFolderCount: number;
+  transferredFolderCount: number;
+  soleOwnerFolderCount: number;
+  directPermissionsRevoked: number;
+  groupMembershipsRemoved: number;
+  sharedLinksTransferred: number;
+  sharedLinksRevoked: number;
+  fileRequestsTransferred: number;
+  fileRequestsDeactivated: number;
+  sessionsRevoked: number;
+  wopiSessionsRevoked: number;
+  locksReleased: number;
+  statusChanged: boolean;
+}
+
+export interface AdminOffboardingResultLike {
+  ok: boolean;
+  replayed: boolean;
+  user: AdminMemberListItem;
+  transferTarget: {
+    id: string;
+    email: string;
+    displayName: string;
+    role: AdminMemberRole;
+  } | null;
+  options: Record<string, unknown>;
+  summary: AdminOffboardingSummariesLike;
+  syncSeq: number | null;
+  notice: string;
+}
+
+export async function getAdminMemberOffboardingPreview(
+  actor: ApiActor,
+  memberId: string
+): Promise<AdminOffboardingPreviewLike> {
+  const res = await actor.api.get(
+    `/api/admin/users/${encodeURIComponent(memberId)}/offboarding-preview`
+  );
+  assertOk(res, `GET /api/admin/users/${memberId}/offboarding-preview`);
+  return (await res.json()) as AdminOffboardingPreviewLike;
+}
+
+export async function offboardAdminMemberApi(
+  actor: ApiActor,
+  memberId: string,
+  input: {
+    transferToUserId: string | null;
+    sharedLinksAction?: 'transfer_owner' | 'revoke_all';
+    fileRequestsAction?: 'transfer_owner' | 'deactivate_all';
+    userAction?: 'suspend' | 'keep_status';
+    revokeDirectPermissions?: boolean;
+    removeGroupMemberships?: boolean;
+    releaseHeldLocks?: boolean;
+    confirmation?: string;
+    idempotencyKey?: string;
+  }
+): Promise<AdminOffboardingResultLike> {
+  const key =
+    input.idempotencyKey ?? adminMemberIdempotencyKey('offboard', memberId);
+  const res = await actor.api.post(
+    `/api/admin/users/${encodeURIComponent(memberId)}/offboard`,
+    {
+      headers: { 'Idempotency-Key': key },
+      data: {
+        transferToUserId: input.transferToUserId,
+        sharedLinksAction: input.sharedLinksAction ?? 'transfer_owner',
+        fileRequestsAction: input.fileRequestsAction ?? 'transfer_owner',
+        userAction: input.userAction ?? 'suspend',
+        revokeDirectPermissions: input.revokeDirectPermissions ?? true,
+        removeGroupMemberships: input.removeGroupMemberships ?? true,
+        releaseHeldLocks: input.releaseHeldLocks ?? true,
+        confirmation: input.confirmation ?? 'OFFBOARD',
+        idempotencyKey: key,
+      },
+    }
+  );
+  assertOk(res, `POST /api/admin/users/${memberId}/offboard`);
+  return (await res.json()) as AdminOffboardingResultLike;
+}

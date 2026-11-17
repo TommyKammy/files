@@ -67,6 +67,8 @@ export interface AdminUserAggregations {
   total: number;
   byStatus: Record<AdminUserStatusFilter, number>;
   byRole: Record<UserRole, number>;
+  /** Active `sys_admin` count used by the offboarding last-admin guard. */
+  activeSysAdminCount?: number;
   departments: AdminUserDepartmentSummary[];
 }
 
@@ -427,7 +429,8 @@ export async function listAdminUsers(
   const orderColumn = SORT_COLUMNS[filters.sortBy];
   const orderDir = filters.sortDir === 'asc' ? 'ASC' : 'DESC';
 
-  const [rows, totalRow, statusRes, roleRes, departmentRes] = await Promise.all([
+  const [rows, totalRow, statusRes, roleRes, departmentRes, activeSysAdminRow] =
+    await Promise.all([
     db
       .prepare(
         `SELECT u.id, u.email, u.display_name, u.department, u.role, u.status,
@@ -478,6 +481,14 @@ export async function listAdminUsers(
       )
       .bind(tenantId)
       .all<{ department: string | null; count: number }>(),
+    db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM users
+          WHERE tenant_id = ? AND user_type = 'member'
+            AND role = 'sys_admin' AND status = 'active'`
+      )
+      .bind(tenantId)
+      .first<{ count: number }>(),
   ]);
 
   const users = rows.results.map(projectRow);
@@ -506,6 +517,7 @@ export async function listAdminUsers(
     total: byStatus.all,
     byStatus,
     byRole,
+    activeSysAdminCount: activeSysAdminRow?.count ?? 0,
     departments: departmentRes.results.map((row) => ({
       department: row.department,
       count: row.count,
@@ -577,7 +589,7 @@ async function loadTargetUser(
     .first<TargetUserRow>();
 }
 
-async function loadMemberRowStrict(
+export async function loadMemberRowStrict(
   db: D1Database,
   tenantId: string,
   userId: string

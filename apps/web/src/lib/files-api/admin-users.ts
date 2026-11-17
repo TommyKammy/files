@@ -7,6 +7,9 @@ import type {
   AdminMemberListResponse,
   AdminMemberMutationResponse,
   AdminMemberUpdateInput,
+  AdminOffboardingInput,
+  AdminOffboardingPreviewResponse,
+  AdminOffboardingResponse,
 } from '@/types/files';
 import { apiFetch } from './core';
 
@@ -91,6 +94,33 @@ export function bulkImportAdminMembers(input: {
       ...(input.idempotencyKey
         ? { idempotencyKey: input.idempotencyKey }
         : {}),
+    }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* P11-4 / TOM-70 member offboarding                                   */
+/* ------------------------------------------------------------------ */
+
+export function fetchAdminMemberOffboardingPreview(
+  memberId: string
+): Promise<AdminOffboardingPreviewResponse> {
+  return apiFetch(
+    `/api/admin/users/${encodeURIComponent(memberId)}/offboarding-preview`
+  );
+}
+
+export function offboardAdminMember(
+  memberId: string,
+  input: AdminOffboardingInput,
+  options: { idempotencyKey: string }
+): Promise<AdminOffboardingResponse> {
+  return apiFetch(`/api/admin/users/${encodeURIComponent(memberId)}/offboard`, {
+    method: 'POST',
+    headers: { 'Idempotency-Key': options.idempotencyKey },
+    body: JSON.stringify({
+      ...input,
+      idempotencyKey: options.idempotencyKey,
     }),
   });
 }

@@ -1222,6 +1222,8 @@ export interface AdminMemberAggregations {
   total: number;
   byStatus: Record<AdminMemberStatusFilter, number>;
   byRole: Record<UserRole, number>;
+  /** Active sys_admin count for the last-admin offboarding guard. */
+  activeSysAdminCount?: number;
   departments: AdminMemberDepartmentSummary[];
 }
 
@@ -1333,6 +1335,141 @@ export interface AdminMemberBulkImportResponse {
   unchangedCount: number;
   errorCount: number;
   results: AdminMemberBulkRowResult[];
+  syncSeq: number | null;
+  notice: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* P11-4 / TOM-70 member offboarding                                   */
+/* ------------------------------------------------------------------ */
+
+export type AdminOffboardingSharedLinksAction = 'transfer_owner' | 'revoke_all';
+export type AdminOffboardingFileRequestsAction =
+  | 'transfer_owner'
+  | 'deactivate_all';
+export type AdminOffboardingUserAction = 'suspend' | 'keep_status';
+
+export interface AdminOffboardingOwnedFolder {
+  id: string;
+  name: string;
+  classification: string;
+  parentId: string | null;
+  isRoot: boolean;
+  soleOwner: boolean;
+  effectiveOwnerCount: number;
+  createdAt: string;
+}
+
+export interface AdminOffboardingDirectPermissions {
+  total: number;
+  folder: number;
+  file: number;
+  folderCount: number;
+  fileCount: number;
+}
+
+export interface AdminOffboardingSharedLink {
+  id: string;
+  targetType: 'folder' | 'file';
+  targetId: string;
+  targetName: string | null;
+  accessScope: string;
+  canDownload: boolean;
+  requireWatermark: boolean;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminOffboardingFileRequest {
+  id: string;
+  folderId: string;
+  folderName: string | null;
+  title: string;
+  submissionCount: number;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminOffboardingHeldLock {
+  fileId: string;
+  fileName: string | null;
+  mode: 'wopi_collab' | 'desktop_exclusive';
+  lockId: string;
+  expiresAt: string;
+}
+
+export interface AdminOffboardingTransferCandidate {
+  id: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+}
+
+export interface AdminOffboardingPreviewResponse {
+  user: {
+    id: string;
+    email: string;
+    displayName: string;
+    role: UserRole;
+    status: 'active' | 'suspended';
+    userType: 'member' | 'guest';
+    offboardedAt: string | null;
+  };
+  ownedFolders: AdminOffboardingOwnedFolder[];
+  ownedFolderCount: number;
+  soleOwnerCount: number;
+  directPermissions: AdminOffboardingDirectPermissions;
+  activeSharedLinks: AdminOffboardingSharedLink[];
+  activeFileRequests: AdminOffboardingFileRequest[];
+  heldLocks: AdminOffboardingHeldLock[];
+  activeSessionCount: number;
+  activeWopiSessionCount: number;
+  groupMembershipCount: number;
+  transferCandidates: AdminOffboardingTransferCandidate[];
+  generatedAt: string;
+}
+
+export interface AdminOffboardingInput {
+  transferToUserId: string | null;
+  sharedLinksAction: AdminOffboardingSharedLinksAction;
+  fileRequestsAction: AdminOffboardingFileRequestsAction;
+  userAction: AdminOffboardingUserAction;
+  revokeDirectPermissions: boolean;
+  removeGroupMemberships: boolean;
+  releaseHeldLocks: boolean;
+  confirmation: string;
+}
+
+export interface AdminOffboardingSummary {
+  ownedFolderCount: number;
+  transferredFolderCount: number;
+  soleOwnerFolderCount: number;
+  directPermissionsRevoked: number;
+  groupMembershipsRemoved: number;
+  sharedLinksTransferred: number;
+  sharedLinksRevoked: number;
+  fileRequestsTransferred: number;
+  fileRequestsDeactivated: number;
+  sessionsRevoked: number;
+  wopiSessionsRevoked: number;
+  locksReleased: number;
+  statusChanged: boolean;
+}
+
+export interface AdminOffboardingResponse {
+  ok: boolean;
+  replayed: boolean;
+  user: AdminMemberRow;
+  transferTarget: AdminOffboardingTransferCandidate | null;
+  options: {
+    sharedLinksAction: AdminOffboardingSharedLinksAction;
+    fileRequestsAction: AdminOffboardingFileRequestsAction;
+    userAction: AdminOffboardingUserAction;
+    revokeDirectPermissions: boolean;
+    removeGroupMemberships: boolean;
+    releaseHeldLocks: boolean;
+  };
+  summary: AdminOffboardingSummary;
   syncSeq: number | null;
   notice: string;
 }
