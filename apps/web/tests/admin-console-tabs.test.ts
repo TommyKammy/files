@@ -824,9 +824,7 @@ test('getAdminTabPreloadChunkIds keeps the integrated /admin view tab-scoped', (
     'guest-policy',
   ]);
   assert.deepEqual(getAdminTabPreloadChunkIds('all', 'integrations'), [
-    'admin-auth-control',
-    'admin-scim-tokens',
-    'admin-siem-settings',
+    'admin-integrations',
   ]);
   assert.deepEqual(getAdminTabPreloadChunkIds('all', 'reports'), [
     'admin-reports',
@@ -840,7 +838,7 @@ test('getAdminTabPreloadChunkIds keeps the integrated /admin view tab-scoped', (
       getAdminTabPreloadChunkIds('all', tab.id)
     )
   );
-  assert.equal(allChunks.size, 21);
+  assert.equal(allChunks.size, 22);
   for (const tab of ADMIN_CONSOLE_TABS.all) {
     const chunks = getAdminTabPreloadChunkIds('all', tab.id);
     assert.ok(chunks.length > 0, tab.id);

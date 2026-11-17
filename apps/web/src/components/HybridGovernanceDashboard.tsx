@@ -62,6 +62,10 @@ const loadAdminInsightsDashboard = () =>
   import('@/components/admin/AdminInsightsDashboardSection').then(
     (m) => m.AdminInsightsDashboardSection
   );
+const loadAdminIntegrations = () =>
+  import('@/components/admin/AdminIntegrationsSection').then(
+    (m) => m.AdminIntegrationsSection
+  );
 const loadAdminSiemSettings = () =>
   import('@/components/admin/AdminSiemSettingsSection').then(
     (m) => m.AdminSiemSettingsSection
@@ -124,7 +128,7 @@ const AdminComplianceSettingsSection = dynamic(loadAdminComplianceSettings);
 const AdminDelegationsSection = dynamic(loadAdminDelegations);
 const AdminFileRequestsSection = dynamic(loadAdminFileRequests);
 const AdminInsightsDashboardSection = dynamic(loadAdminInsightsDashboard);
-const AdminSiemSettingsSection = dynamic(loadAdminSiemSettings);
+const AdminIntegrationsSection = dynamic(loadAdminIntegrations);
 const AiSuggestionQueue = dynamic(loadAiSuggestionQueue);
 const AdminGuestsSection = dynamic(loadAdminGuests);
 const AdminGroupsSection = dynamic(loadAdminGroups);
@@ -158,6 +162,7 @@ const ADMIN_SECTION_PRELOADERS: Record<
   'admin-guests': loadAdminGuests,
   'admin-delegations': loadAdminDelegations,
   'admin-scim-tokens': loadAdminScimTokens,
+  'admin-integrations': loadAdminIntegrations,
   'access-control-settings': loadAccessControlSettings,
   'admin-auth-control': loadAdminAuthControl,
   'admin-compliance-settings': loadAdminComplianceSettings,
@@ -526,15 +531,18 @@ export function HybridGovernanceDashboard({
       />
     );
 
-  const siemPanel =
-    hasAdminCapability(user, 'admin.policies.read') && (
-      <AdminSiemSettingsSection
-        canManage={user.role === 'sys_admin'}
-        initialSiem={
-          settingsBundle ? (settingsBundle.siem?.siem ?? null) : undefined
-        }
-      />
-    );
+  const integrationsPanel = (
+    <AdminIntegrationsSection
+      user={user}
+      policy={policy}
+      ssoStatus={settingsBundle?.ssoStatus ?? null}
+      initialSiem={
+        settingsBundle ? (settingsBundle.siem?.siem ?? null) : undefined
+      }
+      onSelectSettingsTab={selectTab}
+      integratedView={section === 'all'}
+    />
+  );
 
   const sessionsPanel =
     hasAdminCapability(user, 'admin.users.read') && (
@@ -692,13 +700,7 @@ export function HybridGovernanceDashboard({
             </>
           );
         case 'integrations':
-          return (
-            <>
-              {authControlPanel}
-              {scimPanel}
-              {siemPanel}
-            </>
-          );
+          return integrationsPanel;
         case 'reports':
           return (
             <>
@@ -768,12 +770,7 @@ export function HybridGovernanceDashboard({
         case 'compliance':
           return compliancePanel;
         case 'integrations':
-          return (
-            <>
-              {scimPanel}
-              {siemPanel}
-            </>
-          );
+          return integrationsPanel;
         default:
           return null;
       }

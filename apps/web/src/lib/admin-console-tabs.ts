@@ -512,6 +512,7 @@ export type AdminSectionChunkId =
   | 'admin-guests'
   | 'admin-delegations'
   | 'admin-scim-tokens'
+  | 'admin-integrations'
   | 'access-control-settings'
   | 'admin-auth-control'
   | 'admin-compliance-settings'
@@ -552,11 +553,7 @@ const ADMIN_TAB_PRELOAD_CHUNKS: Record<
       'shared-links-policy',
       'guest-policy',
     ],
-    integrations: [
-      'admin-auth-control',
-      'admin-scim-tokens',
-      'admin-siem-settings',
-    ],
+    integrations: ['admin-integrations'],
     reports: ['admin-reports', 'admin-permission-audit', 'audit-log'],
   },
   insights: {},
@@ -578,7 +575,7 @@ const ADMIN_TAB_PRELOAD_CHUNKS: Record<
     access: ['access-control-settings'],
     security: ['admin-auth-control', 'admin-sessions'],
     compliance: ['admin-compliance-settings'],
-    integrations: ['admin-scim-tokens', 'admin-siem-settings'],
+    integrations: ['admin-integrations'],
   },
   reports: {
     'audit-logs': ['audit-log'],

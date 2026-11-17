@@ -45,6 +45,10 @@ test.describe('カスタム ToS・ファイルリクエスト全社ガバナン�
       await resetCompliance(admin);
 
       await admin.page.goto('/admin/settings');
+      await admin.page.getByTestId('admin-tab-compliance').click();
+      await expect(admin.page).toHaveURL(
+        /\/admin\/settings\?tab=compliance$/
+      );
       const tosSection = admin.page.getByTestId('admin-tos-section');
       await expect(tosSection).toBeVisible();
       await expect(
@@ -120,6 +124,10 @@ test.describe('カスタム ToS・ファイルリクエスト全社ガバナン�
       expect(publicBefore.status()).toBe(200);
 
       await admin.page.goto('/admin/content');
+      await admin.page.getByTestId('admin-tab-file-requests').click();
+      await expect(admin.page).toHaveURL(
+        /\/admin\/content\?tab=file-requests$/
+      );
       const section = admin.page.getByTestId('admin-file-requests-section');
       await expect(section).toBeVisible();
       const row = section
@@ -181,6 +189,10 @@ test.describe('カスタム ToS・ファイルリクエスト全社ガバナン�
       linkToken = ((await link.json()) as { token: string }).token;
 
       await admin.page.goto('/admin/settings');
+      await admin.page.getByTestId('admin-tab-compliance').click();
+      await expect(admin.page).toHaveURL(
+        /\/admin\/settings\?tab=compliance$/
+      );
       const section = admin.page.getByTestId('admin-governance-policy-section');
       await expect(section).toBeVisible();
       await section.getByTestId('admin-branding-org-name').fill(orgName);

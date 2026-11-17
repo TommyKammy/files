@@ -25,6 +25,11 @@ test.describe('IP 許可リスト & OIDC SSO 認証統制 (TOM-66)', () => {
       await resetAuthControls(admin);
 
       await admin.page.goto('/admin/settings');
+      await admin.page.getByTestId('admin-tab-security').click();
+      await expect(admin.page).toHaveURL(/\/admin\/settings\?tab=security$/);
+      await expect(
+        admin.page.getByTestId('admin-tab-security')
+      ).toHaveAttribute('aria-selected', 'true');
       const section = admin.page.getByTestId('ip-allowlist-section');
       await expect(section).toBeVisible();
       await expect(
@@ -79,6 +84,10 @@ test.describe('IP 許可リスト & OIDC SSO 認証統制 (TOM-66)', () => {
 
       // 4. Reload and verify D1 persistence.
       await admin.page.reload();
+      await expect(admin.page).toHaveURL(/\/admin\/settings\?tab=security$/);
+      await expect(
+        admin.page.getByTestId('admin-tab-security')
+      ).toHaveAttribute('aria-selected', 'true');
       const reloaded = admin.page.getByTestId('ip-allowlist-section');
       await expect(reloaded).toBeVisible();
       await expect(reloaded.getByTestId('ip-allowlist-enabled')).toBeChecked();
@@ -106,6 +115,8 @@ test.describe('IP 許可リスト & OIDC SSO 認証統制 (TOM-66)', () => {
       await resetAuthControls(admin);
 
       await admin.page.goto('/admin/settings');
+      await admin.page.getByTestId('admin-tab-security').click();
+      await expect(admin.page).toHaveURL(/\/admin\/settings\?tab=security$/);
       const statusSection = admin.page.getByTestId('sso-status-section');
       await expect(statusSection).toBeVisible();
       await expect(statusSection).toContainText('ENVIRONMENT');
@@ -152,6 +163,10 @@ test.describe('IP 許可リスト & OIDC SSO 認証統制 (TOM-66)', () => {
       // Existing D1 session cookies remain valid, so the admin can still
       // inspect and roll back the policy.
       await admin.page.reload();
+      await expect(admin.page).toHaveURL(/\/admin\/settings\?tab=security$/);
+      await expect(
+        admin.page.getByTestId('admin-tab-security')
+      ).toHaveAttribute('aria-selected', 'true');
       const reloaded = admin.page.getByTestId('sso-policy-section');
       await expect(reloaded).toBeVisible();
       await expect(reloaded.getByTestId('require-sso-login')).toBeChecked();

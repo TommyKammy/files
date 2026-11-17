@@ -161,6 +161,8 @@ test.describe('アクティブセッション監視 & 強制サインアウト (
       await openWorkspaceWithRealtime(member);
 
       await admin.page.goto('/admin/settings');
+      await admin.page.getByTestId('admin-tab-security').click();
+      await expect(admin.page).toHaveURL(/\/admin\/settings\?tab=security$/);
       const section = admin.page.getByTestId('admin-sessions-section');
       await expect(section).toBeVisible();
 
