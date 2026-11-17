@@ -180,20 +180,57 @@ export const GRANTEE_MATCH_SQL = `(
 export const FILE_PREVIEW_ROLE_SQL = capabilityRoleSqlList('item.preview');
 
 /**
- * SQL predicate for `accessMode: 'path'`: the folder aliased \`alias\` is itself
- * directly granted, or contains an accessible descendant folder / directly
- * shared active file. Binds six user ids (self, descendant folder, file).
+ * Drive shared-file reachability from the grantee side (`idx_permissions_grantee`
+ * / `idx_group_members_user`) -> `files` PK -> `folder_closures` PK instead of
+ * scanning all tenant `files` rows per candidate folder. Binds one user id.
  */
-export function reachablePathSql(alias: string): string {
-  return `(
-  EXISTS (
-    SELECT 1 FROM permissions p
+function reachableFileGrantSql(alias: string, granteeKind: 'user' | 'group'): string {
+  const fromClause =
+    granteeKind === 'user'
+      ? `FROM permissions p
+      JOIN files fl
+        ON fl.id = p.target_id
      WHERE p.tenant_id = ${alias}.tenant_id
-       AND p.target_type = 'folder'
-       AND p.target_id = ${alias}.id
-       AND ${GRANTEE_MATCH_SQL}
-  )
-  OR EXISTS (
+       AND p.grantee_type = 'user'
+       AND p.grantee_id = ?`
+      : `FROM group_members gm
+     CROSS JOIN permissions p
+      JOIN files fl
+        ON fl.id = p.target_id
+     WHERE gm.user_id = ?
+       AND p.tenant_id = ${alias}.tenant_id
+       AND p.grantee_type = 'group'
+       AND p.grantee_id = gm.group_id`;
+
+  return `EXISTS (
+    SELECT 1
+      ${fromClause}
+       AND p.target_type = 'file'
+       AND p.role IN (${FILE_PREVIEW_ROLE_SQL})
+       AND fl.tenant_id = ${alias}.tenant_id
+       AND fl.deleted_at IS NULL
+       AND fl.upload_state = 'active'
+       AND (
+         fl.folder_id = ${alias}.id
+         OR EXISTS (
+           SELECT 1
+             FROM folder_closures fc2
+            WHERE fc2.tenant_id = ${alias}.tenant_id
+              AND fc2.ancestor_id = ${alias}.id
+              AND fc2.descendant_id = fl.folder_id
+              AND fc2.depth > 0
+         )
+       )
+  )`;
+}
+
+/**
+ * Shared predicate matching a strict descendant folder with any grant or an
+ * active file inside `alias`'s subtree with an `item.preview` grant. Binds four
+ * user ids (descendant folder user/group + user file + group file).
+ */
+function reachableDescendantSql(alias: string): string {
+  return `EXISTS (
     SELECT 1
       FROM folder_closures fc
       JOIN folders d
@@ -211,31 +248,25 @@ export function reachablePathSql(alias: string): string {
             AND ${GRANTEE_MATCH_SQL}
        )
   )
-  OR EXISTS (
-    SELECT 1
-      FROM files fl
-     WHERE fl.tenant_id = ${alias}.tenant_id
-       AND fl.deleted_at IS NULL
-       AND fl.upload_state = 'active'
-       AND (
-         fl.folder_id = ${alias}.id
-         OR fl.folder_id IN (
-           SELECT fc2.descendant_id
-             FROM folder_closures fc2
-            WHERE fc2.tenant_id = ${alias}.tenant_id
-              AND fc2.ancestor_id = ${alias}.id
-              AND fc2.depth > 0
-         )
-       )
-       AND EXISTS (
-         SELECT 1 FROM permissions p
-          WHERE p.tenant_id = fl.tenant_id
-            AND p.target_type = 'file'
-            AND p.target_id = fl.id
-            AND p.role IN (${FILE_PREVIEW_ROLE_SQL})
-            AND ${GRANTEE_MATCH_SQL}
-       )
+  OR ${reachableFileGrantSql(alias, 'user')}
+  OR ${reachableFileGrantSql(alias, 'group')}`;
+}
+
+/**
+ * SQL predicate for `accessMode: 'path'`: the folder aliased `alias` is itself
+ * directly granted, or contains an accessible descendant folder / directly
+ * shared active file. Binds six user ids (self, descendant folder, user/group file).
+ */
+export function reachablePathSql(alias: string): string {
+  return `(
+  EXISTS (
+    SELECT 1 FROM permissions p
+     WHERE p.tenant_id = ${alias}.tenant_id
+       AND p.target_type = 'folder'
+       AND p.target_id = ${alias}.id
+       AND ${GRANTEE_MATCH_SQL}
   )
+  OR ${reachableDescendantSql(alias)}
 )`;
 }
 
@@ -255,62 +286,13 @@ async function folderHasReachableDescendant(
 ): Promise<boolean> {
   const row = await db
     .prepare(
-      `SELECT 1 AS hit
-         FROM folder_closures fc
-         JOIN folders d
-           ON d.tenant_id = fc.tenant_id
-          AND d.id = fc.descendant_id
-          AND d.deleted_at IS NULL
-        WHERE fc.tenant_id = ?
-          AND fc.ancestor_id = ?
-          AND fc.depth > 0
-          AND EXISTS (
-            SELECT 1
-              FROM permissions p
-             WHERE p.tenant_id = fc.tenant_id
-               AND p.target_type = 'folder'
-               AND p.target_id = d.id
-               AND ${GRANTEE_MATCH_SQL}
-          )
-       UNION ALL
+      `WITH target(tenant_id, id) AS (VALUES (?, ?))
        SELECT 1 AS hit
-         FROM files fl
-        WHERE fl.tenant_id = ?
-          AND fl.deleted_at IS NULL
-          AND fl.upload_state = 'active'
-          AND (
-            fl.folder_id = ?
-            OR fl.folder_id IN (
-              SELECT fc2.descendant_id
-                FROM folder_closures fc2
-               WHERE fc2.tenant_id = ?
-                 AND fc2.ancestor_id = ?
-                 AND fc2.depth > 0
-            )
-          )
-          AND EXISTS (
-            SELECT 1
-              FROM permissions p
-             WHERE p.tenant_id = fl.tenant_id
-               AND p.target_type = 'file'
-               AND p.target_id = fl.id
-               AND p.role IN (${FILE_PREVIEW_ROLE_SQL})
-               AND ${GRANTEE_MATCH_SQL}
-          )
-       LIMIT 1`
+         FROM target t
+        WHERE ${reachableDescendantSql('t')}
+        LIMIT 1`
     )
-    .bind(
-      user.tenantId,
-      folderId,
-      user.id,
-      user.id,
-      user.tenantId,
-      folderId,
-      user.tenantId,
-      folderId,
-      user.id,
-      user.id
-    )
+    .bind(user.tenantId, folderId, user.id, user.id, user.id, user.id)
     .first<{ hit: number }>();
   return Boolean(row);
 }
