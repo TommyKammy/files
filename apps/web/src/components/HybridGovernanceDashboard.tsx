@@ -6,29 +6,10 @@ import {
   RefreshCw,
   ShieldAlert,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { AccessControlSettingsSection } from '@/components/admin/AccessControlSettingsSection';
-import { AdminAuthControlSection } from '@/components/admin/AdminAuthControlSection';
-import { AdminContentManagerSection } from '@/components/admin/AdminContentManagerSection';
-import { AdminComplianceSettingsSection } from '@/components/admin/AdminComplianceSettingsSection';
-import { AdminDelegationsSection } from '@/components/admin/AdminDelegationsSection';
-import { AdminFileRequestsSection } from '@/components/admin/AdminFileRequestsSection';
-import { AdminInsightsDashboardSection } from '@/components/admin/AdminInsightsDashboardSection';
+import { useEffect } from 'react';
 import { AdminQuotaWarningBanner } from '@/components/admin/AdminQuotaWarningBanner';
-import { AdminSiemSettingsSection } from '@/components/admin/AdminSiemSettingsSection';
-import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
-import { AdminGuestsSection } from '@/components/admin/AdminGuestsSection';
-import { AdminGroupsSection } from '@/components/admin/AdminGroupsSection';
-import { AdminMembersSection } from '@/components/admin/AdminMembersSection';
-import { AdminPermissionAuditSection } from '@/components/admin/AdminPermissionAuditSection';
-import { AdminReportsSection } from '@/components/admin/AdminReportsSection';
-import { AdminRootFoldersSection } from '@/components/admin/AdminRootFoldersSection';
-import { AdminScimTokensSection } from '@/components/admin/AdminScimTokensSection';
-import { AdminSessionsSection } from '@/components/admin/AdminSessionsSection';
-import { AdminTrashSection } from '@/components/admin/AdminTrashSection';
-import { AuditLogSection } from '@/components/admin/AuditLogSection';
-import { GuestPolicySection } from '@/components/admin/GuestPolicySection';
-import { SharedLinksPolicySection } from '@/components/admin/SharedLinksPolicySection';
 import { AdminConsoleShell } from '@/components/AdminConsoleShell';
 import { AppShellRail } from '@/components/AppShellRail';
 import {
@@ -45,6 +26,144 @@ import {
 import { readQuotaThresholds } from '@/lib/admin-compliance';
 import { useGovernanceDashboard } from '@/lib/use-governance-dashboard';
 import { LocalDevQuickLoginPanel, SignInCard } from '@/components/SignInCard';
+
+// Code-split admin section modules so focused routes (/admin/insights, /admin/settings, etc.)
+// download and compile only the components belonging to the active route.
+const loadAccessControlSettings = () =>
+  import('@/components/admin/AccessControlSettingsSection').then(
+    (m) => m.AccessControlSettingsSection
+  );
+const loadAdminAuthControl = () =>
+  import('@/components/admin/AdminAuthControlSection').then(
+    (m) => m.AdminAuthControlSection
+  );
+const loadAdminContentManager = () =>
+  import('@/components/admin/AdminContentManagerSection').then(
+    (m) => m.AdminContentManagerSection
+  );
+const loadAdminComplianceSettings = () =>
+  import('@/components/admin/AdminComplianceSettingsSection').then(
+    (m) => m.AdminComplianceSettingsSection
+  );
+const loadAdminDelegations = () =>
+  import('@/components/admin/AdminDelegationsSection').then(
+    (m) => m.AdminDelegationsSection
+  );
+const loadAdminFileRequests = () =>
+  import('@/components/admin/AdminFileRequestsSection').then(
+    (m) => m.AdminFileRequestsSection
+  );
+const loadAdminInsightsDashboard = () =>
+  import('@/components/admin/AdminInsightsDashboardSection').then(
+    (m) => m.AdminInsightsDashboardSection
+  );
+const loadAdminSiemSettings = () =>
+  import('@/components/admin/AdminSiemSettingsSection').then(
+    (m) => m.AdminSiemSettingsSection
+  );
+const loadAiSuggestionQueue = () =>
+  import('@/components/admin/AiSuggestionQueue').then(
+    (m) => m.AiSuggestionQueue
+  );
+const loadAdminGuests = () =>
+  import('@/components/admin/AdminGuestsSection').then(
+    (m) => m.AdminGuestsSection
+  );
+const loadAdminGroups = () =>
+  import('@/components/admin/AdminGroupsSection').then(
+    (m) => m.AdminGroupsSection
+  );
+const loadAdminMembers = () =>
+  import('@/components/admin/AdminMembersSection').then(
+    (m) => m.AdminMembersSection
+  );
+const loadAdminPermissionAudit = () =>
+  import('@/components/admin/AdminPermissionAuditSection').then(
+    (m) => m.AdminPermissionAuditSection
+  );
+const loadAdminReports = () =>
+  import('@/components/admin/AdminReportsSection').then(
+    (m) => m.AdminReportsSection
+  );
+const loadAdminRootFolders = () =>
+  import('@/components/admin/AdminRootFoldersSection').then(
+    (m) => m.AdminRootFoldersSection
+  );
+const loadAdminScimTokens = () =>
+  import('@/components/admin/AdminScimTokensSection').then(
+    (m) => m.AdminScimTokensSection
+  );
+const loadAdminSessions = () =>
+  import('@/components/admin/AdminSessionsSection').then(
+    (m) => m.AdminSessionsSection
+  );
+const loadAdminTrash = () =>
+  import('@/components/admin/AdminTrashSection').then(
+    (m) => m.AdminTrashSection
+  );
+const loadAuditLog = () =>
+  import('@/components/admin/AuditLogSection').then((m) => m.AuditLogSection);
+const loadGuestPolicy = () =>
+  import('@/components/admin/GuestPolicySection').then(
+    (m) => m.GuestPolicySection
+  );
+const loadSharedLinksPolicy = () =>
+  import('@/components/admin/SharedLinksPolicySection').then(
+    (m) => m.SharedLinksPolicySection
+  );
+
+const AccessControlSettingsSection = dynamic(loadAccessControlSettings);
+const AdminAuthControlSection = dynamic(loadAdminAuthControl);
+const AdminContentManagerSection = dynamic(loadAdminContentManager);
+const AdminComplianceSettingsSection = dynamic(loadAdminComplianceSettings);
+const AdminDelegationsSection = dynamic(loadAdminDelegations);
+const AdminFileRequestsSection = dynamic(loadAdminFileRequests);
+const AdminInsightsDashboardSection = dynamic(loadAdminInsightsDashboard);
+const AdminSiemSettingsSection = dynamic(loadAdminSiemSettings);
+const AiSuggestionQueue = dynamic(loadAiSuggestionQueue);
+const AdminGuestsSection = dynamic(loadAdminGuests);
+const AdminGroupsSection = dynamic(loadAdminGroups);
+const AdminMembersSection = dynamic(loadAdminMembers);
+const AdminPermissionAuditSection = dynamic(loadAdminPermissionAudit);
+const AdminReportsSection = dynamic(loadAdminReports);
+const AdminRootFoldersSection = dynamic(loadAdminRootFolders);
+const AdminScimTokensSection = dynamic(loadAdminScimTokens);
+const AdminSessionsSection = dynamic(loadAdminSessions);
+const AdminTrashSection = dynamic(loadAdminTrash);
+const AuditLogSection = dynamic(loadAuditLog);
+const GuestPolicySection = dynamic(loadGuestPolicy);
+const SharedLinksPolicySection = dynamic(loadSharedLinksPolicy);
+
+const ADMIN_SECTION_PRELOADERS: Record<
+  Exclude<AdminConsoleSection, 'all'>,
+  ReadonlyArray<() => Promise<unknown>>
+> = {
+  insights: [loadAdminInsightsDashboard],
+  content: [
+    loadAiSuggestionQueue,
+    loadAdminContentManager,
+    loadAdminFileRequests,
+    loadAdminTrash,
+    loadAdminRootFolders,
+  ],
+  users: [
+    loadAdminMembers,
+    loadAdminGroups,
+    loadAdminScimTokens,
+    loadAdminGuests,
+    loadAdminDelegations,
+  ],
+  settings: [
+    loadAccessControlSettings,
+    loadAdminAuthControl,
+    loadAdminComplianceSettings,
+    loadAdminSiemSettings,
+    loadAdminSessions,
+    loadSharedLinksPolicy,
+    loadGuestPolicy,
+  ],
+  reports: [loadAdminReports, loadAdminPermissionAudit, loadAuditLog],
+};
 
 export function HybridGovernanceDashboard({
   section = 'all',
@@ -141,6 +260,18 @@ export function HybridGovernanceDashboard({
     handleClearAuditFilters,
     handleLoadMoreLogs,
   } = useGovernanceDashboard({ section, auditPreset });
+
+  useEffect(() => {
+    // Preload the active route's dynamic chunks alongside auth/bundle fetches
+    // so components mount without an extra chunk download waterfall.
+    const loaders =
+      section === 'all'
+        ? Object.values(ADMIN_SECTION_PRELOADERS).flat()
+        : (ADMIN_SECTION_PRELOADERS[section] ?? []);
+    for (const load of loaders) {
+      void load();
+    }
+  }, [section]);
 
   const navItem = getAdminConsoleNavItem(section);
   const hasDashboardFetch = adminSectionHasDashboardFetch(section);
