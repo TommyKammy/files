@@ -1,4 +1,5 @@
 import { processCopySubtreeJobChunk } from '../services/workspace-operations';
+import { processAdminReportJob } from '../services/admin-reports';
 import type { JobsQueueMessage } from '../types/classification';
 import type { OidcEnv } from '../types/oidc';
 import { handleClassifyFile } from './classification/file-classify';
@@ -23,6 +24,9 @@ export async function handleJobsQueueBatch(
         }
       } else if (body?.type === 'copy_subtree') {
         await processCopySubtreeJobChunk(body, env);
+        message.ack();
+      } else if (body?.type === 'generate_admin_report') {
+        await processAdminReportJob(body, env);
         message.ack();
       } else {
         message.ack();

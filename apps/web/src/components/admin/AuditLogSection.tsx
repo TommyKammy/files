@@ -7,6 +7,7 @@ import {
   isPermissionAuditAction,
   isRootFolderAuditAction,
 } from '@/lib/admin-audit';
+import { buildAuditLogCsvHref } from '@/lib/admin-reports';
 import { formatAuditDateTime } from '@/lib/formatters';
 import type { AuditLogEntry } from '@/types/files';
 
@@ -19,12 +20,21 @@ export function AuditLogSection({
   auditPresetKind = null,
   auditTargetType = '',
   auditStatusFilter,
+  auditActorEmailFilter = '',
+  auditTargetIdFilter = '',
+  auditFromFilter = '',
+  auditToFilter = '',
   auditLoadingMore,
   auditPresetActions = [],
   onActionFilterChange,
   onActionPrefixFilterChange,
   onTargetTypeChange,
   onStatusFilterChange,
+  onActorEmailFilterChange,
+  onTargetIdFilterChange,
+  onFromFilterChange,
+  onToFilterChange,
+  onClearFilters,
   onLoadMore,
   onClearPreset,
   onClearPrefixPreset,
@@ -37,12 +47,21 @@ export function AuditLogSection({
   auditPresetKind?: 'permission' | 'guest' | 'user' | 'security' | null;
   auditTargetType?: string;
   auditStatusFilter: '' | 'allowed' | 'blocked';
+  auditActorEmailFilter?: string;
+  auditTargetIdFilter?: string;
+  auditFromFilter?: string;
+  auditToFilter?: string;
   auditLoadingMore: boolean;
   auditPresetActions?: readonly string[];
   onActionFilterChange: (value: string) => void;
   onActionPrefixFilterChange?: (value: string) => void;
   onTargetTypeChange?: (value: string) => void;
   onStatusFilterChange: (value: '' | 'allowed' | 'blocked') => void;
+  onActorEmailFilterChange?: (value: string) => void;
+  onTargetIdFilterChange?: (value: string) => void;
+  onFromFilterChange?: (value: string) => void;
+  onToFilterChange?: (value: string) => void;
+  onClearFilters?: () => void;
   onLoadMore: () => void;
   onClearPreset?: () => void;
   onClearPrefixPreset?: () => void;
@@ -54,19 +73,16 @@ export function AuditLogSection({
       : []),
   ].filter(Boolean);
   const prefixHighlight = auditActionPrefixes.length > 0;
-  const csvQuery = new URLSearchParams({ format: 'csv', limit: '200' });
-  if (auditActionFilter.trim()) {
-    csvQuery.set('action', auditActionFilter.trim());
-  }
-  if (activePrefixes.length > 0) {
-    csvQuery.set('actionPrefixes', activePrefixes.join(','));
-  }
-  if (auditTargetType) {
-    csvQuery.set('targetType', auditTargetType);
-  }
-  if (auditStatusFilter) {
-    csvQuery.set('status', auditStatusFilter);
-  }
+  const csvHref = buildAuditLogCsvHref({
+    action: auditActionFilter,
+    actionPrefixes: activePrefixes,
+    targetType: auditTargetType,
+    status: auditStatusFilter,
+    actorEmail: auditActorEmailFilter,
+    targetId: auditTargetIdFilter,
+    from: auditFromFilter,
+    to: auditToFilter,
+  });
 
   return (
     <section
@@ -130,6 +146,48 @@ export function AuditLogSection({
             </span>
           )}
           <input
+            id="audit-from-filter"
+            name="auditFromFilter"
+            aria-label="監査ログの開始日で絞り込む"
+            type="date"
+            value={auditFromFilter}
+            onChange={(e) => onFromFilterChange?.(e.target.value)}
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
+          />
+          <input
+            id="audit-to-filter"
+            name="auditToFilter"
+            aria-label="監査ログの終了日で絞り込む"
+            type="date"
+            value={auditToFilter}
+            onChange={(e) => onToFilterChange?.(e.target.value)}
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
+          />
+          <input
+            id="audit-actor-email-filter"
+            name="auditActorEmailFilter"
+            aria-label="監査ログの操作者メールで絞り込む"
+            autoComplete="off"
+            spellCheck={false}
+            type="email"
+            value={auditActorEmailFilter}
+            onChange={(e) => onActorEmailFilterChange?.(e.target.value)}
+            placeholder="actorEmail (例: user@example.com)"
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
+          />
+          <input
+            id="audit-target-id-filter"
+            name="auditTargetIdFilter"
+            aria-label="監査ログの対象 ID で絞り込む"
+            autoComplete="off"
+            spellCheck={false}
+            type="text"
+            value={auditTargetIdFilter}
+            onChange={(e) => onTargetIdFilterChange?.(e.target.value)}
+            placeholder="targetId"
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
+          />
+          <input
             id="audit-action-prefix-filter"
             name="auditActionPrefixFilter"
             aria-label="監査ログのアクションプレフィックスで絞り込む"
@@ -184,8 +242,19 @@ export function AuditLogSection({
             <option value="allowed">allowed のみ</option>
             <option value="blocked">blocked のみ</option>
           </select>
+          {onClearFilters && (
+            <button
+              type="button"
+              data-testid="audit-clear-filters"
+              onClick={onClearFilters}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              <X className="h-3.5 w-3.5" />
+              <span>フィルタをクリア</span>
+            </button>
+          )}
           <a
-            href={`/api/audit-logs?${csvQuery.toString()}`}
+            href={csvHref}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
           >
             <Download className="h-3.5 w-3.5" />

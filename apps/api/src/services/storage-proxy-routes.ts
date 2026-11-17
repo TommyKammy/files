@@ -42,7 +42,13 @@ async function verifyProxyRequest(
   if (!objectKey || !tenantId || !expiresAt || !sig) {
     return { ok: false, status: 400, error: 'Missing signed proxy parameters' };
   }
-  if (!objectKey.startsWith(`tenants/${tenantId}/`)) {
+  // Uploads stay inside `tenants/<tenant>/...`. Generated admin report CSVs
+  // live under `reports/<tenant>/...`; the HMAC still binds the tenant, so a
+  // GET-only signature for that prefix is safe and keeps the same proxy path.
+  const tenantScoped =
+    objectKey.startsWith(`tenants/${tenantId}/`) ||
+    (expectedMethod === 'GET' && objectKey.startsWith(`reports/${tenantId}/`));
+  if (!tenantScoped) {
     return { ok: false, status: 403, error: 'Object key tenant mismatch' };
   }
   const expiresMs = Date.parse(expiresAt);

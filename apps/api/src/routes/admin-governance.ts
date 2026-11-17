@@ -11,6 +11,7 @@ import { registerAdminPermissionRoutes } from './admin/permissions';
 import { registerAdminPolicyRoutes } from './admin/policies';
 import { registerAdminRootFolderBulkRoutes } from './admin/root-folders-bulk';
 import { registerAdminRootFolderRoutes } from './admin/root-folders';
+import { registerAdminReportRoutes } from './admin/reports';
 import { registerAdminScimTokenRoutes } from './admin/scim-tokens';
 import { registerAdminSessionRoutes } from './admin/sessions';
 import { registerAdminSharedLinkRoutes } from './admin/shared-links';
@@ -43,5 +44,6 @@ registerAdminRootFolderRoutes(adminGovernanceRoutes);
 registerAdminRootFolderBulkRoutes(adminGovernanceRoutes);
 registerAdminPermissionRoutes(adminGovernanceRoutes);
 registerAdminTrashRoutes(adminGovernanceRoutes);
+registerAdminReportRoutes(adminGovernanceRoutes);
 
 export { auditLogsRoutes } from './admin/audit-logs';

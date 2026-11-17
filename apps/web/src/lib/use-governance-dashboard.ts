@@ -162,6 +162,10 @@ export function useGovernanceDashboard({
   >(initialAuditPresetConfig?.presetKind ?? null);
   const [auditTargetType, setAuditTargetType] = useState('');
   const [auditStatusFilter, setAuditStatusFilter] = useState<'' | 'allowed' | 'blocked'>('');
+  const [auditActorEmailFilter, setAuditActorEmailFilter] = useState('');
+  const [auditTargetIdFilter, setAuditTargetIdFilter] = useState('');
+  const [auditFromFilter, setAuditFromFilter] = useState('');
+  const [auditToFilter, setAuditToFilter] = useState('');
   const [auditLoadingMore, setAuditLoadingMore] = useState(false);
 
   // The reports page is a normal server-rendered route, so `auditPreset`
@@ -233,6 +237,10 @@ export function useGovernanceDashboard({
                   ].filter(Boolean),
                   targetType: auditTargetType || undefined,
                   status: auditStatusFilter || undefined,
+                  actorEmail: auditActorEmailFilter.trim() || undefined,
+                  targetId: auditTargetIdFilter.trim() || undefined,
+                  from: auditFromFilter || undefined,
+                  to: auditToFilter || undefined,
                   limit: 50,
                 })
               : Promise.resolve(null),
@@ -317,6 +325,10 @@ export function useGovernanceDashboard({
       auditActionPrefixPreset,
       auditTargetType,
       auditStatusFilter,
+      auditActorEmailFilter,
+      auditTargetIdFilter,
+      auditFromFilter,
+      auditToFilter,
     ]
   );
 
@@ -814,6 +826,24 @@ export function useGovernanceDashboard({
     setAuditTargetType(value);
   }
 
+  /**
+   * Reset every audit filter (including the new date/actor/target fields) so
+   * the CSV link and the next keyset page return to the tenant-wide feed.
+   */
+  function handleClearAuditFilters() {
+    setAuditActionFilter('');
+    setAuditActionPreset([]);
+    setAuditActionPrefixFilter('');
+    setAuditActionPrefixPreset([]);
+    setAuditPresetKind(null);
+    setAuditTargetType('');
+    setAuditStatusFilter('');
+    setAuditActorEmailFilter('');
+    setAuditTargetIdFilter('');
+    setAuditFromFilter('');
+    setAuditToFilter('');
+  }
+
   async function handleInsightsDaysChange(
     days: AdminInsightsRangeDays
   ): Promise<void> {
@@ -858,6 +888,10 @@ export function useGovernanceDashboard({
         ].filter(Boolean),
         targetType: auditTargetType || undefined,
         status: auditStatusFilter || undefined,
+        actorEmail: auditActorEmailFilter.trim() || undefined,
+        targetId: auditTargetIdFilter.trim() || undefined,
+        from: auditFromFilter || undefined,
+        to: auditToFilter || undefined,
         cursorCreatedAt: auditCursor.createdAt,
         cursorId: auditCursor.id,
         limit: 50,
@@ -922,12 +956,21 @@ export function useGovernanceDashboard({
     auditPresetKind,
     auditTargetType,
     auditStatusFilter,
+    auditActorEmailFilter,
+    auditTargetIdFilter,
+    auditFromFilter,
+    auditToFilter,
     auditLoadingMore,
     setLabelFilter,
     setAuditActionFilter: handleAuditActionFilterChange,
     setAuditActionPrefixFilter: handleAuditActionPrefixFilterChange,
     setAuditTargetType: handleAuditTargetTypeChange,
     setAuditStatusFilter,
+    setAuditActorEmailFilter,
+    setAuditTargetIdFilter,
+    setAuditFromFilter,
+    setAuditToFilter,
+    handleClearAuditFilters,
     handleClearAuditPrefixPreset,
     handleShowPermissionAudit,
     handleShowGuestAudit,

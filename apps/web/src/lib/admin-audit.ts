@@ -28,6 +28,9 @@ export const SESSION_AUDIT_ACTION_PREFIXES = ['admin.session.'] as const;
 /** Prefix preset used by IP allowlist / SSO authentication controls. */
 export const SECURITY_AUDIT_ACTION_PREFIXES = ['auth.'] as const;
 
+/** Prefix preset for asynchronous and scheduled admin reports. */
+export const ADMIN_REPORT_AUDIT_ACTION_PREFIXES = ['admin.report.'] as const;
+
 /**
  * Exact blocked-action preset used by the insights dashboard drill-down.
  * Kept explicit so `/admin/reports?auditPreset=security` shows only rejected
@@ -84,6 +87,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.session.revoke': 'セッション強制失効',
   'admin.session.revoke_user': 'ユーザー全セッション強制失効',
   'admin.session.revoke_all': 'テナント全セッション緊急失効',
+  'admin.report.requested': '非同期レポート作成要求',
+  'admin.report.generated': '非同期レポート生成完了',
+  'admin.report.downloaded': '非同期レポートダウンロード',
   'auth.ip_blocked': 'IP 許可リストによるアクセス遮断',
   'auth.sso_required_blocked': 'SSO 必須ポリシーによるログイン遮断',
   'auth.sso_domain_blocked': 'SSO 許可ドメイン外ログイン遮断',
@@ -158,6 +164,12 @@ export function isSessionAuditAction(action: string): boolean {
 
 export function isSecurityAuditAction(action: string): boolean {
   return SECURITY_AUDIT_ACTION_PREFIXES.some((prefix) =>
+    action.startsWith(prefix)
+  );
+}
+
+export function isAdminReportAuditAction(action: string): boolean {
+  return ADMIN_REPORT_AUDIT_ACTION_PREFIXES.some((prefix) =>
     action.startsWith(prefix)
   );
 }

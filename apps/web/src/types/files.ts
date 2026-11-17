@@ -2385,3 +2385,94 @@ export interface SyncInvalidationSignal {
   metadata?: Record<string, unknown>;
   timestamp: string;
 }
+
+/* ------------------------------------------------------------------ */
+/* P13-3 / TOM-68 asynchronous & scheduled admin reports               */
+/* ------------------------------------------------------------------ */
+
+export type AdminReportType =
+  | 'user_activity'
+  | 'shared_links_inventory'
+  | 'access_stats'
+  | 'users_and_guests';
+
+export type AdminReportStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type AdminReportCadence = 'weekly' | 'monthly';
+export type AdminReportFilterStatus = 'allowed' | 'blocked';
+
+export interface AdminReportFilters {
+  from?: string;
+  to?: string;
+  actorEmail?: string;
+  targetId?: string;
+  targetType?: string;
+  status?: AdminReportFilterStatus;
+  actionPrefix?: string;
+}
+
+export interface AdminReportJobRow {
+  id: string;
+  tenantId: string;
+  scheduleId: string | null;
+  reportType: AdminReportType;
+  status: AdminReportStatus;
+  filters: AdminReportFilters;
+  r2ObjectKey: string | null;
+  rowCount: number;
+  byteSize: number;
+  errorMessage: string | null;
+  createdBy: string;
+  createdByEmail: string | null;
+  expiresAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  downloadUrl?: string;
+}
+
+export interface AdminReportScheduleRow {
+  id: string;
+  tenantId: string;
+  name: string;
+  reportType: AdminReportType;
+  cadence: AdminReportCadence;
+  enabled: boolean;
+  filters: AdminReportFilters;
+  retentionDays: number;
+  nextRunAt: string;
+  lastRunAt: string | null;
+  lastJobId: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminReportListResponse {
+  jobs: AdminReportJobRow[];
+}
+
+export interface AdminReportScheduleListResponse {
+  schedules: AdminReportScheduleRow[];
+}
+
+export interface AdminReportJobCreateResponse {
+  job: AdminReportJobRow;
+  jobId: string;
+  downloadUrl: string;
+}
+
+export interface AdminReportScheduleCreateResponse {
+  schedule: AdminReportScheduleRow;
+}
+
+export interface AdminReportSignedUrlResponse {
+  url: string;
+  method: 'GET';
+  expiresAt: string;
+  expiresInSeconds: number;
+  filename: string;
+  reportType: AdminReportType;
+  rowCount: number;
+  byteSize: number;
+}

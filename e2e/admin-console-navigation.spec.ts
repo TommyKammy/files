@@ -200,14 +200,21 @@ test.describe('Admin console multi-view navigation (TOM-63)', () => {
     await settings.page.close();
 
     // /admin/reports: audit logs from the dashboard hook; the permission
-    // audit panel self-fetches /api/admin/permissions.
+    // audit panel and async report console self-fetch only report-owned APIs.
     const reports = await openRoute('/admin/reports', 'レポートと監査', [
       '/api/audit-logs',
       '/api/admin/permissions',
+      '/api/admin/reports/jobs',
+      '/api/admin/reports/schedules',
     ]);
     expect(reports.apiPaths).not.toContain('/api/admin/storage-stats');
     expect(reports.apiPaths).not.toContain('/api/admin/ai-suggestions');
     expect(reports.apiPaths).not.toContain('/api/admin/guests');
+    expect(reports.apiPaths).not.toContain('/api/admin/insights');
+    expect(reports.apiPaths).not.toContain('/api/admin/policies');
+    expect(reports.apiPaths).not.toContain('/api/admin/sessions');
+    expect(reports.apiPaths).not.toContain('/api/admin/groups');
+    expect(reports.apiPaths).not.toContain('/api/admin/shared-links');
     await reports.page.close();
   });
 

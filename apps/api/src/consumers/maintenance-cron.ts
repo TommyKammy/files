@@ -2,6 +2,10 @@ import { purgeExpiredSyncChanges } from '../services/sync-changes';
 import { purgeExpiredWopiDrafts } from '../services/wopi-drafts';
 import { purgeExpiredActiveFileLocks } from '../services/active-file-lock-index';
 import { runDailyInsightsAggregation } from '../services/admin-insights';
+import {
+  processDueAdminReportSchedules,
+  purgeExpiredAdminReportJobs,
+} from '../services/admin-reports';
 import type { Env } from '../types/api';
 import {
   cleanupGuestArtifacts,
@@ -30,6 +34,9 @@ export interface MaintenanceSummary {
   expiringSoonNotified: number;
   insightTenantsAggregated: number;
   insightDaysAggregated: number;
+  adminReportSchedulesProcessed: number;
+  adminReportJobsEnqueued: number;
+  adminReportJobsPurged: number;
 }
 
 interface TenantPolicyRetentionRow {
@@ -45,6 +52,7 @@ interface TenantPolicyRetentionRow {
  * 3. Delete >24h stale pending uploads & orphan R2 objects
  * 4. Purge soft-deleted items older than tenant `trash_retention_days` while keeping `tenant_storage_stats` consistent
  * 5. Refresh yesterday/today `tenant_daily_insights` rows for the admin insights dashboard
+ * 6. Enqueue due async report schedules and purge expired report CSV objects
  */
 export async function runDailyMaintenance(
   env: Env,
@@ -96,6 +104,14 @@ export async function runDailyMaintenance(
     nowIso
   );
   const syncChangesPurged = await purgeExpiredSyncChanges(env.DB, nowMs);
+  const {
+    schedulesProcessed: adminReportSchedulesProcessed,
+    jobsEnqueued: adminReportJobsEnqueued,
+  } = await processDueAdminReportSchedules(env, nowIso);
+  const adminReportJobsPurged = await purgeExpiredAdminReportJobs(
+    env,
+    nowIso
+  );
   // Snapshot after trash purge / guest suspension so the daily insight row
   // matches the O(1) storage counters read by the dashboard.
   const {
@@ -121,5 +137,8 @@ export async function runDailyMaintenance(
     expiringSoonNotified,
     insightTenantsAggregated,
     insightDaysAggregated,
+    adminReportSchedulesProcessed,
+    adminReportJobsEnqueued,
+    adminReportJobsPurged,
   };
 }

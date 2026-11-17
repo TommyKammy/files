@@ -89,7 +89,7 @@ export const ADMIN_CONSOLE_NAV_ITEMS: readonly AdminConsoleNavItem[] = [
     label: 'レポートと監査',
     heading: 'レポートと監査',
     summary:
-      'アクセス権監査・不変監査ログ・CSV エクスポートを確認します。',
+      'アクセス権監査・不変監査ログ・Queues/R2 非同期 CSV レポート・定期出力を管理します。',
     roles: ['sys_admin', 'sec_admin'],
   },
 ] as const;

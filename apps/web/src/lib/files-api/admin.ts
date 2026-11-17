@@ -4,6 +4,7 @@ import {
 import {
   buildAdminContentSearchQueryString,
 } from '@/lib/admin-content';
+import { buildAuditLogQueryString } from '@/lib/admin-reports';
 import { buildAdminSessionQuery } from '@/lib/admin-sessions';
 import type {
   AdminBulkCoOwnerPayload,
@@ -19,6 +20,14 @@ import type {
   AdminInsightsResponse,
   AdminPermissionAuditQuery,
   AdminPermissionAuditResponse,
+  AdminReportJobCreateResponse,
+  AdminReportListResponse,
+  AdminReportScheduleCreateResponse,
+  AdminReportScheduleListResponse,
+  AdminReportScheduleRow,
+  AdminReportSignedUrlResponse,
+  AdminReportFilters,
+  AdminReportType,
   AdminRootFolderListResponse,
   AdminRootFolderRecord,
   AdminSessionListQuery,
@@ -212,6 +221,10 @@ export function fetchAuditLogs(params?: {
   targetType?: string;
   status?: 'allowed' | 'blocked';
   actorEmail?: string;
+  targetId?: string;
+  /** `YYYY-MM-DD` or ISO. Day-only bounds are expanded to the full UTC day. */
+  from?: string;
+  to?: string;
   cursorCreatedAt?: string;
   cursorId?: string;
   limit?: number;
@@ -219,21 +232,9 @@ export function fetchAuditLogs(params?: {
   logs: AuditLogEntry[];
   nextCursor: { createdAt: string; id: string } | null;
 }> {
-  const qs = new URLSearchParams();
-  if (params?.action) qs.set('action', params.action);
-  if (params?.actions && params.actions.length > 0) {
-    qs.set('actions', params.actions.join(','));
-  }
-  if (params?.actionPrefixes && params.actionPrefixes.length > 0) {
-    qs.set('actionPrefixes', params.actionPrefixes.join(','));
-  }
-  if (params?.targetType) qs.set('targetType', params.targetType);
-  if (params?.status) qs.set('status', params.status);
-  if (params?.actorEmail) qs.set('actorEmail', params.actorEmail);
-  if (params?.cursorCreatedAt) qs.set('cursorCreatedAt', params.cursorCreatedAt);
-  if (params?.cursorId) qs.set('cursorId', params.cursorId);
-  if (params?.limit) qs.set('limit', String(params.limit));
-  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  // Sharing the builder with the CSV link guarantees pagination and export
+  // always apply exactly the same from/to/actorEmail/targetId filters.
+  const suffix = buildAuditLogQueryString(params);
   return apiFetch(`/api/audit-logs${suffix}`);
 }
 
@@ -463,4 +464,101 @@ export function fetchAdminSsoStatus(
 ): Promise<AdminSsoStatusResponse> {
   const qs = options.probeDiscovery ? '?probeDiscovery=1' : '';
   return apiFetch(`/api/admin/sso/status${qs}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* P13-3 / TOM-68 asynchronous & scheduled admin reports               */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/admin/reports/jobs — async report history. */
+export function fetchAdminReportJobs(limit = 50): Promise<AdminReportListResponse> {
+  return apiFetch(`/api/admin/reports/jobs?limit=${limit}`);
+}
+
+/** POST /api/admin/reports/jobs — enqueue a CSV export (202). */
+export function createAdminReportJob(payload: {
+  reportType: AdminReportType;
+  filters?: AdminReportFilters;
+  retentionDays?: number;
+}): Promise<AdminReportJobCreateResponse> {
+  return apiFetch('/api/admin/reports/jobs', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** GET /api/admin/reports/jobs/:id/download?mode=url — short-lived URL. */
+export function fetchAdminReportSignedUrl(
+  jobId: string
+): Promise<AdminReportSignedUrlResponse> {
+  return apiFetch(
+    `/api/admin/reports/jobs/${encodeURIComponent(jobId)}/download?mode=url`
+  );
+}
+
+/** Direct download URL; the browser streams the CSV with no-store headers. */
+export function adminReportDownloadHref(jobId: string): string {
+  return `/api/admin/reports/jobs/${encodeURIComponent(jobId)}/download`;
+}
+
+/** GET /api/admin/reports/schedules */
+export function fetchAdminReportSchedules(): Promise<AdminReportScheduleListResponse> {
+  return apiFetch('/api/admin/reports/schedules');
+}
+
+/** POST /api/admin/reports/schedules */
+export function createAdminReportSchedule(payload: {
+  name: string;
+  reportType: AdminReportType;
+  cadence: 'weekly' | 'monthly';
+  enabled?: boolean;
+  filters?: AdminReportFilters;
+  retentionDays?: number;
+}): Promise<AdminReportScheduleCreateResponse> {
+  return apiFetch('/api/admin/reports/schedules', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** PATCH /api/admin/reports/schedules/:id */
+export function updateAdminReportSchedule(
+  scheduleId: string,
+  payload: {
+    name?: string;
+    reportType?: AdminReportType;
+    cadence?: 'weekly' | 'monthly';
+    enabled?: boolean;
+    filters?: AdminReportFilters;
+    retentionDays?: number;
+    nextRunAt?: string;
+  }
+): Promise<{ schedule: AdminReportScheduleRow }> {
+  return apiFetch(
+    `/api/admin/reports/schedules/${encodeURIComponent(scheduleId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+/** POST /api/admin/reports/schedules/:id/run — immediate test run (202). */
+export function runAdminReportSchedule(
+  scheduleId: string
+): Promise<AdminReportJobCreateResponse> {
+  return apiFetch(
+    `/api/admin/reports/schedules/${encodeURIComponent(scheduleId)}/run`,
+    { method: 'POST', body: JSON.stringify({}) }
+  );
+}
+
+/** DELETE /api/admin/reports/schedules/:id */
+export function deleteAdminReportSchedule(
+  scheduleId: string
+): Promise<{ ok: boolean; id: string }> {
+  return apiFetch(
+    `/api/admin/reports/schedules/${encodeURIComponent(scheduleId)}`,
+    { method: 'DELETE' }
+  );
 }

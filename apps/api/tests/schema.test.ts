@@ -2,7 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-describe('D1 schema & migrations (0001-0019)', () => {
+describe('D1 schema & migrations (0001-0020)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -697,6 +697,117 @@ describe('D1 schema & migrations (0001-0019)', () => {
     await expect(
       env.DB.prepare(
         "UPDATE tenant_daily_insights SET new_files_count = -1 WHERE tenant_id = 't1' AND day_utc = '2026-11-17'"
+      ).run()
+    ).rejects.toThrow();
+
+    // Migration 0020: asynchronous & scheduled admin reports.
+    const [reportJobsTable, reportSchedulesTable, reportJobCols, reportScheduleCols, reportIndexes] =
+      await Promise.all([
+        env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'admin_report_jobs'"
+        ).first<{ name: string }>(),
+        env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'admin_report_schedules'"
+        ).first<{ name: string }>(),
+        env.DB.prepare('PRAGMA table_info(admin_report_jobs)').all<{
+          name: string;
+        }>(),
+        env.DB.prepare('PRAGMA table_info(admin_report_schedules)').all<{
+          name: string;
+        }>(),
+        env.DB.prepare(
+          `SELECT name FROM sqlite_master
+            WHERE type = 'index'
+              AND name IN (
+                'idx_admin_report_jobs_tenant_created',
+                'idx_admin_report_jobs_expires',
+                'idx_admin_report_schedules_due'
+              )
+            ORDER BY name`
+        ).all<{ name: string }>(),
+      ]);
+    expect(reportJobsTable?.name).toBe('admin_report_jobs');
+    expect(reportSchedulesTable?.name).toBe('admin_report_schedules');
+    expect(reportJobCols.results.map((column) => column.name)).toEqual([
+      'id',
+      'tenant_id',
+      'schedule_id',
+      'report_type',
+      'status',
+      'filters_json',
+      'r2_object_key',
+      'row_count',
+      'byte_size',
+      'error_message',
+      'created_by',
+      'created_by_email',
+      'expires_at',
+      'started_at',
+      'completed_at',
+      'created_at',
+      'updated_at',
+    ]);
+    expect(reportScheduleCols.results.map((column) => column.name)).toEqual([
+      'id',
+      'tenant_id',
+      'name',
+      'report_type',
+      'cadence',
+      'enabled',
+      'filters_json',
+      'retention_days',
+      'next_run_at',
+      'last_run_at',
+      'last_job_id',
+      'created_by',
+      'created_at',
+      'updated_at',
+    ]);
+    expect(reportIndexes.results.map((row) => row.name)).toEqual([
+      'idx_admin_report_jobs_expires',
+      'idx_admin_report_jobs_tenant_created',
+      'idx_admin_report_schedules_due',
+    ]);
+
+    await env.DB.prepare(
+      `INSERT INTO admin_report_jobs (
+         id, tenant_id, schedule_id, report_type, status, filters_json,
+         created_by, created_by_email, expires_at, created_at, updated_at
+       ) VALUES (
+         'report-job-schema', 't1', NULL, 'user_activity', 'queued', '{}',
+         'u1', 'u1@example.com', '2099-01-01T00:00:00.000Z',
+         '2026-11-17T00:00:00.000Z', '2026-11-17T00:00:00.000Z'
+       )`
+    ).run();
+    await expect(
+      env.DB.prepare(
+        "UPDATE admin_report_jobs SET status = 'unknown' WHERE id = 'report-job-schema'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE admin_report_jobs SET report_type = 'unknown' WHERE id = 'report-job-schema'"
+      ).run()
+    ).rejects.toThrow();
+
+    await env.DB.prepare(
+      `INSERT INTO admin_report_schedules (
+         id, tenant_id, name, report_type, cadence, enabled, filters_json,
+         retention_days, next_run_at, created_by, created_at, updated_at
+       ) VALUES (
+         'report-schedule-schema', 't1', 'Weekly', 'users_and_guests',
+         'weekly', 1, '{}', 30, '2026-11-24T00:00:00.000Z', 'u1',
+         '2026-11-17T00:00:00.000Z', '2026-11-17T00:00:00.000Z'
+       )`
+    ).run();
+    await expect(
+      env.DB.prepare(
+        "UPDATE admin_report_schedules SET cadence = 'daily' WHERE id = 'report-schedule-schema'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE admin_report_schedules SET enabled = 2 WHERE id = 'report-schedule-schema'"
       ).run()
     ).rejects.toThrow();
   });

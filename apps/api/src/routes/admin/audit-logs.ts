@@ -5,6 +5,7 @@ import {
   requireMemberUser,
   requireSecOrSysAdmin,
 } from '../../services/authorization';
+import { normalizeAuditTimeBoundary } from '../../services/audit-filters';
 import type { OidcHonoEnv } from '../../types/oidc';
 import type { AuditLogRow } from './shared';
 
@@ -221,13 +222,16 @@ auditLogsRoutes.get('/', async (c) => {
     binds.push(targetId);
   }
 
-  const fromIso = c.req.query('from')?.trim();
+  // Day-only bounds are expanded to the full UTC day so `to=YYYY-MM-DD`
+  // includes events after midnight. Keyset pagination and the CSV branch
+  // below share these same conditions.
+  const fromIso = normalizeAuditTimeBoundary(c.req.query('from'), 'from');
   if (fromIso) {
     conditions.push('created_at >= ?');
     binds.push(fromIso);
   }
 
-  const toIso = c.req.query('to')?.trim();
+  const toIso = normalizeAuditTimeBoundary(c.req.query('to'), 'to');
   if (toIso) {
     conditions.push('created_at <= ?');
     binds.push(toIso);

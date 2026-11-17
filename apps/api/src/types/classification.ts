@@ -33,10 +33,17 @@ export interface CopySubtreeQueueMessage {
   actorIp: string;
 }
 
+export interface GenerateAdminReportQueueMessage {
+  type: 'generate_admin_report';
+  jobId: string;
+  tenantId: string;
+}
+
 export type JobsQueueMessage =
   | ClassifyFileQueueMessage
   | PropagateFolderClassificationQueueMessage
-  | CopySubtreeQueueMessage;
+  | CopySubtreeQueueMessage
+  | GenerateAdminReportQueueMessage;
 
 export interface ExtractedClassificationContext {
   tenantId: string;

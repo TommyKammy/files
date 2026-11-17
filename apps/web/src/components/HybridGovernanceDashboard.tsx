@@ -16,6 +16,7 @@ import { AdminGuestsSection } from '@/components/admin/AdminGuestsSection';
 import { AdminGroupsSection } from '@/components/admin/AdminGroupsSection';
 import { AdminMembersSection } from '@/components/admin/AdminMembersSection';
 import { AdminPermissionAuditSection } from '@/components/admin/AdminPermissionAuditSection';
+import { AdminReportsSection } from '@/components/admin/AdminReportsSection';
 import { AdminRootFoldersSection } from '@/components/admin/AdminRootFoldersSection';
 import { AdminScimTokensSection } from '@/components/admin/AdminScimTokensSection';
 import { AdminSessionsSection } from '@/components/admin/AdminSessionsSection';
@@ -89,12 +90,20 @@ export function HybridGovernanceDashboard({
     auditPresetKind,
     auditTargetType,
     auditStatusFilter,
+    auditActorEmailFilter,
+    auditTargetIdFilter,
+    auditFromFilter,
+    auditToFilter,
     auditLoadingMore,
     setLabelFilter,
     setAuditActionFilter,
     setAuditActionPrefixFilter,
     setAuditTargetType,
     setAuditStatusFilter,
+    setAuditActorEmailFilter,
+    setAuditTargetIdFilter,
+    setAuditFromFilter,
+    setAuditToFilter,
     setPolicy,
     loadAll,
     toggleSelection,
@@ -115,6 +124,7 @@ export function HybridGovernanceDashboard({
     handleShowMemberAudit,
     handleClearAuditPreset,
     handleClearAuditPrefixPreset,
+    handleClearAuditFilters,
     handleLoadMoreLogs,
   } = useGovernanceDashboard({ section, auditPreset });
 
@@ -365,6 +375,8 @@ export function HybridGovernanceDashboard({
 
               {showSection('content') && <AdminTrashSection user={user} />}
 
+              {showSection('reports') && <AdminReportsSection />}
+
               {showSection('reports') && (
                 <AdminPermissionAuditSection
                   user={user}
@@ -412,12 +424,21 @@ export function HybridGovernanceDashboard({
                   auditPresetKind={auditPresetKind}
                   auditTargetType={auditTargetType}
                   auditStatusFilter={auditStatusFilter}
+                  auditActorEmailFilter={auditActorEmailFilter}
+                  auditTargetIdFilter={auditTargetIdFilter}
+                  auditFromFilter={auditFromFilter}
+                  auditToFilter={auditToFilter}
                   auditLoadingMore={auditLoadingMore}
                   auditPresetActions={auditActionPreset}
                   onActionFilterChange={setAuditActionFilter}
                   onActionPrefixFilterChange={setAuditActionPrefixFilter}
                   onTargetTypeChange={setAuditTargetType}
                   onStatusFilterChange={setAuditStatusFilter}
+                  onActorEmailFilterChange={setAuditActorEmailFilter}
+                  onTargetIdFilterChange={setAuditTargetIdFilter}
+                  onFromFilterChange={setAuditFromFilter}
+                  onToFilterChange={setAuditToFilter}
+                  onClearFilters={handleClearAuditFilters}
                   onLoadMore={handleLoadMoreLogs}
                   onClearPreset={handleClearAuditPreset}
                   onClearPrefixPreset={handleClearAuditPrefixPreset}
