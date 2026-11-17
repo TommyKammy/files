@@ -3,6 +3,7 @@ import type { OidcEnv } from '../types/oidc';
 import { chunkArray } from '../utils/batch';
 import { VALID_CLASSIFICATIONS } from '../utils/classification';
 import { buildAuditLogStmt } from './audit';
+import { buildRootFolderResetStmt } from './root-folder-stats';
 import { getFileLockState, FileLockedError } from './file-lock';
 import { restoreFolderWithOptions } from './folder-closure/restore-options';
 import { validateFolderName } from './folder-closure/shared';
@@ -471,18 +472,12 @@ async function loadRootMetrics(
     const placeholders = chunk.map(() => '?').join(', ');
     const rows = await db
       .prepare(
-        `SELECT fc.ancestor_id AS root_id,
-                COUNT(DISTINCT fl.id) AS item_count,
-                COALESCE(SUM(fl.size_bytes), 0) AS total_bytes
-           FROM folder_closures fc
-           JOIN files fl
-             ON fl.tenant_id = fc.tenant_id
-            AND fl.folder_id = fc.descendant_id
-            AND fl.upload_state = 'active'
-            AND fl.deleted_at IS NULL
-          WHERE fc.tenant_id = ?
-            AND fc.ancestor_id IN (${placeholders})
-          GROUP BY fc.ancestor_id`
+        `SELECT root_folder_id AS root_id,
+                file_count AS item_count,
+                total_bytes AS total_bytes
+           FROM root_folder_stats
+          WHERE tenant_id = ?
+            AND root_folder_id IN (${placeholders})`
       )
       .bind(tenantId, ...chunk)
       .all<RootMetricRow>();
@@ -755,6 +750,7 @@ export async function createAdminRootFolder(
          VALUES (?, ?, ?, 0)`
       )
       .bind(user.tenantId, folderId, folderId),
+    buildRootFolderResetStmt(db, user.tenantId, folderId, nowIso),
     db
       .prepare(
         `INSERT INTO permissions (
@@ -1161,6 +1157,7 @@ export async function archiveAdminRootFolder(
             )`
       )
       .bind(nowIso, user.id, nowIso, user.tenantId, user.tenantId, folderId),
+    buildRootFolderResetStmt(db, user.tenantId, folderId, nowIso),
     buildAuditLogStmt(db, {
       tenantId: user.tenantId,
       actorId: user.id,

@@ -2,7 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-describe('D1 schema & migrations (0001-0022)', () => {
+describe('D1 schema & migrations (0001-0023)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -1012,5 +1012,55 @@ describe('D1 schema & migrations (0001-0022)', () => {
       scope_group_id: null,
       permissions_json: '["admin.insights.read","admin.audit.read"]',
     });
+
+    // Migration 0023: O(1) root_folder_stats pre-aggregation
+    const [statsTable, statsCols, statsIndexes] = await Promise.all([
+      env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'root_folder_stats'"
+      ).first<{ name: string }>(),
+      env.DB.prepare('PRAGMA table_info(root_folder_stats)').all<{
+        name: string;
+        pk: number;
+      }>(),
+      env.DB.prepare(
+        `SELECT name FROM sqlite_master
+          WHERE type = 'index' AND name = 'idx_root_folder_stats_tenant_bytes'`
+      ).all<{ name: string }>(),
+    ]);
+    expect(statsTable?.name).toBe('root_folder_stats');
+    expect(statsCols.results.map((c) => c.name)).toEqual([
+      'tenant_id',
+      'root_folder_id',
+      'file_count',
+      'total_bytes',
+      'updated_at',
+    ]);
+    expect(
+      statsCols.results
+        .filter((c) => c.pk > 0)
+        .sort((a, b) => a.pk - b.pk)
+        .map((c) => c.name)
+    ).toEqual(['tenant_id', 'root_folder_id']);
+    expect(statsIndexes.results.map((r) => r.name)).toEqual([
+      'idx_root_folder_stats_tenant_bytes',
+    ]);
+
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO root_folder_stats (tenant_id, root_folder_id, file_count, total_bytes)
+         VALUES ('t1', 'fld1', -1, 0)`
+      ).run()
+    ).rejects.toThrow();
+
+    const plan = await env.DB.prepare(
+      `EXPLAIN QUERY PLAN
+       SELECT root_folder_id, file_count, total_bytes
+         FROM root_folder_stats
+        WHERE tenant_id = 't1' AND root_folder_id IN ('fld1')`
+    ).all<{ detail: string }>();
+    const planText = plan.results.map((r) => r.detail).join('\n');
+    expect(planText).not.toContain('SCAN files');
+    expect(planText).not.toContain('folder_closures');
+    expect(planText).toContain('root_folder_stats');
   });
 });

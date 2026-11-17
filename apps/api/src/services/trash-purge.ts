@@ -19,6 +19,7 @@ import type { FileRow } from './file-upload-common';
 import type { FolderRow } from './folder-closure-service';
 import { buildSyncChangeStmt } from './sync-changes';
 import { extractLastSyncSeq } from './sync-notifier';
+import { buildRootFolderDeltaByFolderStmts } from './root-folder-stats';
 import { buildUserStorageDeltaStmt } from './user-storage-stats';
 import {
   TrashRequestError,
@@ -30,6 +31,7 @@ const PURGE_STATEMENT_CHUNK = 30;
 export interface PurgeFileRow {
   id: string;
   folder_id?: string | null;
+  deleted_at?: string | null;
   classification: ClassificationLabel;
   size_bytes: number;
   upload_state: 'pending' | 'active' | 'failed';
@@ -195,6 +197,35 @@ function buildStatsDecrementStmts(
       buildUserStorageDeltaStmt(db, {
         tenantId,
         userId,
+        countDelta: -delta.count,
+        bytesDelta: -delta.bytes,
+        nowIso,
+      })
+    );
+  }
+
+  // Soft-deleted files already left root_folder_stats on soft-delete; only
+  // adjust if a live non-deleted active file inside a purged folder is removed.
+  const folderDelta = new Map<string, { count: number; bytes: number }>();
+  for (const file of files) {
+    if (
+      file.upload_state !== 'active' ||
+      file.deleted_at !== null ||
+      !file.folder_id
+    ) {
+      continue;
+    }
+    const prev = folderDelta.get(file.folder_id) ?? { count: 0, bytes: 0 };
+    folderDelta.set(file.folder_id, {
+      count: prev.count + 1,
+      bytes: prev.bytes + file.size_bytes,
+    });
+  }
+  for (const [folderId, delta] of folderDelta.entries()) {
+    stmts.push(
+      ...buildRootFolderDeltaByFolderStmts(db, {
+        tenantId,
+        folderId,
         countDelta: -delta.count,
         bytesDelta: -delta.bytes,
         nowIso,
@@ -379,7 +410,7 @@ async function loadFilesInFolders(
     const placeholders = chunk.map(() => '?').join(', ');
     const res = await db
       .prepare(
-        `SELECT id, classification, size_bytes, upload_state, created_by
+        `SELECT id, folder_id, deleted_at, classification, size_bytes, upload_state, created_by
            FROM files
           WHERE tenant_id = ? AND folder_id IN (${placeholders})`
       )

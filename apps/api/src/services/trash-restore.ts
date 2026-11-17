@@ -1,6 +1,7 @@
 import type { AuthUser } from '../types/api';
 import { pickStricterClassification } from '../utils/classification';
 import { buildAuditLogStmt } from './audit';
+import { buildRootFolderDeltaByFolderStmts } from './root-folder-stats';
 import { resolveTargetAccess } from './authorization';
 import { can } from './capabilities';
 import { buildClassificationPolicyStatements } from './classification-updater';
@@ -449,7 +450,16 @@ export async function restoreTrashFile(
         restoredName,
         restoredExt ?? '',
         file.ai_reason ?? ''
-      )
+      ),
+    ...(file.upload_state === 'active'
+      ? buildRootFolderDeltaByFolderStmts(db, {
+          tenantId: user.tenantId,
+          folderId: targetFolderId,
+          countDelta: 1,
+          bytesDelta: file.size_bytes,
+          nowIso,
+        })
+      : [])
   );
 
   if (nextClassification !== file.classification) {

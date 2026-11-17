@@ -6,6 +6,7 @@ import {
 } from '../../services/authorization';
 import { can } from '../../services/capabilities';
 import { buildClassificationPolicyStatements, resolveFolderClassificationFloor } from '../../services/classification-updater';
+import { buildRootFolderFileMoveStmts } from '../../services/root-folder-stats';
 import {
   type FileRow,
   FileUploadError,
@@ -180,6 +181,15 @@ export function registerFileUpdateRoute(routes: Hono<OidcHonoEnv>) {
         actorId: user.id,
         nowIso,
       }),
+      ...(isMoving
+        ? buildRootFolderFileMoveStmts(c.env.DB, {
+            tenantId: user.tenantId,
+            fromFolderId: file.folder_id,
+            toFolderId: targetFolderId,
+            sizeBytes: file.size_bytes,
+            nowIso,
+          })
+        : []),
     ];
 
     // Ensure a file moved out of a folder to root keeps explicit ACL ownership/access

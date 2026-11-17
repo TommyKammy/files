@@ -4,6 +4,7 @@ import { buildAuditLogStmt } from '../audit';
 import { type FileRow, validateFileNameAndExt } from '../file-upload-common';
 import type { FolderRow } from '../folder-closure-service';
 import { buildSyncChangeStmt } from '../sync-changes';
+import { buildRootFolderDeltaByFolderStmts } from '../root-folder-stats';
 import { buildUserStorageDeltaStmt } from '../user-storage-stats';
 import type { CopyableFileRow } from './shared';
 
@@ -112,6 +113,13 @@ export function buildCoWFileCopyStatements(
     buildUserStorageDeltaStmt(db, {
       tenantId: params.tenantId,
       userId: params.actor.id,
+      countDelta: 1,
+      bytesDelta: params.orig.size_bytes,
+      nowIso: params.nowIso,
+    }),
+    ...buildRootFolderDeltaByFolderStmts(db, {
+      tenantId: params.tenantId,
+      folderId: params.destFolderId,
       countDelta: 1,
       bytesDelta: params.orig.size_bytes,
       nowIso: params.nowIso,

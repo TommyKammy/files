@@ -2,6 +2,7 @@ import { buildAuditLogStmt } from './audit';
 import { buildSyncChangeStmt } from './sync-changes';
 import { extractLastSyncSeq } from './sync-notifier';
 import { buildUserStorageDeltaStmt } from './user-storage-stats';
+import { buildRootFolderDeltaByFolderStmts } from './root-folder-stats';
 import { chunkArray, executeBatchChunks } from '../utils/batch';
 import { selectUnreferencedR2Keys } from './r2-gc';
 import type { FileRow, FileVersionRow } from './file-upload-common';
@@ -258,6 +259,15 @@ export async function finalizeWopiDraft({
       bytesDelta: netDeltaBytes,
       nowIso,
     }),
+    ...(file.deleted_at === null
+      ? buildRootFolderDeltaByFolderStmts(env.DB, {
+          tenantId: session.tenant_id,
+          folderId: file.folder_id,
+          countDelta,
+          bytesDelta: netDeltaBytes,
+          nowIso,
+        })
+      : []),
     buildAuditLogStmt(env.DB, {
       tenantId: session.tenant_id,
       actorId: actor.id,

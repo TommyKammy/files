@@ -5,6 +5,7 @@ import { buildAuditLogStmt } from '../audit';
 import {
   buildClassificationPolicyStatements,
 } from '../classification-updater';
+import { buildRootFolderFileMoveStmts } from '../root-folder-stats';
 import type { FileRow } from '../file-upload-common';
 import { buildSyncChangeStmt } from '../sync-changes';
 import type { DestinationContext } from './shared';
@@ -85,7 +86,16 @@ export async function moveFilesToDestination({
         sizeBytes: file.size_bytes,
         actorId: user.id,
         nowIso,
-      })
+      }),
+      ...(file.upload_state === 'active' && file.deleted_at === null
+        ? buildRootFolderFileMoveStmts(db, {
+            tenantId: user.tenantId,
+            fromFolderId: file.folder_id,
+            toFolderId: dest.parentId,
+            sizeBytes: file.size_bytes,
+            nowIso,
+          })
+        : [])
     );
 
     if (dest.parentId === null) {

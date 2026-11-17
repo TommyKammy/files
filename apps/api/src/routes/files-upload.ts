@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
 import { buildAuditLogStmt } from '../services/audit';
+import { buildRootFolderDeltaByFolderStmts } from '../services/root-folder-stats';
 import { assertFileNotLocked, FileLockedError } from '../services/file-lock';
 import {
   getAuthenticatedUser,
@@ -295,6 +296,13 @@ filesUploadRoutes.delete('/:id', async (c) => {
           SET deleted_at = ?, deleted_by = ?, meta_version = meta_version + 1, updated_by = ?, updated_at = ?
         WHERE tenant_id = ? AND id = ?`
     ).bind(nowIso, user.id, user.id, nowIso, user.tenantId, fileId),
+    ...buildRootFolderDeltaByFolderStmts(c.env.DB, {
+      tenantId: user.tenantId,
+      folderId: currentFile.folder_id,
+      countDelta: -1,
+      bytesDelta: -currentFile.size_bytes,
+      nowIso,
+    }),
     buildAuditLogStmt(c.env.DB, {
       tenantId: user.tenantId,
       actorId: user.id,

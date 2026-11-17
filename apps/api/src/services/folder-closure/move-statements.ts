@@ -4,6 +4,10 @@ import {
   isClassificationStricter,
 } from '../../utils/classification';
 import { buildAuditLogStmt } from '../audit';
+import {
+  buildRootFolderDeleteStmt,
+  buildRootFolderSubtreeDeltaStmt,
+} from '../root-folder-stats';
 import { buildSyncChangeStmt } from '../sync-changes';
 import { ClassificationStatsBucket, INLINE_CLASSIFICATION_PROPAGATION_LIMIT } from './shared';
 import type { MovePlan } from './move-plan';
@@ -24,6 +28,20 @@ export async function buildMoveStatements(
   } = plan;
   const nowIso = new Date().toISOString();
   const statements: D1PreparedStatement[] = [];
+
+  // 0. Subtract moved subtree's live active files from its current root before closures change
+  statements.push(
+    buildRootFolderSubtreeDeltaStmt(db, {
+      tenantId: user.tenantId,
+      subtreeRootId: folderId,
+      sign: -1,
+      deletedAtMatch: null,
+      nowIso,
+    })
+  );
+  if (source.parent_id === null && targetParentId !== null) {
+    statements.push(buildRootFolderDeleteStmt(db, user.tenantId, folderId));
+  }
 
   // 1. Delete closure links between ancestors strictly outside subtree and nodes inside subtree
   if (source.parent_id !== null) {
@@ -117,6 +135,17 @@ export async function buildMoveStatements(
         .bind(depthDelta, nowIso, user.tenantId, folderId, user.tenantId, folderId)
     );
   }
+
+  // Add moved subtree's live active files to the destination root after closures + parent_id update
+  statements.push(
+    buildRootFolderSubtreeDeltaStmt(db, {
+      tenantId: user.tenantId,
+      subtreeRootId: folderId,
+      sign: 1,
+      deletedAtMatch: null,
+      nowIso,
+    })
+  );
 
   // Elevate sensitivity across subtree folders/files when destination is stricter
   if (destClassification !== 'unset') {

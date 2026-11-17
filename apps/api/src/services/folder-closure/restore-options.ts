@@ -5,6 +5,10 @@ import {
   pickStricterClassification,
 } from '../../utils/classification';
 import { buildAuditLogStmt } from '../audit';
+import {
+  buildRootFolderDeleteStmt,
+  buildRootFolderSubtreeDeltaStmt,
+} from '../root-folder-stats';
 import { can } from '../capabilities';
 import {
   hasAtLeastRole,
@@ -456,6 +460,20 @@ export async function restoreFolderWithOptions(
   }
 
   // 2. Re-root the subtree when restoring into another parent.
+  if (isMoving) {
+    statements.push(
+      buildRootFolderSubtreeDeltaStmt(db, {
+        tenantId: user.tenantId,
+        subtreeRootId: folderId,
+        sign: -1,
+        deletedAtMatch: null,
+        nowIso,
+      })
+    );
+    if (folder.parent_id === null && targetParentId !== null) {
+      statements.push(buildRootFolderDeleteStmt(db, user.tenantId, folderId));
+    }
+  }
   if (isMoving && folder.parent_id !== null) {
     statements.push(
       db
@@ -646,6 +664,17 @@ export async function restoreFolderWithOptions(
   );
 
   // 8. Restore same-batch files and promote them in the same UPDATE.
+  if (!isMoving) {
+    statements.push(
+      buildRootFolderSubtreeDeltaStmt(db, {
+        tenantId: user.tenantId,
+        subtreeRootId: folderId,
+        sign: 1,
+        deletedAtMatch: batchDeletedAt,
+        nowIso,
+      })
+    );
+  }
   if (placeholders) {
     statements.push(
       db
@@ -692,6 +721,17 @@ export async function restoreFolderWithOptions(
               AND ${activeFileSubtreeSql}`
         )
         .bind(nowIso, user.tenantId, batchDeletedAt, user.tenantId, folderId)
+    );
+  }
+  if (isMoving) {
+    statements.push(
+      buildRootFolderSubtreeDeltaStmt(db, {
+        tenantId: user.tenantId,
+        subtreeRootId: folderId,
+        sign: 1,
+        deletedAtMatch: null,
+        nowIso,
+      })
     );
   }
 

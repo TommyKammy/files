@@ -2,6 +2,7 @@ import type { AuthUser } from '../../types/api';
 import { buildAuditLogStmt } from '../audit';
 import { can } from '../capabilities';
 import { resolveTargetAccess } from '../authorization';
+import { buildRootFolderSubtreeDeltaStmt } from '../root-folder-stats';
 import { buildSyncChangeStmt } from '../sync-changes';
 import { restoreFolderWithOptions } from './restore-options';
 import { FolderRow, FolderServiceError } from './shared';
@@ -50,8 +51,15 @@ export async function softDeleteFolderSubtree(
 
   const nowIso = new Date().toISOString();
 
-  // Order matters inside batch: remove active files from FTS5 before stamping deleted_at
+  // Order matters inside batch: update root stats and remove active files from FTS5 before stamping deleted_at
   await db.batch([
+    buildRootFolderSubtreeDeltaStmt(db, {
+      tenantId: user.tenantId,
+      subtreeRootId: folderId,
+      sign: -1,
+      deletedAtMatch: null,
+      nowIso,
+    }),
     db
       .prepare(
         `DELETE FROM files_fts

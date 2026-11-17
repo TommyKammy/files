@@ -2,6 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { app } from '../src/index';
+import { buildRootFolderDeltaByFolderStmts } from '../src/services/root-folder-stats';
 import type { OidcEnv } from '../src/types/oidc';
 
 const TENANT = 'tenant-fsm';
@@ -180,14 +181,15 @@ async function insertFile(input: {
   sizeBytes?: number;
   ownerId?: string | null;
 }): Promise<void> {
-  await env.DB.prepare(
-    `INSERT INTO files
-       (id, tenant_id, folder_id, name, extension, mime_type, size_bytes,
-        upload_state, current_version_num, classification, created_by, updated_by,
-        deleted_at, deleted_by)
-     VALUES (?, ?, ?, ?, 'txt', 'text/plain', ?, 'active', 1, 'internal', ?, ?, ?, ?)`
-  )
-    .bind(
+  const nowIso = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO files
+         (id, tenant_id, folder_id, name, extension, mime_type, size_bytes,
+          upload_state, current_version_num, classification, created_by, updated_by,
+          deleted_at, deleted_by)
+       VALUES (?, ?, ?, ?, 'txt', 'text/plain', ?, 'active', 1, 'internal', ?, ?, ?, ?)`
+    ).bind(
       input.id,
       TENANT,
       input.folderId,
@@ -197,8 +199,17 @@ async function insertFile(input: {
       USERS.sys,
       input.deletedAt ?? null,
       input.deletedAt ? USERS.member : null
-    )
-    .run();
+    ),
+    ...(!input.deletedAt
+      ? buildRootFolderDeltaByFolderStmts(env.DB, {
+          tenantId: TENANT,
+          folderId: input.folderId,
+          countDelta: 1,
+          bytesDelta: input.sizeBytes ?? 128,
+          nowIso,
+        })
+      : []),
+  ]);
   if (input.ownerId !== null) {
     await env.DB.prepare(
       `INSERT INTO permissions
@@ -1074,5 +1085,211 @@ describe('TOM-53 folder structure mode (open / closed)', () => {
     expect(lightweightRoots.every((r) => r.itemCount === 0 && r.totalBytes === 0)).toBe(true);
 
     await setMode('open');
+  });
+
+  it('keeps root_folder_stats in exact parity across copy, move, soft-delete, restore and archive', async () => {
+    await setMode('open');
+
+    const rootARes = await call('/api/admin/root-folders', {
+      method: 'POST',
+      user: USERS.sys,
+      role: 'sys_admin',
+      body: { name: 'Stats Parity Root A', ownerUserId: USERS.sys, classification: 'internal' },
+    });
+    const rootBRes = await call('/api/admin/root-folders', {
+      method: 'POST',
+      user: USERS.sys,
+      role: 'sys_admin',
+      body: { name: 'Stats Parity Root B', ownerUserId: USERS.sys, classification: 'internal' },
+    });
+    expect(rootARes.status).toBe(201);
+    expect(rootBRes.status).toBe(201);
+    const rootA = (rootARes.body.root as { id: string }).id;
+    const rootB = (rootBRes.body.root as { id: string }).id;
+
+    const subRes = await call('/api/folders', {
+      method: 'POST',
+      user: USERS.sys,
+      role: 'sys_admin',
+      body: { name: 'SubFolder', parentId: rootA },
+    });
+    expect(subRes.status).toBe(201);
+    const subId = (subRes.body.folder as { id: string }).id;
+
+    await insertFile({ id: 'parity-f1', folderId: subId, name: 'one.txt', sizeBytes: 1000 });
+    await env.DB.prepare(
+      `INSERT INTO file_versions (id, tenant_id, file_id, version_num, r2_object_key, size_bytes, mime_type, upload_status, uploaded_by)
+       VALUES ('parity-f1-v1', ?, 'parity-f1', 1, 'tenants/fsm/objects/parity-f1-v1', 1000, 'text/plain', 'completed', ?)`
+    ).bind(TENANT, USERS.sys).run();
+    await env.DB.prepare(
+      "UPDATE files SET current_version_id = 'parity-f1-v1' WHERE tenant_id = ? AND id = 'parity-f1'"
+    ).bind(TENANT).run();
+
+    await insertFile({ id: 'parity-f2', folderId: rootA, name: 'two.txt', sizeBytes: 250 });
+
+    const assertLiveParity = async (label: string) => {
+      const apiRes = await call('/api/admin/root-folders?includeArchived=1', {
+        user: USERS.sys,
+        role: 'sys_admin',
+      });
+      expect(apiRes.status).toBe(200);
+      const apiRoots = new Map(
+        (apiRes.body.roots as Array<{ id: string; itemCount: number; totalBytes: number }>).map(
+          (r) => [r.id, { itemCount: r.itemCount, totalBytes: r.totalBytes }]
+        )
+      );
+      const liveRows = await env.DB.prepare(
+        `SELECT rf.id AS root_id,
+                COUNT(DISTINCT fl.id) AS item_count,
+                COALESCE(SUM(fl.size_bytes), 0) AS total_bytes
+           FROM folders rf
+           JOIN folder_closures fc ON fc.tenant_id = rf.tenant_id AND fc.ancestor_id = rf.id
+           LEFT JOIN files fl
+             ON fl.tenant_id = fc.tenant_id
+            AND fl.folder_id = fc.descendant_id
+            AND fl.upload_state = 'active'
+            AND fl.deleted_at IS NULL
+          WHERE rf.tenant_id = ? AND rf.parent_id IS NULL
+          GROUP BY rf.id`
+      ).bind(TENANT).all<{ root_id: string; item_count: number; total_bytes: number }>();
+
+      for (const live of liveRows.results) {
+        expect(apiRoots.get(live.root_id), `${label} parity for ${live.root_id}`).toEqual({
+          itemCount: Number(live.item_count),
+          totalBytes: Number(live.total_bytes),
+        });
+      }
+    };
+
+    await assertLiveParity('initial');
+
+    // 1. CoW copy parity-f1 from subId (rootA) into rootB
+    const copyRes = await call('/api/workspace/copy', {
+      method: 'POST',
+      user: USERS.sys,
+      role: 'sys_admin',
+      body: { targetParentId: rootB, items: [{ type: 'file', id: 'parity-f1' }] },
+    });
+    expect(copyRes.status).toBe(201);
+    await assertLiveParity('after CoW copy');
+
+    // 2. Single file move parity-f2 from rootA into rootB
+    const fileMoveRes = await call('/api/files/parity-f2', {
+      method: 'PATCH',
+      user: USERS.sys,
+      role: 'sys_admin',
+      body: { folderId: rootB },
+    });
+    expect(fileMoveRes.status).toBe(200);
+    await assertLiveParity('after single file move');
+
+    // 3. Move subId (with parity-f1) from rootA into rootB
+    const folderMoveRes = await call(`/api/folders/${subId}`, {
+      method: 'PATCH',
+      user: USERS.sys,
+      role: 'sys_admin',
+      body: { parentId: rootB },
+    });
+    expect(folderMoveRes.status).toBe(200);
+    await assertLiveParity('after subfolder move');
+
+    // 4. Soft-delete parity-f2 in rootB then restore it into rootA
+    const fileDelRes = await call('/api/files/parity-f2', {
+      method: 'DELETE',
+      user: USERS.sys,
+      role: 'sys_admin',
+    });
+    expect(fileDelRes.status).toBe(200);
+    await assertLiveParity('after single file soft-delete');
+
+    const fileRestoreRes = await call('/api/files/parity-f2/restore', {
+      method: 'POST',
+      user: USERS.sys,
+      role: 'sys_admin',
+      body: { targetFolderId: rootA },
+    });
+    expect(fileRestoreRes.status).toBe(200);
+    await assertLiveParity('after single file restore into rootA');
+
+    // 5. Soft-delete subId in rootB, then move-restore back into rootA
+    const subDelRes = await call(`/api/folders/${subId}`, {
+      method: 'DELETE',
+      user: USERS.sys,
+      role: 'sys_admin',
+    });
+    expect(subDelRes.status).toBe(200);
+    await assertLiveParity('after folder soft-delete');
+
+    const subRestoreMoveRes = await call(`/api/folders/${subId}/restore`, {
+      method: 'POST',
+      user: USERS.sys,
+      role: 'sys_admin',
+      body: { targetParentId: rootA },
+    });
+    expect(subRestoreMoveRes.status).toBe(200);
+    await assertLiveParity('after folder move-restore into rootA');
+
+    // 6. Version restore size change on parity-f1 inside rootA
+    await env.BUCKET.put('tenants/fsm/objects/parity-f1-v1', 'v1-content');
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO file_versions (id, tenant_id, file_id, version_num, r2_object_key, size_bytes, mime_type, upload_status, uploaded_by)
+         VALUES ('parity-f1-v2', ?, 'parity-f1', 2, 'tenants/fsm/objects/parity-f1-v2', 2500, 'text/plain', 'completed', ?)`
+      ).bind(TENANT, USERS.sys),
+      env.DB.prepare(
+        "UPDATE files SET size_bytes = 2500, current_version_id = 'parity-f1-v2', current_version_num = 2 WHERE tenant_id = ? AND id = 'parity-f1'"
+      ).bind(TENANT),
+      ...buildRootFolderDeltaByFolderStmts(env.DB, {
+        tenantId: TENANT,
+        folderId: subId,
+        countDelta: 0,
+        bytesDelta: 1500,
+        nowIso: new Date().toISOString(),
+      }),
+    ]);
+    const verRestoreRes = await call('/api/files/parity-f1/versions/parity-f1-v1/restore', {
+      method: 'POST',
+      user: USERS.sys,
+      role: 'sys_admin',
+    });
+    expect(verRestoreRes.status).toBe(200);
+    await assertLiveParity('after file version restore');
+
+    // 7. Promote subId out of rootA to top-level root (parentId: null), then archive/restore rootA
+    const promoteRes = await call(`/api/folders/${subId}`, {
+      method: 'PATCH',
+      user: USERS.sys,
+      role: 'sys_admin',
+      body: { parentId: null },
+    });
+    expect(promoteRes.status).toBe(200);
+    await assertLiveParity('after promoting subfolder to root');
+
+    // 8. Move subId (formerly a root) under rootB
+    const demoteRes = await call(`/api/folders/${subId}`, {
+      method: 'PATCH',
+      user: USERS.sys,
+      role: 'sys_admin',
+      body: { parentId: rootB },
+    });
+    expect(demoteRes.status).toBe(200);
+    await assertLiveParity('after moving root subfolder under rootB');
+
+    // 6. Archive rootA and restore rootA
+    const archRes = await call(`/api/admin/root-folders/${rootA}/archive`, {
+      method: 'POST',
+      user: USERS.sys,
+      role: 'sys_admin',
+    });
+    expect(archRes.status).toBe(200);
+    await assertLiveParity('after root archive');
+
+    const restRes = await call(`/api/admin/root-folders/${rootA}/restore`, {
+      method: 'POST',
+      user: USERS.sys,
+      role: 'sys_admin',
+    });
+    expect(restRes.status).toBe(200);
+    await assertLiveParity('after root restore');
   });
 });

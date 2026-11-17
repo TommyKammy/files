@@ -1,6 +1,7 @@
 import type { AuthUser } from '../../types/api';
 import { buildAuditLogStmt } from '../audit';
 import { buildSyncChangeStmt } from '../sync-changes';
+import { buildRootFolderDeltaByFolderStmts } from '../root-folder-stats';
 import { buildUserStorageDeltaStmt } from '../user-storage-stats';
 import type { FileRow, FileVersionRow } from './shared';
 
@@ -89,6 +90,15 @@ export function buildFinalizeActivationStatements({
       bytesDelta: netDeltaBytes,
       nowIso,
     }),
+    ...(file.deleted_at === null
+      ? buildRootFolderDeltaByFolderStmts(db, {
+          tenantId: user.tenantId,
+          folderId: file.folder_id,
+          countDelta,
+          bytesDelta: netDeltaBytes,
+          nowIso,
+        })
+      : []),
     buildAuditLogStmt(db, {
       tenantId: user.tenantId,
       actorId: user.id,

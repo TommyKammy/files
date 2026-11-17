@@ -36,7 +36,7 @@ export async function purgeExpiredTrashForTenant(
   const expiredFilesMap = new Map<string, PurgeFileRow>();
   const directExpiredRes = await db
     .prepare(
-      `SELECT id, folder_id, classification, size_bytes, upload_state, created_by
+      `SELECT id, folder_id, deleted_at, classification, size_bytes, upload_state, created_by
          FROM files
         WHERE tenant_id = ? AND deleted_at IS NOT NULL AND deleted_at <= ?
         LIMIT ?`
@@ -55,7 +55,7 @@ export async function purgeExpiredTrashForTenant(
       const placeholders = fChunk.map(() => '?').join(', ');
       const folderFilesRes = await db
         .prepare(
-          `SELECT id, folder_id, classification, size_bytes, upload_state, created_by
+          `SELECT id, folder_id, deleted_at, classification, size_bytes, upload_state, created_by
              FROM files
             WHERE tenant_id = ? AND folder_id IN (${placeholders})
             LIMIT ?`
