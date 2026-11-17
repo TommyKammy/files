@@ -25,6 +25,9 @@ export const USER_AUDIT_ACTION_PREFIXES = ['admin.user.'] as const;
 /** Prefix preset used by active-session governance. */
 export const SESSION_AUDIT_ACTION_PREFIXES = ['admin.session.'] as const;
 
+/** Prefix preset used by IP allowlist / SSO authentication controls. */
+export const SECURITY_AUDIT_ACTION_PREFIXES = ['auth.'] as const;
+
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.root_folder.create': 'ルートフォルダ作成',
   'admin.root_folder.owner_transfer': '所有者移管',
@@ -56,6 +59,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.session.revoke': 'セッション強制失効',
   'admin.session.revoke_user': 'ユーザー全セッション強制失効',
   'admin.session.revoke_all': 'テナント全セッション緊急失効',
+  'auth.ip_blocked': 'IP 許可リストによるアクセス遮断',
+  'auth.sso_required_blocked': 'SSO 必須ポリシーによるログイン遮断',
+  'auth.sso_domain_blocked': 'SSO 許可ドメイン外ログイン遮断',
   'admin.group.create': 'グループ作成',
   'admin.group.update': 'グループ更新',
   'admin.group.delete': 'グループ削除',
@@ -114,6 +120,12 @@ export function isUserAuditAction(action: string): boolean {
 
 export function isSessionAuditAction(action: string): boolean {
   return SESSION_AUDIT_ACTION_PREFIXES.some((prefix) =>
+    action.startsWith(prefix)
+  );
+}
+
+export function isSecurityAuditAction(action: string): boolean {
+  return SECURITY_AUDIT_ACTION_PREFIXES.some((prefix) =>
     action.startsWith(prefix)
   );
 }

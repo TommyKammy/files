@@ -1,7 +1,13 @@
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
+import { recordAuthControlAudit } from '../services/auth-audit';
 import { sha256Hex } from '../services/crypto-utils';
+import {
+  enforceSessionIpAllowlist,
+  resolveClientIp,
+} from '../services/ip-allowlist';
+import { loadSsoPolicy } from '../services/sso-policy';
 import type { AuthUser, UserRole, UserType } from '../types/api';
 import type { OidcEnv, OidcHonoEnv } from '../types/oidc';
 
@@ -156,7 +162,7 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
   const isRequired = options.required ?? true;
 
   return createMiddleware<OidcHonoEnv>(async (c, next) => {
-    const ipAddress = c.req.header('CF-Connecting-IP') ?? '127.0.0.1';
+    const ipAddress = resolveClientIp(c);
 
     const csrfError = verifyRequestOriginForCsrf(c);
     if (csrfError) return csrfError;
@@ -164,6 +170,39 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
     if (isLocalDevBypassAllowed(c)) {
       const devUserId = c.req.header('X-Dev-User-Id');
       if (devUserId) {
+        const devTenantId =
+          c.req.header('X-Dev-Tenant-Id') ??
+          c.env.DEFAULT_TENANT_ID ??
+          'tenant-default';
+
+        // TOM-66: a tenant that requires SSO must not accept the raw local
+        // header bypass. Existing D1 session cookies are intentionally still
+        // accepted so administrators can disable the policy or sign out.
+        const ssoPolicy = await loadSsoPolicy(c.env.DB, devTenantId);
+        if (ssoPolicy.requireSsoLogin) {
+          await recordAuthControlAudit(c.env.DB, {
+            tenantId: devTenantId,
+            actorId: devUserId,
+            actorEmail:
+              c.req.header('X-Dev-User-Email') ?? 'dev-admin@example.com',
+            actorIp: ipAddress,
+            action: 'auth.sso_required_blocked',
+            targetId: new URL(c.req.url).pathname,
+            status: 'blocked',
+            metadata: {
+              source: 'dev_header_bypass',
+              path: new URL(c.req.url).pathname,
+            },
+          });
+          return c.json(
+            {
+              error: 'SSO login is required for this tenant',
+              code: 'SSO_LOGIN_REQUIRED',
+            },
+            403
+          );
+        }
+
         const rawRole = c.req.header('X-Dev-User-Role') as UserRole | undefined;
         const role: UserRole = rawRole && VALID_ROLES.has(rawRole) ? rawRole : 'sys_admin';
         const rawUserType = c.req.header('X-Dev-User-Type');
@@ -188,9 +227,9 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
           await next();
           return;
         }
-        c.set('user', {
+        const devUser = {
           id: devUserId,
-          tenantId: c.req.header('X-Dev-Tenant-Id') ?? c.env.DEFAULT_TENANT_ID ?? 'tenant-default',
+          tenantId: devTenantId,
           email: c.req.header('X-Dev-User-Email') ?? 'dev-admin@example.com',
           displayName: c.req.header('X-Dev-User-Name') ?? 'Dev Admin',
           role,
@@ -199,7 +238,12 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
           externalOrg: c.req.header('X-Dev-External-Org') ?? null,
           expiresAt,
           sessionId: c.req.header('X-Dev-Session-Id') ?? null,
-        });
+        } satisfies AuthUser;
+        c.set('user', devUser);
+
+        const ipBlocked = await enforceSessionIpAllowlist(c, devUser);
+        if (ipBlocked) return ipBlocked;
+
         await next();
         return;
       }
@@ -284,7 +328,7 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
       return;
     }
 
-    c.set('user', {
+    const authenticatedUser = {
       id: row.id,
       tenantId: row.tenant_id,
       email: row.email,
@@ -295,7 +339,11 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
       externalOrg: row.external_org,
       expiresAt: row.user_expires_at,
       sessionId: row.session_id,
-    } satisfies AuthUser);
+    } satisfies AuthUser;
+    c.set('user', authenticatedUser);
+
+    const ipBlocked = await enforceSessionIpAllowlist(c, authenticatedUser);
+    if (ipBlocked) return ipBlocked;
 
     await next();
   });

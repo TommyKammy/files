@@ -1,5 +1,11 @@
 import { Hono } from 'hono';
 import { isLocalDevBypassAllowed, verifyRequestOriginForCsrf } from '../../middleware/session-auth';
+import { recordAuthControlAudit } from '../../services/auth-audit';
+import {
+  enforceIpAllowlistForTenant,
+  resolveClientIp,
+} from '../../services/ip-allowlist';
+import { loadSsoPolicy } from '../../services/sso-policy';
 import type { UserRole } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -59,6 +65,35 @@ export function registerDevAuthRoutes(routes: Hono<OidcHonoEnv>) {
     } | null;
 
     const tenantId = (body?.tenantId ?? c.env.DEFAULT_TENANT_ID ?? 'tenant-default').trim();
+    const ipAddress = resolveClientIp(c);
+
+    const ssoPolicy = await loadSsoPolicy(c.env.DB, tenantId);
+    if (ssoPolicy.requireSsoLogin) {
+      await recordAuthControlAudit(c.env.DB, {
+        tenantId,
+        actorId: null,
+        actorEmail: null,
+        actorIp: ipAddress,
+        action: 'auth.sso_required_blocked',
+        targetId: '/auth/dev-login',
+        status: 'blocked',
+        metadata: { source: 'dev_login', path: '/auth/dev-login' },
+      });
+      return c.json(
+        {
+          error: 'SSO login is required for this tenant',
+          code: 'SSO_LOGIN_REQUIRED',
+        },
+        403
+      );
+    }
+
+    const ipBlocked = await enforceIpAllowlistForTenant(c, {
+      tenantId,
+      kind: 'internal_auth',
+    });
+    if (ipBlocked) return ipBlocked;
+
     let target: DevAccountRow | null = null;
 
     if (typeof body?.userId === 'string' && body.userId.trim()) {
@@ -79,7 +114,6 @@ export function registerDevAuthRoutes(routes: Hono<OidcHonoEnv>) {
       return c.json({ error: 'Active local development account not found' }, 404);
     }
 
-    const ipAddress = c.req.header('CF-Connecting-IP') ?? '127.0.0.1';
     await issueSessionForUser(c, {
       tenantId: target.tenant_id,
       userId: target.id,

@@ -11,6 +11,10 @@ import {
   isGuestEmailDomainAllowed,
 } from '../../services/external-guests';
 import {
+  enforceIpAllowlistForTenant,
+  resolveGuestAuthTenantId,
+} from '../../services/ip-allowlist';
+import {
   MailDeliveryError,
   MailProviderConfigurationError,
   maskEmail,
@@ -337,6 +341,45 @@ function projectInviteMeta(invitation: GuestInvitationAuthRow) {
 }
 
 export function registerGuestAuthRoutes(routes: Hono<OidcHonoEnv>) {
+  /**
+   * TOM-66 all_access enforcement for anonymous guest authentication. The
+   * tenant is resolved from the invitation token or guest email before the
+   * route consumes anything, then the normal handler still validates the
+   * token/OTP exactly as before.
+   */
+  routes.use('/auth/guest/*', async (c, next) => {
+    let token = c.req.query('token');
+    let email: string | undefined;
+    let tenantId: string | undefined;
+
+    if (!token) {
+      const body = (await c.req.json().catch(() => null)) as {
+        token?: unknown;
+        email?: unknown;
+        tenantId?: unknown;
+      } | null;
+      token = typeof body?.token === 'string' ? body.token : undefined;
+      email = typeof body?.email === 'string' ? body.email : undefined;
+      tenantId =
+        typeof body?.tenantId === 'string' ? body.tenantId.trim() : undefined;
+    }
+
+    const resolvedTenantId = await resolveGuestAuthTenantId(c.env.DB, {
+      token,
+      email,
+      tenantId,
+    });
+    if (resolvedTenantId) {
+      const blocked = await enforceIpAllowlistForTenant(c, {
+        tenantId: resolvedTenantId,
+        kind: 'guest_auth',
+      });
+      if (blocked) return blocked;
+    }
+
+    await next();
+  });
+
   /** GET /auth/guest/invite-meta?token=... — non-consuming invitation preview. */
   routes.get('/auth/guest/invite-meta', async (c) => {
     const rawToken = c.req.query('token') ?? '';

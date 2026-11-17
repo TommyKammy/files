@@ -2,7 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-describe('D1 schema & migrations (0001-0017)', () => {
+describe('D1 schema & migrations (0001-0018)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -579,5 +579,47 @@ describe('D1 schema & migrations (0001-0017)', () => {
       'created_at',
       'id',
     ]);
+
+    // Migration 0018: IP allowlist + OIDC SSO authentication controls.
+    const policyCols0018 = await env.DB.prepare(
+      'PRAGMA table_info(tenant_policies)'
+    ).all<{ name: string }>();
+    const policy0018 = await env.DB.prepare(
+      `SELECT ip_allowlist_enabled, ip_allowlist_scope, ip_allowlist_json,
+              require_sso_login, sso_allowed_domains_json
+         FROM tenant_policies WHERE tenant_id = 't1'`
+    ).first<{
+      ip_allowlist_enabled: number;
+      ip_allowlist_scope: string;
+      ip_allowlist_json: string;
+      require_sso_login: number;
+      sso_allowed_domains_json: string;
+    }>();
+    expect(policyCols0018.results.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        'ip_allowlist_enabled',
+        'ip_allowlist_scope',
+        'ip_allowlist_json',
+        'require_sso_login',
+        'sso_allowed_domains_json',
+      ])
+    );
+    expect(policy0018).toEqual({
+      ip_allowlist_enabled: 0,
+      ip_allowlist_scope: 'admin_only',
+      ip_allowlist_json: '[]',
+      require_sso_login: 0,
+      sso_allowed_domains_json: '[]',
+    });
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_policies SET ip_allowlist_scope = 'everyone' WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_policies SET ip_allowlist_enabled = 2 WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
   });
 });

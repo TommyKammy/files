@@ -78,7 +78,7 @@ export const ADMIN_CONSOLE_NAV_ITEMS: readonly AdminConsoleNavItem[] = [
     label: 'ガバナンスと設定',
     heading: 'ガバナンスと設定',
     summary:
-      'アクセス制御・共有リンクポリシー・ゲストポリシーを一括して管理します。',
+      'アクセス制御・IP 許可リスト・OIDC SSO・共有リンク/ゲストポリシーを一括して管理します。',
     roles: ['sys_admin', 'sec_admin'],
   },
   {

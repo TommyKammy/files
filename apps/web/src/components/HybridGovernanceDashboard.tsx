@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { AccessControlSettingsSection } from '@/components/admin/AccessControlSettingsSection';
+import { AdminAuthControlSection } from '@/components/admin/AdminAuthControlSection';
 import { AdminContentManagerSection } from '@/components/admin/AdminContentManagerSection';
 import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
 import { AdminGuestsSection } from '@/components/admin/AdminGuestsSection';
@@ -323,6 +324,14 @@ export function HybridGovernanceDashboard({
                     handleAdminContentInspectPolicyUpdate
                   }
                   onDirtyChange={setAdvancedRolesDirty}
+                />
+              )}
+
+              {showSection('settings') && (
+                <AdminAuthControlSection
+                  user={user}
+                  policy={policy}
+                  onPolicyUpdated={setPolicy}
                 />
               )}
 

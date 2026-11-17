@@ -14,6 +14,7 @@ import {
   readSessionTokenFromRequest,
   sessionAuthMiddleware,
 } from '../middleware/session-auth';
+import { enforceIpAllowlistForTenant } from '../services/ip-allowlist';
 import {
   base64UrlToBytes,
   bytesToBase64Url,
@@ -294,6 +295,12 @@ syncRoutes.get('/ws', async (c) => {
     tenantId: string;
     userId: string;
     sessionId: string | null;
+    user: {
+      id: string;
+      email: string;
+      role: 'sys_admin' | 'sec_admin' | 'member';
+      userType: 'member' | 'guest';
+    } | null;
   } | null = null;
   const rawTicket = c.req.query('ticket');
 
@@ -309,15 +316,29 @@ syncRoutes.get('/ws', async (c) => {
           const consumed = await stub.consumeTicket(await sha256Hex(rawTicket), tenantId);
           if (consumed.ok) {
             const dbUser = await c.env.DB.prepare(
-              'SELECT status FROM users WHERE tenant_id = ? AND id = ?'
+              'SELECT id, email, role, user_type, status FROM users WHERE tenant_id = ? AND id = ?'
             )
               .bind(tenantId, consumed.userId)
-              .first<{ status: 'active' | 'suspended' }>();
+              .first<{
+                id: string;
+                email: string;
+                role: 'sys_admin' | 'sec_admin' | 'member';
+                user_type: 'member' | 'guest';
+                status: 'active' | 'suspended';
+              }>();
             if (!dbUser || dbUser.status === 'active') {
               verifiedUser = {
                 tenantId,
                 userId: consumed.userId,
                 sessionId: consumed.sessionId,
+                user: dbUser
+                  ? {
+                      id: dbUser.id,
+                      email: dbUser.email,
+                      role: dbUser.role,
+                      userType: dbUser.user_type,
+                    }
+                  : null,
               };
             }
           }
@@ -332,15 +353,29 @@ syncRoutes.get('/ws', async (c) => {
       const tenantId =
         c.req.header('X-Dev-Tenant-Id') ?? c.env.DEFAULT_TENANT_ID ?? 'tenant-default';
       const dbUser = await c.env.DB.prepare(
-        'SELECT status FROM users WHERE tenant_id = ? AND id = ?'
+        'SELECT id, email, role, user_type, status FROM users WHERE tenant_id = ? AND id = ?'
       )
         .bind(tenantId, devUserId)
-        .first<{ status: 'active' | 'suspended' }>();
+        .first<{
+          id: string;
+          email: string;
+          role: 'sys_admin' | 'sec_admin' | 'member';
+          user_type: 'member' | 'guest';
+          status: 'active' | 'suspended';
+        }>();
       if (!dbUser || dbUser.status === 'active') {
         verifiedUser = {
           tenantId,
           userId: devUserId,
           sessionId: c.req.header('X-Dev-Session-Id') ?? null,
+          user: dbUser
+            ? {
+                id: dbUser.id,
+                email: dbUser.email,
+                role: dbUser.role,
+                userType: dbUser.user_type,
+              }
+            : null,
         };
       }
     }
@@ -350,7 +385,8 @@ syncRoutes.get('/ws', async (c) => {
     const sessionToken = readSessionTokenFromRequest(c);
     if (sessionToken) {
       const sessionRow = await c.env.DB.prepare(
-        `SELECT s.id AS session_id, s.expires_at, u.id, u.tenant_id, u.status
+        `SELECT s.id AS session_id, s.expires_at, u.id, u.tenant_id, u.email,
+                u.role, u.user_type, u.status
            FROM sessions s
            JOIN users u ON u.id = s.user_id
           WHERE s.token_hash = ? AND s.revoked_at IS NULL`
@@ -361,6 +397,9 @@ syncRoutes.get('/ws', async (c) => {
           expires_at: string;
           id: string;
           tenant_id: string;
+          email: string;
+          role: 'sys_admin' | 'sec_admin' | 'member';
+          user_type: 'member' | 'guest';
           status: 'active' | 'suspended';
         }>();
 
@@ -373,6 +412,12 @@ syncRoutes.get('/ws', async (c) => {
           tenantId: sessionRow.tenant_id,
           userId: sessionRow.id,
           sessionId: sessionRow.session_id,
+          user: {
+            id: sessionRow.id,
+            email: sessionRow.email,
+            role: sessionRow.role,
+            userType: sessionRow.user_type,
+          },
         };
       }
     }
@@ -381,6 +426,16 @@ syncRoutes.get('/ws', async (c) => {
   if (!verifiedUser) {
     return c.json({ error: 'Authentication required' }, 401);
   }
+
+  // TOM-66: WebSocket handshakes do not pass through sessionAuthMiddleware,
+  // so the internal_users/all_access check runs explicitly after the ticket or
+  // session cookie has been verified.
+  const ipBlocked = await enforceIpAllowlistForTenant(c, {
+    tenantId: verifiedUser.tenantId,
+    kind: 'sync_ws',
+    user: verifiedUser.user,
+  });
+  if (ipBlocked) return ipBlocked;
 
   const stub = c.env.SYNC_HUB.get(c.env.SYNC_HUB.idFromName(verifiedUser.tenantId));
   const connectUrl = new URL('https://sync-hub.internal/connect');

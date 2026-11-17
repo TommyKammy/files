@@ -31,6 +31,19 @@ import {
   DEFAULT_ADMIN_CONTENT_INSPECT_POLICY,
   isAdminContentInspectPolicy,
 } from '../../services/admin-content';
+import {
+  IP_ALLOWLIST_MAX_ENTRIES,
+  isIpAllowlistScope,
+  isIpAllowed,
+  normalizeIpAllowlistInput,
+  parseIpAllowlistJson,
+  resolveClientIp,
+  type IpAllowlistScope,
+} from '../../services/ip-allowlist';
+import {
+  normalizeSsoAllowedDomainsInput,
+  parseSsoAllowedDomainsJson,
+} from '../../services/sso-policy';
 import type { AiClassificationMode } from '../../types/classification';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -74,6 +87,15 @@ function projectPolicy(
     )
       ? policy.admin_content_inspect_policy
       : DEFAULT_ADMIN_CONTENT_INSPECT_POLICY,
+    ipAllowlistEnabled: policy.ip_allowlist_enabled === 1,
+    ipAllowlistScope: isIpAllowlistScope(policy.ip_allowlist_scope)
+      ? policy.ip_allowlist_scope
+      : 'admin_only',
+    ipAllowlist: parseIpAllowlistJson(policy.ip_allowlist_json),
+    requireSsoLogin: policy.require_sso_login === 1,
+    ssoAllowedDomains: parseSsoAllowedDomainsJson(
+      policy.sso_allowed_domains_json
+    ),
   };
 }
 
@@ -150,6 +172,11 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       allowGuestElevatedRoles?: unknown;
       externalDomainExistingGuestMode?: unknown;
       adminContentInspectPolicy?: unknown;
+      ipAllowlistEnabled?: unknown;
+      ipAllowlistScope?: unknown;
+      ipAllowlist?: unknown;
+      requireSsoLogin?: unknown;
+      ssoAllowedDomains?: unknown;
     } | null;
 
     if (!body || typeof body !== 'object') {
@@ -158,13 +185,23 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
 
     const existingGuestPolicyRow = await c.env.DB.prepare(
       `SELECT external_domain_allowlist_json,
-              external_domain_existing_guest_mode
+              external_domain_existing_guest_mode,
+              ip_allowlist_enabled,
+              ip_allowlist_scope,
+              ip_allowlist_json,
+              require_sso_login,
+              sso_allowed_domains_json
          FROM tenant_policies WHERE tenant_id = ?`
     )
       .bind(user.tenantId)
       .first<{
         external_domain_allowlist_json: string | null;
         external_domain_existing_guest_mode: string | null;
+        ip_allowlist_enabled: number | null;
+        ip_allowlist_scope: string | null;
+        ip_allowlist_json: string | null;
+        require_sso_login: number | null;
+        sso_allowed_domains_json: string | null;
       }>();
     let effectiveDomainAllowlist = parseDomainAllowlistJson(
       existingGuestPolicyRow?.external_domain_allowlist_json
@@ -175,6 +212,17 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       )
         ? (existingGuestPolicyRow!.external_domain_existing_guest_mode as ExternalDomainExistingGuestMode)
         : DEFAULT_EXTERNAL_DOMAIN_EXISTING_GUEST_MODE;
+
+    let effectiveIpAllowlistEnabled =
+      existingGuestPolicyRow?.ip_allowlist_enabled === 1;
+    let effectiveIpAllowlistScope: IpAllowlistScope = isIpAllowlistScope(
+      existingGuestPolicyRow?.ip_allowlist_scope
+    )
+      ? (existingGuestPolicyRow!.ip_allowlist_scope as IpAllowlistScope)
+      : 'admin_only';
+    let effectiveIpAllowlist = parseIpAllowlistJson(
+      existingGuestPolicyRow?.ip_allowlist_json
+    );
 
     const updates: string[] = [];
     const binds: unknown[] = [];
@@ -458,8 +506,138 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       binds.push(body.aiAutoApplyThreshold);
     }
 
+    // P12-3 / TOM-66 authentication controls. Like the external guest policy,
+    // only sys_admin can write these; sec_admin keeps read-only visibility
+    // through GET /api/admin/policies and /api/admin/sso/status.
+    const authControlFieldsProvided =
+      body.ipAllowlistEnabled !== undefined ||
+      body.ipAllowlistScope !== undefined ||
+      body.ipAllowlist !== undefined ||
+      body.requireSsoLogin !== undefined ||
+      body.ssoAllowedDomains !== undefined;
+    if (authControlFieldsProvided && user.role !== 'sys_admin') {
+      return c.json(
+        {
+          error: 'Only sys_admin can change IP allowlist or SSO policies',
+          code: 'SYS_ADMIN_REQUIRED',
+        },
+        403
+      );
+    }
+
+    if (body.ipAllowlistEnabled !== undefined) {
+      if (typeof body.ipAllowlistEnabled !== 'boolean') {
+        return c.json(
+          {
+            error: 'ipAllowlistEnabled must be a boolean',
+            code: 'INVALID_IP_ALLOWLIST_POLICY',
+          },
+          400
+        );
+      }
+      effectiveIpAllowlistEnabled = body.ipAllowlistEnabled;
+      updates.push('ip_allowlist_enabled = ?');
+      binds.push(body.ipAllowlistEnabled ? 1 : 0);
+    }
+
+    if (body.ipAllowlistScope !== undefined) {
+      if (!isIpAllowlistScope(body.ipAllowlistScope)) {
+        return c.json(
+          {
+            error: "ipAllowlistScope must be 'admin_only', 'internal_users' or 'all_access'",
+            code: 'INVALID_IP_ALLOWLIST_SCOPE',
+          },
+          400
+        );
+      }
+      effectiveIpAllowlistScope = body.ipAllowlistScope;
+      updates.push('ip_allowlist_scope = ?');
+      binds.push(body.ipAllowlistScope);
+    }
+
+    if (body.ipAllowlist !== undefined) {
+      const validation = normalizeIpAllowlistInput(body.ipAllowlist);
+      if (!validation.ok) {
+        return c.json(
+          {
+            error:
+              validation.invalidEntries.length > 0
+                ? `Invalid IP allowlist entr${
+                    validation.invalidEntries.length === 1 ? 'y' : 'ies'
+                  }: ${validation.invalidEntries.join(', ')}`
+                : `An IP allowlist can contain at most ${IP_ALLOWLIST_MAX_ENTRIES} entries`,
+            code: 'INVALID_IP_ALLOWLIST_ENTRY',
+            invalidEntries: validation.invalidEntries,
+            maxEntries: validation.maxEntries,
+          },
+          400
+        );
+      }
+      effectiveIpAllowlist = validation.entries;
+      updates.push('ip_allowlist_json = ?');
+      binds.push(JSON.stringify(validation.entries));
+    }
+
+    if (body.requireSsoLogin !== undefined) {
+      if (typeof body.requireSsoLogin !== 'boolean') {
+        return c.json(
+          {
+            error: 'requireSsoLogin must be a boolean',
+            code: 'INVALID_SSO_POLICY',
+          },
+          400
+        );
+      }
+      updates.push('require_sso_login = ?');
+      binds.push(body.requireSsoLogin ? 1 : 0);
+    }
+
+    if (body.ssoAllowedDomains !== undefined) {
+      const validation = normalizeSsoAllowedDomainsInput(
+        body.ssoAllowedDomains
+      );
+      if (!validation.ok) {
+        return c.json(
+          {
+            error:
+              validation.wildcardDomains.length > 0
+                ? 'ワイルドカード (*) は不可です。完全一致ドメインのみ許可されます。'
+                : `Invalid SSO allowed domain(s): ${validation.invalidDomains.join(', ')}`,
+            code: 'INVALID_SSO_DOMAIN',
+            invalidDomains: validation.invalidDomains,
+            ...(validation.wildcardDomains.length > 0
+              ? { wildcardDomains: validation.wildcardDomains }
+              : {}),
+          },
+          400
+        );
+      }
+      updates.push('sso_allowed_domains_json = ?');
+      binds.push(JSON.stringify(validation.domains));
+    }
+
     if (updates.length === 0) {
       return c.json({ error: 'No policy fields provided' }, 400);
+    }
+
+    // Self-lockout prevention: when the effective allowlist is enabled, the
+    // administrator performing the write must still be able to reach the admin
+    // console. This also runs for unrelated policy updates while enabled, so a
+    // stale allowlist can never be "fixed" from a blocked address.
+    if (effectiveIpAllowlistEnabled) {
+      const clientIp = resolveClientIp(c);
+      if (!isIpAllowed(clientIp, effectiveIpAllowlist)) {
+        return c.json(
+          {
+            error:
+              'This update would lock the current administrator out of the tenant',
+            code: 'SELF_IP_LOCKOUT_PREVENTED',
+            ip: clientIp,
+            scope: effectiveIpAllowlistScope,
+          },
+          400
+        );
+      }
     }
 
     const nowIso = new Date().toISOString();

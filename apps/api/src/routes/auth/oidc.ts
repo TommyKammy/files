@@ -14,6 +14,15 @@ import {
   sha256Base64Url,
   timingSafeEqual,
 } from '../../services/crypto-utils';
+import { recordAuthControlAudit } from '../../services/auth-audit';
+import {
+  enforceIpAllowlistForTenant,
+  resolveClientIp,
+} from '../../services/ip-allowlist';
+import {
+  isSsoEmailDomainAllowed,
+  loadSsoPolicy,
+} from '../../services/sso-policy';
 import {
   buildConfiguredIdpProviders,
   fetchOidcDiscovery,
@@ -44,14 +53,50 @@ export function registerOidcRoutes(routes: Hono<OidcHonoEnv>) {
     const providers = buildConfiguredIdpProviders(c.env);
     const requestedIdp = c.req.query('idp');
     const provider = resolveProviderById(providers, requestedIdp);
+    const requestedTenantId = (
+      c.req.query('tenant') ??
+      c.env.DEFAULT_TENANT_ID ??
+      'tenant-default'
+    ).trim();
+    const loginIpBlocked = await enforceIpAllowlistForTenant(c, {
+      tenantId: requestedTenantId,
+      kind: 'internal_auth',
+    });
+    if (loginIpBlocked) return loginIpBlocked;
+
     if (!provider) {
       if (!requestedIdp && isLocalDevBypassAllowed(c)) {
+        // TOM-66: never silently bypass a tenant that requires SSO. Without
+        // configured IdP metadata there is no safe login path, so fail closed.
+        const ssoPolicy = await loadSsoPolicy(c.env.DB, requestedTenantId);
+        if (ssoPolicy.requireSsoLogin) {
+          await recordAuthControlAudit(c.env.DB, {
+            tenantId: requestedTenantId,
+            actorId: null,
+            actorEmail: null,
+            actorIp: resolveClientIp(c),
+            action: 'auth.sso_required_blocked',
+            targetId: '/auth/login',
+            status: 'blocked',
+            metadata: {
+              source: 'local_bypass_redirect',
+              path: '/auth/login',
+            },
+          });
+          return c.json(
+            {
+              error: 'SSO login is required for this tenant',
+              code: 'SSO_LOGIN_REQUIRED',
+            },
+            403
+          );
+        }
         return c.redirect(sanitizeReturnTo(c.req.query('returnTo')), 302);
       }
       return c.json({ error: 'Requested OIDC provider is not configured' }, 400);
     }
 
-    const tenantId = (c.req.query('tenant') ?? c.env.DEFAULT_TENANT_ID ?? 'tenant-default').trim();
+    const tenantId = requestedTenantId;
     const tenantRow = await c.env.DB.prepare('SELECT id FROM tenants WHERE id = ?')
       .bind(tenantId)
       .first<{ id: string }>();
@@ -104,7 +149,7 @@ export function registerOidcRoutes(routes: Hono<OidcHonoEnv>) {
   });
 
   routes.get('/auth/callback', async (c) => {
-    const ipAddress = c.req.header('CF-Connecting-IP') ?? '127.0.0.1';
+    const ipAddress = resolveClientIp(c);
     const stateCookieName = getOidcStateCookieName(c.env, c.req.url);
     const sealedState = getCookie(c, stateCookieName);
     clearHostOrLocalCookies(c, OIDC_STATE_COOKIE, LOCAL_DEV_OIDC_STATE_COOKIE);
@@ -129,6 +174,12 @@ export function registerOidcRoutes(routes: Hono<OidcHonoEnv>) {
     ) {
       return c.json({ error: 'Expired or mismatched OIDC state' }, 400);
     }
+
+    const ipBlocked = await enforceIpAllowlistForTenant(c, {
+      tenantId: statePayload.tenantId,
+      kind: 'internal_auth',
+    });
+    if (ipBlocked) return ipBlocked;
 
     const providers = buildConfiguredIdpProviders(c.env);
     const provider = resolveProviderById(providers, statePayload.idp);
@@ -203,6 +254,34 @@ export function registerOidcRoutes(routes: Hono<OidcHonoEnv>) {
 
     let syncedUser;
     try {
+      // TOM-66: an explicit SSO domain allowlist narrows who may use the IdP,
+      // on top of the IdP's own email verification.
+      const ssoPolicy = await loadSsoPolicy(c.env.DB, statePayload.tenantId);
+      if (!isSsoEmailDomainAllowed(claims.email, ssoPolicy.allowedDomains)) {
+        await recordAuthControlAudit(c.env.DB, {
+          tenantId: statePayload.tenantId,
+          actorId: null,
+          actorEmail: claims.email,
+          actorIp: ipAddress,
+          action: 'auth.sso_domain_blocked',
+          targetId: claims.email,
+          status: 'blocked',
+          metadata: {
+            provider: claims.provider,
+            issuer: claims.issuer,
+            emailDomain: claims.email.split('@').pop() ?? null,
+            allowedDomains: ssoPolicy.allowedDomains,
+          },
+        });
+        return c.json(
+          {
+            error: 'This email domain is not allowed for SSO login',
+            code: 'SSO_DOMAIN_NOT_ALLOWED',
+          },
+          403
+        );
+      }
+
       syncedUser = await syncUserWithD1(c.env.DB, statePayload.tenantId, claims, ipAddress);
     } catch (err) {
       if (err instanceof AccountLinkConflictError) {

@@ -983,6 +983,11 @@ export interface AdminContentInspectResponse {
 }
 
 
+export type AdminIpAllowlistScope =
+  | 'admin_only'
+  | 'internal_users'
+  | 'all_access';
+
 export interface TenantPolicyRow {
   tenant_id: string;
   enforce_company_only_links: number;
@@ -1020,6 +1025,16 @@ export interface TenantPolicyRow {
   externalDomainExistingGuestMode?: ExternalDomainExistingGuestMode;
   admin_content_inspect_policy?: AdminContentInspectPolicy;
   adminContentInspectPolicy?: AdminContentInspectPolicy;
+  ip_allowlist_enabled?: number;
+  ipAllowlistEnabled?: boolean;
+  ip_allowlist_scope?: AdminIpAllowlistScope;
+  ipAllowlistScope?: AdminIpAllowlistScope;
+  ip_allowlist_json?: string;
+  ipAllowlist?: string[];
+  require_sso_login?: number;
+  requireSsoLogin?: boolean;
+  sso_allowed_domains_json?: string;
+  ssoAllowedDomains?: string[];
   updated_by: string | null;
   updated_at: string;
 }
@@ -1046,6 +1061,11 @@ export interface UpdateAdminPoliciesPayload {
   allowGuestElevatedRoles?: boolean;
   externalDomainExistingGuestMode?: ExternalDomainExistingGuestMode;
   adminContentInspectPolicy?: AdminContentInspectPolicy;
+  ipAllowlistEnabled?: boolean;
+  ipAllowlistScope?: AdminIpAllowlistScope;
+  ipAllowlist?: string[];
+  requireSsoLogin?: boolean;
+  ssoAllowedDomains?: string[];
 }
 
 export interface TenantPolicyResponse {
@@ -1490,6 +1510,36 @@ export interface AdminSessionListQuery {
   q?: string;
   limit?: number;
   cursor?: string | null;
+}
+
+export type AdminSsoProviderId = 'okta' | 'entra_id';
+
+export interface AdminSsoDiscoveryProbe {
+  ok: boolean;
+  jwksUri: string | null;
+  authorizationEndpoint: string | null;
+  tokenEndpoint: string | null;
+  error: string | null;
+}
+
+export interface AdminSsoProviderStatus {
+  provider: AdminSsoProviderId;
+  issuer: string;
+  /** Masked server-side; the full client id is never returned. */
+  clientIdMasked: string;
+  clientSecretConfigured: boolean;
+  jwksUri: string | null;
+  discovery?: AdminSsoDiscoveryProbe;
+}
+
+export interface AdminSsoStatusResponse {
+  providers: AdminSsoProviderStatus[];
+  callbackUrl: string;
+  environment: string;
+  allowDevAuth: boolean;
+  requireSsoLogin: boolean;
+  ssoAllowedDomains: string[];
+  clientIp: string;
 }
 
 export interface AdminSessionRevokeResponse {

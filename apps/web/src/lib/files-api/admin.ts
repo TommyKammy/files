@@ -23,6 +23,7 @@ import type {
   AdminSessionListResponse,
   AdminSessionRevokeResponse,
   AdminSharedLinkRow,
+  AdminSsoStatusResponse,
   AdminTenantSessionsRevokeResponse,
   AdminTrashListResponse,
   AdminTrashRestoreResponse,
@@ -441,4 +442,16 @@ export function revokeAllAdminSessions(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* P12-3 / TOM-66 IP allowlist & OIDC SSO controls                     */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/admin/sso/status — masked IdP visibility for sys/sec admins. */
+export function fetchAdminSsoStatus(
+  options: { probeDiscovery?: boolean } = {}
+): Promise<AdminSsoStatusResponse> {
+  const qs = options.probeDiscovery ? '?probeDiscovery=1' : '';
+  return apiFetch(`/api/admin/sso/status${qs}`);
 }
