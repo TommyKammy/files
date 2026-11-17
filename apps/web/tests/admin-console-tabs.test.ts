@@ -259,14 +259,35 @@ test('tab definitions keep their capability and API ownership contract', () => {
     '/api/admin/ai-suggestions',
   ]);
 
+  assert.deepEqual(ADMIN_CONSOLE_TABS.users[0]!.capabilities, [
+    'admin.users.read',
+    'admin.users.suspend',
+    'admin.users.manage',
+  ]);
+  assert.equal(
+    ADMIN_CONSOLE_TABS.users[0]!.summary,
+    '社内メンバーのロール・クォータ・停止/再開・CSV 一括登録・オフボーディングを管理します。'
+  );
   assert.deepEqual(ADMIN_CONSOLE_TABS.users[0]!.ownedApiPrefixes, [
     '/api/admin/users',
+  ]);
+  assert.deepEqual(ADMIN_CONSOLE_TABS.users[1]!.capabilities, [
+    'admin.users.read',
+    'admin.groups.manage',
   ]);
   assert.deepEqual(ADMIN_CONSOLE_TABS.users[1]!.ownedApiPrefixes, [
     '/api/admin/groups',
   ]);
+  assert.deepEqual(ADMIN_CONSOLE_TABS.users[2]!.capabilities, [
+    'admin.guests.manage',
+  ]);
   assert.deepEqual(ADMIN_CONSOLE_TABS.users[2]!.ownedApiPrefixes, [
     '/api/admin/guests',
+  ]);
+  // Delegation management is reserved for sys_admin / `admin.users.manage`
+  // holders; a read/suspend-only helpdesk Co-Admin must not see the tab.
+  assert.deepEqual(ADMIN_CONSOLE_TABS.users[3]!.capabilities, [
+    'admin.users.manage',
   ]);
   assert.deepEqual(ADMIN_CONSOLE_TABS.users[3]!.ownedApiPrefixes, [
     '/api/admin/delegations',
@@ -387,7 +408,7 @@ test('Co-Admin tabs require at least one delegated capability', () => {
   );
   assert.deepEqual(
     getVisibleAdminTabs(helpdesk, 'users').map((tab) => tab.id),
-    ['members', 'groups', 'delegations']
+    ['members', 'groups']
   );
   assert.deepEqual(
     getVisibleAdminTabs(helpdesk, 'settings').map((tab) => tab.id),
@@ -407,6 +428,53 @@ test('Co-Admin tabs require at least one delegated capability', () => {
     ['sharing', 'access', 'security', 'compliance', 'integrations']
   );
   assert.deepEqual(getVisibleAdminTabs(auditor, 'users'), []);
+});
+
+test('user tab visibility and initial selection follow delegated capabilities', () => {
+  // The `group_manager` preset includes `admin.users.read`, which also grants
+  // read access to the member directory, so it keeps both tabs. A grouped
+  // deep link still resolves to the group console.
+  const groupManager = coAdmin([
+    'admin.users.read',
+    'admin.groups.manage',
+  ]);
+  assert.deepEqual(
+    getVisibleAdminTabs(groupManager, 'users').map((tab) => tab.id),
+    ['members', 'groups']
+  );
+  assert.equal(resolveActiveAdminTab(groupManager, 'users')?.id, 'members');
+  assert.equal(
+    resolveActiveAdminTab(groupManager, 'users', 'groups')?.id,
+    'groups'
+  );
+
+  // A custom Co-Admin holding only the group capability auto-selects the
+  // group tab because the member and delegation tabs are projected away.
+  const groupOnly = coAdmin(['admin.groups.manage']);
+  assert.deepEqual(
+    getVisibleAdminTabs(groupOnly, 'users').map((tab) => tab.id),
+    ['groups']
+  );
+  assert.equal(resolveActiveAdminTab(groupOnly, 'users')?.id, 'groups');
+  assert.equal(resolveActiveAdminTab(groupOnly, 'users', 'members')?.id, 'groups');
+
+  // A custom Co-Admin holding only the guest capability auto-selects guests,
+  // and an out-of-scope ?tab= never mounts another panel.
+  const guestsOnly = coAdmin(['admin.guests.manage']);
+  assert.deepEqual(
+    getVisibleAdminTabs(guestsOnly, 'users').map((tab) => tab.id),
+    ['guests']
+  );
+  assert.equal(resolveActiveAdminTab(guestsOnly, 'users')?.id, 'guests');
+  assert.equal(resolveActiveAdminTab(guestsOnly, 'users', 'members')?.id, 'guests');
+
+  // Read/suspend-only helpdesk Co-Admins keep member and group read access.
+  assert.deepEqual(
+    getVisibleAdminTabs(helpdesk, 'users').map((tab) => tab.id),
+    ['members', 'groups']
+  );
+  assert.equal(resolveActiveAdminTab(helpdesk, 'users')?.id, 'members');
+  assert.equal(resolveActiveAdminTab(helpdesk, 'users', 'delegations')?.id, 'members');
 });
 
 test('parseAdminTabQuery trims, lowercases and takes the first array entry', () => {
@@ -686,6 +754,31 @@ test('getAdminTabPreloadChunkIds preloads only the active content tab', () => {
     getAdminTabPreloadChunkIds('content', 'manager').length,
     1
   );
+});
+
+test('getAdminTabPreloadChunkIds keeps users tabs one-to-one', () => {
+  assert.deepEqual(getAdminTabPreloadChunkIds('users', 'members'), [
+    'admin-members',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('users', 'groups'), [
+    'admin-groups',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('users', 'guests'), [
+    'admin-guests',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('users', 'delegations'), [
+    'admin-delegations',
+  ]);
+
+  // SCIM tokens now belong to the Integrations tab and must not be downloaded
+  // when `/admin/users?tab=members` is the landing view.
+  assert.ok(
+    !getAdminTabPreloadChunkIds('users', 'members').includes(
+      'admin-scim-tokens'
+    )
+  );
+  assert.deepEqual(getAdminTabPreloadChunkIds('users', 'unknown-tab'), []);
+  assert.deepEqual(getAdminTabPreloadChunkIds('users', null), []);
 });
 
 test('getAdminTabPreloadChunkIds scopes reports tabs', () => {

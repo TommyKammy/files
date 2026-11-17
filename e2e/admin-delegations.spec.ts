@@ -23,6 +23,17 @@ test.describe('Admin Co-Admin delegations (TOM-73)', () => {
           exact: true,
         })
       ).toBeVisible();
+      await expect(admin.page.getByTestId('admin-tab-members')).toHaveAttribute(
+        'aria-selected',
+        'true'
+      );
+      await admin.page.getByTestId('admin-tab-delegations').click();
+      await expect(
+        admin.page.getByTestId('admin-tabpanel-delegations')
+      ).toBeVisible();
+      await expect(
+        admin.page.getByTestId('delegation-create-open')
+      ).toBeVisible();
       await admin.page.getByTestId('delegation-create-open').click();
       await admin.page
         .getByTestId('delegation-user-select')

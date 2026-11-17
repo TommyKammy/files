@@ -230,7 +230,7 @@ export const ADMIN_CONSOLE_TABS: Record<
       section: 'users',
       label: '管理対象ユーザー',
       summary:
-        '社内メンバーのロール・クォータ・停止/再開・一括登録と SCIM トークンを管理します。',
+        '社内メンバーのロール・クォータ・停止/再開・CSV 一括登録・オフボーディングを管理します。',
       capabilities: [
         'admin.users.read',
         'admin.users.suspend',
@@ -262,7 +262,7 @@ export const ADMIN_CONSOLE_TABS: Record<
       label: '共同管理者 (Co-Admin)',
       summary:
         'メンバーへ委任する管理 Capability とグループ/ルートフォルダのスコープを管理します。',
-      capabilities: ['admin.users.read', 'admin.users.manage'],
+      capabilities: ['admin.users.manage'],
       ownedApiPrefixes: ['/api/admin/delegations'],
     },
   ],
@@ -568,7 +568,7 @@ const ADMIN_TAB_PRELOAD_CHUNKS: Record<
     'ai-classification': ['ai-suggestion-queue'],
   },
   users: {
-    members: ['admin-members', 'admin-scim-tokens'],
+    members: ['admin-members'],
     groups: ['admin-groups'],
     guests: ['admin-guests'],
     delegations: ['admin-delegations'],

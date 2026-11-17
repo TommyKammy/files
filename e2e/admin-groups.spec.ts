@@ -27,21 +27,32 @@ test.describe('グループ管理 & SCIM トークン管理 (P11-3 / TOM-69)', (
     const issuer = `https://idp-${suffix}.example.com`;
 
     await page.goto('/admin/users');
+    await expect(page.getByTestId('admin-tab-members')).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
     await expect(page.getByTestId('admin-members-section')).toBeVisible();
-    await expect(page.getByTestId('admin-groups-section')).toBeVisible();
-    await expect(page.getByTestId('admin-scim-tokens-section')).toBeVisible();
-    await expect(page.getByTestId('admin-guests-section')).toBeVisible();
+    await expect(page.getByTestId('admin-guests-section')).toHaveCount(0);
+    await expect(page.getByTestId('admin-scim-tokens-section')).toHaveCount(0);
+
+    await page.getByTestId('admin-tab-groups').click();
+    await expect(page.getByTestId('admin-tabpanel-groups')).toBeVisible();
 
     const groups = page.getByTestId('admin-groups-section');
     const tokens = page.getByTestId('admin-scim-tokens-section');
+    await expect(groups).toBeVisible();
+    await expect(tokens).toHaveCount(0);
     await expect(groups.getByTestId('group-rbac-notice')).toContainText(
       'SCIM 同期グループ'
     );
-    await expect(tokens.getByTestId('scim-token-rbac-notice')).toContainText(
-      '1 回だけ'
-    );
-    await expect(tokens.getByTestId('scim-endpoint-base-url')).toContainText(
-      '/scim/v2'
+
+    // The group console links straight to the Integrations tab where SCIM
+    // token management now lives.
+    const integrationLink = groups.getByTestId('group-scim-integration-link');
+    await expect(integrationLink).toBeVisible();
+    await expect(integrationLink).toHaveAttribute(
+      'href',
+      '/admin/settings?tab=integrations'
     );
 
     // Manual group creation.
@@ -94,6 +105,18 @@ test.describe('グループ管理 & SCIM トークン管理 (P11-3 / TOM-69)', (
     );
     await detail.getByTestId('group-detail-close').click();
 
+    // Follow the group console shortcut to the Integrations tab.
+    await integrationLink.click();
+    await expect(page).toHaveURL(/\/admin\/settings\?tab=integrations$/);
+    await expect(page.getByTestId('admin-tabpanel-integrations')).toBeVisible();
+    await expect(tokens).toBeVisible();
+    await expect(tokens.getByTestId('scim-token-rbac-notice')).toContainText(
+      '1 回だけ'
+    );
+    await expect(tokens.getByTestId('scim-endpoint-base-url')).toContainText(
+      '/scim/v2'
+    );
+
     // Issue a SCIM token and verify the one-time plaintext.
     await tokens.getByTestId('scim-token-open-create').click();
     const tokenCreate = page.getByTestId('scim-token-create-modal');
@@ -140,6 +163,8 @@ test.describe('グループ管理 & SCIM トークン管理 (P11-3 / TOM-69)', (
     expect(scimGroupResponse.status()).toBe(201);
     const scimGroup = (await scimGroupResponse.json()) as ScimGroupResponse;
 
+    await page.goto('/admin/users?tab=groups');
+    await expect(groups).toBeVisible();
     await groups.getByTestId('group-filter-query').fill(scimGroupName);
     await groups.getByTestId('group-filter-apply').click();
     const scimRow = groups
@@ -163,6 +188,10 @@ test.describe('グループ管理 & SCIM トークン管理 (P11-3 / TOM-69)', (
       headers: { Authorization: `Bearer ${firstToken}` },
     });
     expect(scimDelete.status()).toBe(204);
+
+    // Back to the Integrations tab for token rotation/revocation.
+    await page.goto('/admin/settings?tab=integrations');
+    await expect(tokens).toBeVisible();
 
     // Rotate: old token must be rejected, new token accepted.
     await tokenRow.getByTestId('scim-token-rotate-action').click();
@@ -218,6 +247,8 @@ test.describe('グループ管理 & SCIM トークン管理 (P11-3 / TOM-69)', (
     expect(revokedAuth.status()).toBe(401);
 
     // Delete the manual group through the console.
+    await page.goto('/admin/users?tab=groups');
+    await expect(groups).toBeVisible();
     await groups.getByTestId('group-filter-query').fill(groupName);
     await groups.getByTestId('group-filter-apply').click();
     const reloadedRow = groups
@@ -243,20 +274,27 @@ test.describe('グループ管理 & SCIM トークン管理 (P11-3 / TOM-69)', (
 
     await page.goto('/admin/users');
     const groups = page.getByTestId('admin-groups-section');
-    const tokens = page.getByTestId('admin-scim-tokens-section');
-    await expect(groups).toBeVisible();
-    await expect(tokens).toBeVisible();
+    await expect(page.getByTestId('admin-tab-members')).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
     await expect(page.getByTestId('admin-members-section')).toBeVisible();
-    await expect(page.getByTestId('admin-guests-section')).toBeVisible();
+    await expect(page.getByTestId('admin-guests-section')).toHaveCount(0);
+
+    await page.getByTestId('admin-tab-groups').click();
+    await expect(groups).toBeVisible();
+    await expect(page.getByTestId('admin-scim-tokens-section')).toHaveCount(0);
 
     await expect(groups.getByTestId('group-rbac-notice')).toContainText(
       'sys_admin 専用'
     );
     await expect(groups.getByTestId('group-open-create')).toBeDisabled();
-    await expect(tokens.getByTestId('scim-token-rbac-notice')).toContainText(
-      'sys_admin 専用'
+
+    const integrationLink = groups.getByTestId('group-scim-integration-link');
+    await expect(integrationLink).toHaveAttribute(
+      'href',
+      '/admin/settings?tab=integrations'
     );
-    await expect(tokens.getByTestId('scim-token-open-create')).toBeDisabled();
 
     // Seeded manual group detail is read-only for sec_admin.
     await groups.getByTestId('group-filter-query').fill('E2E Collaborators');
@@ -276,6 +314,16 @@ test.describe('グループ管理 & SCIM トークン管理 (P11-3 / TOM-69)', (
     await expect(detail.getByTestId('group-delete-open')).toBeDisabled();
     await expect(detail.getByTestId('group-member-add-submit')).toBeDisabled();
     await detail.getByTestId('group-detail-close').click();
+
+    // SCIM tokens are read-only for sec_admin on the Integrations tab.
+    await integrationLink.click();
+    await expect(page).toHaveURL(/\/admin\/settings\?tab=integrations$/);
+    const tokens = page.getByTestId('admin-scim-tokens-section');
+    await expect(tokens).toBeVisible();
+    await expect(tokens.getByTestId('scim-token-rbac-notice')).toContainText(
+      'sys_admin 専用'
+    );
+    await expect(tokens.getByTestId('scim-token-open-create')).toBeDisabled();
 
     // Seeded SCIM token row is visible but its actions are disabled.
     const tokenRow = tokens

@@ -14,6 +14,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import Link from 'next/link';
 import {
   useCallback,
   useEffect,
@@ -473,17 +474,26 @@ export function AdminGroupsSection({ user }: { user: AuthUser | null }) {
         </div>
       </header>
 
-      <p
-        id={`${baseId}-rbac`}
-        data-testid="group-rbac-notice"
-        className={`mb-4 rounded-xl border px-3 py-2 text-[0.6875rem] ${
-          canManage
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-            : 'border-amber-200 bg-amber-50 text-amber-900'
-        }`}
-      >
-        {groupPermissionNotice(role, user?.adminCapabilities)}
-      </p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <p
+          id={`${baseId}-rbac`}
+          data-testid="group-rbac-notice"
+          className={`min-w-0 flex-1 rounded-xl border px-3 py-2 text-[0.6875rem] ${
+            canManage
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              : 'border-amber-200 bg-amber-50 text-amber-900'
+          }`}
+        >
+          {groupPermissionNotice(role, user?.adminCapabilities)}
+        </p>
+        <Link
+          href="/admin/settings?tab=integrations"
+          data-testid="group-scim-integration-link"
+          className="inline-flex h-7 shrink-0 items-center rounded-md border border-[#d7d7dc] bg-white px-2.5 text-[0.6875rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4]"
+        >
+          SCIM トークン管理 (統合)
+        </Link>
+      </div>
 
       <div className="mb-4 grid gap-2 sm:grid-cols-3">
         {summaryCards.map((card) => (

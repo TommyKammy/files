@@ -732,12 +732,10 @@ export function HybridGovernanceDashboard({
     if (section === 'users') {
       switch (tabId) {
         case 'members':
-          return (
-            <>
-              {membersPanel}
-              {scimPanel}
-            </>
-          );
+          // SCIM tokens live on the Integrations tab, so the default members
+          // view mounts only the member panel (no `/api/admin/scim-tokens`
+          // request on first paint).
+          return membersPanel;
         case 'groups':
           return groupsPanel;
         case 'guests':

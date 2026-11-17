@@ -72,12 +72,25 @@ test.describe('社内メンバー管理 (P11-2 / TOM-64)', () => {
     await admin.page.goto('/admin/users');
     const members = admin.page.getByTestId('admin-members-section');
     await expect(members).toBeVisible();
-    // The guest console must remain visible on the same page and preserve its
-    // existing selectors for the external guest E2E suite.
-    await expect(admin.page.getByTestId('admin-guests-section')).toBeVisible();
+    // `/admin/users` defaults to the members tab and mounts only that panel:
+    // other sections are not stacked below it anymore.
+    await expect(admin.page.getByTestId('admin-tab-members')).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    await expect(admin.page.getByTestId('admin-tabpanel-members')).toBeVisible();
+    await expect(admin.page.getByTestId('admin-guests-section')).toHaveCount(0);
     await expect(members.getByTestId('member-rbac-notice')).toContainText(
       'すべて実行できます'
     );
+
+    // The guest console lives behind its own tab and preserves its selectors.
+    await admin.page.getByTestId('admin-tab-guests').click();
+    await expect(admin.page.getByTestId('admin-tabpanel-guests')).toBeVisible();
+    await expect(admin.page.getByTestId('admin-guests-section')).toBeVisible();
+    await expect(members).toHaveCount(0);
+    await admin.page.getByTestId('admin-tab-members').click();
+    await expect(members).toBeVisible();
 
     // Registration modal.
     await members.getByTestId('member-open-create').click();
@@ -326,7 +339,11 @@ test.describe('社内メンバー管理 (P11-2 / TOM-64)', () => {
     await sec.page.goto('/admin/users');
     const members = sec.page.getByTestId('admin-members-section');
     await expect(members).toBeVisible();
-    await expect(sec.page.getByTestId('admin-guests-section')).toBeVisible();
+    await expect(sec.page.getByTestId('admin-tab-members')).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    await expect(sec.page.getByTestId('admin-guests-section')).toHaveCount(0);
     await expect(members.getByTestId('member-rbac-notice')).toContainText(
       '一般メンバーの停止・再開'
     );
