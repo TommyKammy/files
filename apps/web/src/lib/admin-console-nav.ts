@@ -69,7 +69,7 @@ export const ADMIN_CONSOLE_NAV_ITEMS: readonly AdminConsoleNavItem[] = [
     label: 'ユーザーとグループ',
     heading: 'ユーザーとグループ',
     summary:
-      '社内メンバーと外部ゲストの検索・ロール/クォータ管理・停止/再開・一括登録・監査を管理します。',
+      '社内メンバー・グループ・SCIM トークンと外部ゲストの検索・ロール/クォータ管理・停止/再開・一括登録・監査を管理します。',
     roles: ['sys_admin', 'sec_admin'],
   },
   {

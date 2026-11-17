@@ -1337,6 +1337,123 @@ export interface AdminMemberBulkImportResponse {
   notice: string;
 }
 
+/* ------------------------------------------------------------------ */
+/* P11-3 / TOM-69 admin group & SCIM token management                  */
+/* ------------------------------------------------------------------ */
+
+export type AdminGroupSource = 'scim' | 'manual';
+export type AdminGroupSourceFilter = 'all' | AdminGroupSource;
+
+export interface AdminGroupRow {
+  id: string;
+  name: string;
+  source: AdminGroupSource;
+  externalIdpId: string | null;
+  memberCount: number;
+  permissionCount: number;
+  createdAt: string;
+}
+
+export interface AdminGroupSummary {
+  total: number;
+  manualCount: number;
+  scimCount: number;
+}
+
+export interface AdminGroupListQuery {
+  query?: string;
+  source?: AdminGroupSourceFilter;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AdminGroupListResponse {
+  groups: AdminGroupRow[];
+  total: number;
+  limit: number;
+  offset: number;
+  nextOffset: number | null;
+  summary: AdminGroupSummary;
+  aggregations?: AdminGroupSummary;
+}
+
+export interface AdminGroupMember {
+  id: string;
+  email: string;
+  displayName: string;
+  department: string | null;
+  role: UserRole;
+  status: 'active' | 'suspended';
+  addedAt: string;
+}
+
+export interface AdminGroupPermission {
+  id: string;
+  targetType: 'folder' | 'file';
+  targetId: string;
+  targetName: string;
+  targetPath: string;
+  role: ResourceRole;
+  grantedBy: string | null;
+  grantedByName: string | null;
+  createdAt: string;
+}
+
+export interface AdminGroupDetailResponse {
+  group: AdminGroupRow;
+  members: AdminGroupMember[];
+  permissions: AdminGroupPermission[];
+  scimManaged: boolean;
+}
+
+export interface AdminGroupMutationResponse {
+  ok: boolean;
+  group?: AdminGroupRow;
+  groupId: string;
+  deletedPermissions?: number;
+  deletedMembers?: number;
+  addedUserIds?: string[];
+  addedCount?: number;
+  alreadyMemberUserIds?: string[];
+  memberCount?: number;
+  syncSeq: number | null;
+  notice: string;
+}
+
+export type AdminScimTokenStatus = 'active' | 'revoked';
+
+export interface AdminScimTokenRow {
+  id: string;
+  name: string;
+  idpIssuer: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+  status: AdminScimTokenStatus;
+}
+
+export interface AdminScimTokenListResponse {
+  tokens: AdminScimTokenRow[];
+  total: number;
+  activeCount: number;
+  revokedCount: number;
+  endpoint: '/scim/v2';
+}
+
+export interface AdminScimTokenMutationResponse {
+  ok: boolean;
+  token?: string;
+  scimToken: AdminScimTokenRow;
+  revokedTokenId?: string;
+  alreadyRevoked?: boolean;
+  notice: string;
+}
+
+export interface AdminScimTokenCreateInput {
+  name: string;
+  idpIssuer: string;
+}
+
 export interface GuestInvitationListResponse {
   invitations: GuestInvitationSummary[];
 }

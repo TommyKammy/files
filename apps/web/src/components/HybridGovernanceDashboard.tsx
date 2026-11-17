@@ -10,9 +10,11 @@ import Link from 'next/link';
 import { AccessControlSettingsSection } from '@/components/admin/AccessControlSettingsSection';
 import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
 import { AdminGuestsSection } from '@/components/admin/AdminGuestsSection';
+import { AdminGroupsSection } from '@/components/admin/AdminGroupsSection';
 import { AdminMembersSection } from '@/components/admin/AdminMembersSection';
 import { AdminPermissionAuditSection } from '@/components/admin/AdminPermissionAuditSection';
 import { AdminRootFoldersSection } from '@/components/admin/AdminRootFoldersSection';
+import { AdminScimTokensSection } from '@/components/admin/AdminScimTokensSection';
 import { AdminTrashSection } from '@/components/admin/AdminTrashSection';
 import { AuditLogSection } from '@/components/admin/AuditLogSection';
 import { GuestPolicySection } from '@/components/admin/GuestPolicySection';
@@ -333,6 +335,8 @@ export function HybridGovernanceDashboard({
                     user={user}
                     onShowAuditLogs={handleShowMemberAudit}
                   />
+                  <AdminGroupsSection user={user} />
+                  <AdminScimTokensSection user={user} />
                   <AdminGuestsSection
                     user={user}
                     onShowAuditLogs={handleShowGuestAudit}
