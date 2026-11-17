@@ -22,6 +22,13 @@ import {
   loadAdminOffboardingPreview,
   offboardAdminMember,
 } from '../../services/admin-offboarding';
+import {
+  AdminDelegationError,
+  assertAdminUserInScopeGroup,
+  assertDelegatedTargetUserAllowed,
+  getAdminScope,
+  isDelegatedAdmin,
+} from '../../services/admin-delegations';
 import { getAuthenticatedUser } from '../../services/authorization';
 import { emitTenantSyncSignal } from '../../services/sync-notifier';
 import type { OidcHonoEnv } from '../../types/oidc';
@@ -51,6 +58,9 @@ function adminUserErrorResponse(
     return c.json({ error: err.message, code: err.code }, err.status);
   }
   if (err instanceof AdminBulkIdempotencyError) {
+    return c.json({ error: err.message, code: err.code }, err.status);
+  }
+  if (err instanceof AdminDelegationError) {
     return c.json({ error: err.message, code: err.code }, err.status);
   }
   throw err;
@@ -141,6 +151,7 @@ export function registerAdminUserRoutes(routes: Hono<OidcHonoEnv>) {
       sortDir: sortDirRaw,
       limit: parseLimit(c.req.query('limit'), 50, 200),
       offset: parseOffset(c.req.query('offset')),
+      scopeGroupId: getAdminScope(user)?.groupId ?? null,
     };
 
     const result = await listAdminUsers(c.env.DB, user.tenantId, filters);
@@ -170,6 +181,14 @@ export function registerAdminUserRoutes(routes: Hono<OidcHonoEnv>) {
           404
         );
       }
+      if (isDelegatedAdmin(user)) {
+        await assertAdminUserInScopeGroup(
+          c.env.DB,
+          user.tenantId,
+          getAdminScope(user)?.groupId ?? null,
+          memberId
+        );
+      }
       return c.json(detail);
     } catch (err) {
       return adminUserErrorResponse(c, err);
@@ -182,6 +201,15 @@ export function registerAdminUserRoutes(routes: Hono<OidcHonoEnv>) {
    */
   routes.get('/users/:id/offboarding-preview', async (c) => {
     const user = getAuthenticatedUser(c);
+    if (user.role === 'member') {
+      return c.json(
+        {
+          error: 'Co-Admins cannot preview offboarding',
+          code: 'PRIVILEGE_ESCALATION_FORBIDDEN',
+        },
+        403
+      );
+    }
     if (user.role !== 'sys_admin' && user.role !== 'sec_admin') {
       return c.json(
         {
@@ -209,6 +237,15 @@ export function registerAdminUserRoutes(routes: Hono<OidcHonoEnv>) {
    */
   routes.post('/users/:id/offboard', async (c) => {
     const user = getAuthenticatedUser(c);
+    if (user.role === 'member') {
+      return c.json(
+        {
+          error: 'Offboarding is reserved for sys_admin',
+          code: 'PRIVILEGE_ESCALATION_FORBIDDEN',
+        },
+        403
+      );
+    }
     if (user.role !== 'sys_admin') {
       return c.json(
         {
@@ -291,6 +328,15 @@ export function registerAdminUserRoutes(routes: Hono<OidcHonoEnv>) {
   /** POST /api/admin/users — individual member registration (sys_admin). */
   routes.post('/users', async (c) => {
     const user = getAuthenticatedUser(c);
+    if (user.role === 'member') {
+      return c.json(
+        {
+          error: 'Co-Admins cannot register members or change roles',
+          code: 'PRIVILEGE_ESCALATION_FORBIDDEN',
+        },
+        403
+      );
+    }
     if (user.role !== 'sys_admin') {
       return c.json(
         {
@@ -330,6 +376,15 @@ export function registerAdminUserRoutes(routes: Hono<OidcHonoEnv>) {
   /** PATCH /api/admin/users/:id — profile, role and quota update (sys_admin). */
   routes.patch('/users/:id', async (c) => {
     const user = getAuthenticatedUser(c);
+    if (user.role === 'member') {
+      return c.json(
+        {
+          error: 'Co-Admins cannot change roles or personal quotas',
+          code: 'PRIVILEGE_ESCALATION_FORBIDDEN',
+        },
+        403
+      );
+    }
     if (user.role !== 'sys_admin') {
       return c.json(
         {
@@ -375,6 +430,14 @@ export function registerAdminUserRoutes(routes: Hono<OidcHonoEnv>) {
       | Record<string, unknown>
       | null;
     try {
+      if (isDelegatedAdmin(user)) {
+        await assertDelegatedTargetUserAllowed(
+          c.env.DB,
+          user.tenantId,
+          user,
+          c.req.param('id')
+        );
+      }
       const result = await suspendAdminUser({
         db: c.env.DB,
         tenantId: user.tenantId,
@@ -407,6 +470,14 @@ export function registerAdminUserRoutes(routes: Hono<OidcHonoEnv>) {
       | Record<string, unknown>
       | null;
     try {
+      if (isDelegatedAdmin(user)) {
+        await assertDelegatedTargetUserAllowed(
+          c.env.DB,
+          user.tenantId,
+          user,
+          c.req.param('id')
+        );
+      }
       const result = await resumeAdminUser({
         db: c.env.DB,
         tenantId: user.tenantId,
@@ -437,6 +508,15 @@ export function registerAdminUserRoutes(routes: Hono<OidcHonoEnv>) {
    */
   routes.post('/users/bulk-import', async (c) => {
     const user = getAuthenticatedUser(c);
+    if (user.role === 'member') {
+      return c.json(
+        {
+          error: 'Bulk member import is reserved for sys_admin',
+          code: 'PRIVILEGE_ESCALATION_FORBIDDEN',
+        },
+        403
+      );
+    }
     if (user.role !== 'sys_admin') {
       return c.json(
         {

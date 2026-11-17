@@ -2,6 +2,11 @@ import { createMiddleware } from 'hono/factory';
 import type { AuthUser, ClassificationLabel, ResourceRole, UserRole } from '../types/api';
 import type { OidcHonoEnv } from '../types/oidc';
 import {
+  hasAdminCapability,
+  hasAnyAdminCapability,
+  type AdminCapability,
+} from './admin-delegations';
+import {
   can,
   capabilitiesForRole,
   capabilityRoleSqlList,
@@ -127,6 +132,142 @@ export function requireUserRoleMiddleware(allowedRoles: ReadonlyArray<UserRole>)
 
 export const requireSysAdmin = requireUserRoleMiddleware(['sys_admin']);
 export const requireSecOrSysAdmin = requireUserRoleMiddleware(['sys_admin', 'sec_admin']);
+
+/**
+ * Router gate for the governance console (P13-1 / TOM-73).
+ *
+ * `sys_admin` / `sec_admin` keep their legacy access. Internal `member`s pass
+ * only when an active `admin_delegations` row resolved at least one fine
+ * grained capability. Every endpoint still adds `requireAdminCapability(...)`
+ * so a Co-Admin cannot reach a sibling capability surface.
+ */
+export const requireAdminConsoleAccess = createMiddleware<OidcHonoEnv>(
+  async (c, next) => {
+    const user = c.get('user');
+    if (!user) {
+      return c.json({ error: 'Authentication required' }, 401);
+    }
+    if (user.userType === 'guest') {
+      return c.json(
+        {
+          error: 'Forbidden: guest accounts cannot access internal features',
+          code: 'GUEST_FORBIDDEN',
+        },
+        403
+      );
+    }
+    if (!hasAnyAdminCapability(user)) {
+      return c.json(
+        {
+          error: 'Forbidden: administrative capability required',
+          code: 'ADMIN_CAPABILITY_REQUIRED',
+        },
+        403
+      );
+    }
+    await next();
+  }
+);
+
+export function requireAdminCapability(capability: AdminCapability) {
+  return createMiddleware<OidcHonoEnv>(async (c, next) => {
+    const user = c.get('user');
+    if (!user) {
+      return c.json({ error: 'Authentication required' }, 401);
+    }
+    if (user.userType === 'guest') {
+      return c.json(
+        {
+          error: 'Forbidden: guest accounts cannot access internal features',
+          code: 'GUEST_FORBIDDEN',
+        },
+        403
+      );
+    }
+    // sys_admin / sec_admin keep the pre-TOM-73 router behavior: capability
+    // narrowing only applies to delegated members. The route handlers still
+    // enforce every legacy sys_admin-only constraint for sec_admin.
+    if (user.role === 'sys_admin' || user.role === 'sec_admin') {
+      await next();
+      return;
+    }
+    if (!hasAdminCapability(user, capability)) {
+      // `admin.users.manage` is the gate in front of role changes, member
+      // registration, offboarding, SCIM and other sys_admin-only operations.
+      // Returning the escalation code keeps the Co-Admin contract explicit
+      // even though the handler also rejects the request.
+      const code =
+        user.role === 'member' && capability === 'admin.users.manage'
+          ? 'PRIVILEGE_ESCALATION_FORBIDDEN'
+          : 'ADMIN_CAPABILITY_REQUIRED';
+      return c.json(
+        {
+          error: `Forbidden: ${capability} capability required`,
+          code,
+          capability,
+        },
+        403
+      );
+    }
+    await next();
+  });
+}
+
+/**
+ * Capability gate that only applies to the listed HTTP methods. Keeps
+ * read/mutate pairs on the same Hono path (e.g. GET /policies vs PATCH
+ * /policies) on their narrowest capability without duplicating routers.
+ */
+export function requireAdminCapabilityForMethods(
+  capability: AdminCapability,
+  methods: ReadonlyArray<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'>
+) {
+  const allowedMethods = new Set(methods);
+  const guard = requireAdminCapability(capability);
+  return createMiddleware<OidcHonoEnv>(async (c, next) => {
+    if (!allowedMethods.has(c.req.method as 'GET')) {
+      await next();
+      return;
+    }
+    return guard(c, next);
+  });
+}
+
+/** Any of the given capabilities grants access; used by mixed-content tabs. */
+export function requireAnyAdminCapability(
+  capabilities: readonly AdminCapability[]
+) {
+  return createMiddleware<OidcHonoEnv>(async (c, next) => {
+    const user = c.get('user');
+    if (!user) {
+      return c.json({ error: 'Authentication required' }, 401);
+    }
+    if (user.userType === 'guest') {
+      return c.json(
+        {
+          error: 'Forbidden: guest accounts cannot access internal features',
+          code: 'GUEST_FORBIDDEN',
+        },
+        403
+      );
+    }
+    if (user.role === 'sys_admin' || user.role === 'sec_admin') {
+      await next();
+      return;
+    }
+    if (!capabilities.some((capability) => hasAdminCapability(user, capability))) {
+      return c.json(
+        {
+          error: 'Forbidden: administrative capability required',
+          code: 'ADMIN_CAPABILITY_REQUIRED',
+          capabilities,
+        },
+        403
+      );
+    }
+    await next();
+  });
+}
 
 /**
  * Block external guest accounts from internal/member-only surfaces

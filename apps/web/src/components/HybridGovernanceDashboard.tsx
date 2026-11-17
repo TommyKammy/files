@@ -11,6 +11,7 @@ import { AccessControlSettingsSection } from '@/components/admin/AccessControlSe
 import { AdminAuthControlSection } from '@/components/admin/AdminAuthControlSection';
 import { AdminContentManagerSection } from '@/components/admin/AdminContentManagerSection';
 import { AdminComplianceSettingsSection } from '@/components/admin/AdminComplianceSettingsSection';
+import { AdminDelegationsSection } from '@/components/admin/AdminDelegationsSection';
 import { AdminFileRequestsSection } from '@/components/admin/AdminFileRequestsSection';
 import { AdminInsightsDashboardSection } from '@/components/admin/AdminInsightsDashboardSection';
 import { AdminQuotaWarningBanner } from '@/components/admin/AdminQuotaWarningBanner';
@@ -32,9 +33,15 @@ import { AdminConsoleShell } from '@/components/AdminConsoleShell';
 import { AppShellRail } from '@/components/AppShellRail';
 import {
   adminSectionHasDashboardFetch,
+  canViewAdminConsoleSection,
   getAdminConsoleNavItem,
+  getVisibleAdminNavItems,
   type AdminConsoleSection,
 } from '@/lib/admin-console-nav';
+import {
+  canAccessAdminSurface,
+  hasAdminCapability,
+} from '@/lib/admin-delegations';
 import { readQuotaThresholds } from '@/lib/admin-compliance';
 import { useGovernanceDashboard } from '@/lib/use-governance-dashboard';
 import { LocalDevQuickLoginPanel, SignInCard } from '@/components/SignInCard';
@@ -52,6 +59,7 @@ export function HybridGovernanceDashboard({
     user,
     authChecked,
     isPrivilegedAdmin,
+    sectionAllowed,
     loading,
     initialLoadComplete,
     error,
@@ -136,7 +144,8 @@ export function HybridGovernanceDashboard({
   const navItem = getAdminConsoleNavItem(section);
   const hasDashboardFetch = adminSectionHasDashboardFetch(section);
   const showSection = (target: Exclude<AdminConsoleSection, 'all'>) =>
-    section === 'all' || section === target;
+    (section === 'all' || section === target) &&
+    canAccessAdminSurface(user, target);
 
   if (!authChecked) {
     return (
@@ -202,6 +211,43 @@ export function HybridGovernanceDashboard({
           void syncStore.adoptAuthenticatedUser(signedIn);
         }}
             />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!sectionAllowed) {
+    const visibleItems = getVisibleAdminNavItems(user);
+    return (
+      <div className="flex min-h-screen bg-[#efeff1] text-slate-900">
+        <AppShellRail user={user} activeView="admin" />
+        <main className="flex flex-1 items-center justify-center p-8">
+          <div
+            data-testid="admin-section-denied"
+            className="max-w-lg rounded-2xl border border-amber-200 bg-white p-8 text-center shadow-xs space-y-3"
+          >
+            <ShieldAlert className="mx-auto h-8 w-8 text-amber-500" />
+            <h1 className="text-base font-semibold text-slate-900">
+              権限がありません
+            </h1>
+            <p className="text-[0.6875rem] text-[#55565a]">
+              このセクションを表示する管理 Capability が委任されていません。
+              許可済みのタブから利用してください。
+            </p>
+            {visibleItems.length > 0 && (
+              <div className="flex flex-wrap justify-center gap-2 pt-1">
+                {visibleItems.map((item) => (
+                  <Link
+                    key={item.section}
+                    href={item.href}
+                    className="inline-flex rounded-md border border-[#e1e1e4] bg-white px-3 py-1.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4]"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         </main>
       </div>
@@ -313,7 +359,8 @@ export function HybridGovernanceDashboard({
                 />
               )}
 
-              {showSection('content') && (
+              {showSection('content') &&
+                hasAdminCapability(user, 'admin.content.unlock') && (
                 <AiSuggestionQueue
                   suggestions={suggestions}
                   selectedIds={selectedIds}
@@ -327,11 +374,18 @@ export function HybridGovernanceDashboard({
                 />
               )}
 
-              {showSection('content') && <AdminContentManagerSection />}
+              {showSection('content') &&
+                hasAdminCapability(user, 'admin.content.unlock') && (
+                  <AdminContentManagerSection />
+                )}
 
-              {showSection('content') && <AdminFileRequestsSection />}
+              {showSection('content') &&
+                hasAdminCapability(user, 'admin.content.unlock') && (
+                  <AdminFileRequestsSection />
+                )}
 
-              {showSection('settings') && (
+              {showSection('settings') &&
+                hasAdminCapability(user, 'admin.policies.edit') && (
                 <AccessControlSettingsSection
                   policy={policy}
                   saving={advancedRolesSaving}
@@ -369,7 +423,8 @@ export function HybridGovernanceDashboard({
                 />
               )}
 
-              {showSection('settings') && (
+              {showSection('settings') &&
+                hasAdminCapability(user, 'admin.policies.read') && (
                 <AdminAuthControlSection
                   user={user}
                   policy={policy}
@@ -377,7 +432,8 @@ export function HybridGovernanceDashboard({
                 />
               )}
 
-              {showSection('settings') && (
+              {showSection('settings') &&
+                hasAdminCapability(user, 'admin.policies.read') && (
                 <AdminComplianceSettingsSection
                   policy={policy}
                   canManage={user.role === 'sys_admin'}
@@ -385,15 +441,18 @@ export function HybridGovernanceDashboard({
                 />
               )}
 
-              {showSection('settings') && (
+              {showSection('settings') &&
+                hasAdminCapability(user, 'admin.policies.read') && (
                 <AdminSiemSettingsSection canManage={user.role === 'sys_admin'} />
               )}
 
-              {showSection('settings') && (
+              {showSection('settings') &&
+                hasAdminCapability(user, 'admin.users.read') && (
                 <AdminSessionsSection user={user} />
               )}
 
-              {showSection('settings') && (
+              {showSection('settings') &&
+                hasAdminCapability(user, 'admin.links.revoke') && (
                 <SharedLinksPolicySection
                   sharedLinks={sharedLinks}
                   policy={policy}
@@ -404,25 +463,34 @@ export function HybridGovernanceDashboard({
                 />
               )}
 
-              {showSection('content') && <AdminTrashSection user={user} />}
+              {showSection('content') &&
+                hasAdminCapability(user, 'admin.trash.manage') && (
+                  <AdminTrashSection user={user} />
+                )}
 
-              {showSection('reports') && <AdminReportsSection />}
+              {showSection('reports') &&
+                hasAdminCapability(user, 'admin.reports.run') && (
+                  <AdminReportsSection />
+                )}
 
-              {showSection('reports') && (
+              {showSection('reports') &&
+                hasAdminCapability(user, 'admin.permissions.audit') && (
                 <AdminPermissionAuditSection
                   user={user}
                   onShowPermissionAudit={handleShowPermissionAudit}
                 />
               )}
 
-              {showSection('content') && (
+              {showSection('content') &&
+                hasAdminCapability(user, 'admin.root_folders.read') && (
                 <AdminRootFoldersSection
                   user={user}
                   onShowAuditLogs={handleShowRootFolderAudit}
                 />
               )}
 
-              {showSection('settings') && (
+              {showSection('settings') &&
+                hasAdminCapability(user, 'admin.policies.read') && (
                 <GuestPolicySection
                   policy={policy}
                   canManage={user.role === 'sys_admin'}
@@ -432,20 +500,32 @@ export function HybridGovernanceDashboard({
 
               {showSection('users') && (
                 <div className="space-y-4">
-                  <AdminMembersSection
-                    user={user}
-                    onShowAuditLogs={handleShowMemberAudit}
-                  />
-                  <AdminGroupsSection user={user} />
-                  <AdminScimTokensSection user={user} />
-                  <AdminGuestsSection
-                    user={user}
-                    onShowAuditLogs={handleShowGuestAudit}
-                  />
+                  {(hasAdminCapability(user, 'admin.users.read') ||
+                    hasAdminCapability(user, 'admin.users.suspend')) && (
+                    <AdminMembersSection
+                      user={user}
+                      onShowAuditLogs={handleShowMemberAudit}
+                    />
+                  )}
+                  {(hasAdminCapability(user, 'admin.users.read') ||
+                    hasAdminCapability(user, 'admin.groups.manage')) && (
+                    <AdminGroupsSection user={user} />
+                  )}
+                  {hasAdminCapability(user, 'admin.users.read') && (
+                    <AdminScimTokensSection user={user} />
+                  )}
+                  {hasAdminCapability(user, 'admin.guests.manage') && (
+                    <AdminGuestsSection
+                      user={user}
+                      onShowAuditLogs={handleShowGuestAudit}
+                    />
+                  )}
+                  <AdminDelegationsSection user={user} />
                 </div>
               )}
 
-              {showSection('reports') && (
+              {showSection('reports') &&
+                hasAdminCapability(user, 'admin.audit.read') && (
                 <AuditLogSection
                   auditLogs={auditLogs}
                   auditCursor={auditCursor}

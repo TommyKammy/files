@@ -45,11 +45,13 @@ import {
 import {
   ADMIN_AUDIT_PRESETS,
   buildAdminAuditPresetHref,
+  canViewAdminConsoleSection,
   getAdminSectionFetchPlan,
   getAdminSectionOwnedApiPrefixes,
   parseAdminAuditPreset,
   type AdminConsoleSection,
 } from '@/lib/admin-console-nav';
+import { hasAdminCapability } from '@/lib/admin-delegations';
 import {
   ADMIN_INSIGHTS_DEFAULT_DAYS,
 } from '@/lib/admin-insights';
@@ -189,11 +191,23 @@ export function useGovernanceDashboard({
 
   const isPrivilegedAdmin =
     user?.userType !== 'guest' &&
-    (user?.role === 'sys_admin' || user?.role === 'sec_admin');
+    (user?.role === 'sys_admin' ||
+      user?.role === 'sec_admin' ||
+      (user?.adminCapabilities?.length ?? 0) > 0);
+  const sectionAllowed = canViewAdminConsoleSection(user, section);
 
   const loadAll = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!authChecked || !user || !isPrivilegedAdmin) return;
+      // A denied direct deep link must not call any section API. The shell
+      // renders the permission notice instead of a loading surface.
+      if (!sectionAllowed) {
+        if (!options?.silent) {
+          setLoading(false);
+          setInitialLoadComplete(true);
+        }
+        return;
+      }
 
       const plan = getAdminSectionFetchPlan(section);
       if (plan.completesImmediately) {
@@ -211,19 +225,23 @@ export function useGovernanceDashboard({
       try {
         const [statsRes, aiRes, linksRes, policyRes, logsRes, conflictsRes, insightsRes] =
           await Promise.all([
-            plan.storageStats ? fetchAdminStorageStats() : Promise.resolve(null),
-            plan.aiSuggestions
+            plan.storageStats && hasAdminCapability(user, 'admin.insights.read')
+              ? fetchAdminStorageStats()
+              : Promise.resolve(null),
+            plan.aiSuggestions && hasAdminCapability(user, 'admin.content.unlock')
               ? fetchAdminAiSuggestions({
                   suggestedLabel:
                     labelFilter === 'all' ? undefined : labelFilter,
                   limit: 50,
                 })
               : Promise.resolve(null),
-            plan.sharedLinks
+            plan.sharedLinks && hasAdminCapability(user, 'admin.links.revoke')
               ? fetchAdminSharedLinks(50)
               : Promise.resolve(null),
-            plan.policies ? fetchAdminPolicies() : Promise.resolve(null),
-            plan.auditLogs
+            plan.policies && hasAdminCapability(user, 'admin.policies.read')
+              ? fetchAdminPolicies()
+              : Promise.resolve(null),
+            plan.auditLogs && hasAdminCapability(user, 'admin.audit.read')
               ? fetchAuditLogs({
                   action: auditActionFilter.trim() || undefined,
                   actions:
@@ -245,10 +263,11 @@ export function useGovernanceDashboard({
                   limit: 50,
                 })
               : Promise.resolve(null),
-            plan.inheritanceConflicts
+            plan.inheritanceConflicts &&
+            hasAdminCapability(user, 'admin.policies.read')
               ? fetchInheritanceConflicts()
               : Promise.resolve(null),
-            plan.insights
+            plan.insights && hasAdminCapability(user, 'admin.insights.read')
               ? fetchAdminInsights(insightsDaysRef.current)
               : Promise.resolve(null),
           ]);
@@ -319,6 +338,7 @@ export function useGovernanceDashboard({
       user,
       isPrivilegedAdmin,
       section,
+      sectionAllowed,
       labelFilter,
       auditActionFilter,
       auditActionPreset,
@@ -334,13 +354,13 @@ export function useGovernanceDashboard({
   );
 
   useEffect(() => {
-    if (authChecked && isPrivilegedAdmin) {
+    if (authChecked && isPrivilegedAdmin && sectionAllowed) {
       void loadAll();
     } else if (authChecked) {
       setLoading(false);
       setInitialLoadComplete(true);
     }
-  }, [authChecked, isPrivilegedAdmin, loadAll]);
+  }, [authChecked, isPrivilegedAdmin, sectionAllowed, loadAll]);
 
   useEffect(() => {
     const raw =
@@ -848,7 +868,13 @@ export function useGovernanceDashboard({
   async function handleInsightsDaysChange(
     days: AdminInsightsRangeDays
   ): Promise<void> {
-    if (!isPrivilegedAdmin || insightsDays === days) return;
+    if (
+      !isPrivilegedAdmin ||
+      !hasAdminCapability(user, 'admin.insights.read') ||
+      insightsDays === days
+    ) {
+      return;
+    }
     insightsDaysRef.current = days;
     setInsightsDays(days);
     const requestId = insightsRequestRef.current + 1;
@@ -875,7 +901,13 @@ export function useGovernanceDashboard({
   }
 
   async function handleLoadMoreLogs() {
-    if (!auditCursor || auditLoadingMore) return;
+    if (
+      !auditCursor ||
+      auditLoadingMore ||
+      !hasAdminCapability(user, 'admin.audit.read')
+    ) {
+      return;
+    }
     setAuditLoadingMore(true);
     try {
       const res = await fetchAuditLogs({
@@ -916,6 +948,7 @@ export function useGovernanceDashboard({
     user,
     authChecked,
     isPrivilegedAdmin,
+    sectionAllowed,
     loading,
     initialLoadComplete,
     error,

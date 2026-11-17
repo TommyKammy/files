@@ -1,4 +1,5 @@
 import type { AuthUser, UserRole, UserType } from '../types/api';
+import { hasAdminCapability } from './admin-delegations';
 import { buildAuditLogStmt } from './audit';
 import { base64UrlToBytes, bytesToBase64Url } from './crypto-utils';
 
@@ -205,13 +206,18 @@ export function resolveAdminSessionKeepCurrent(
 }
 
 function assertAdminSessionActor(actor: AuthUser): void {
-  if (actor.role !== 'sys_admin' && actor.role !== 'sec_admin') {
-    throw new AdminSessionError(
-      403,
-      'INSUFFICIENT_ADMIN_ROLE',
-      'Only sys_admin or sec_admin can manage sessions'
-    );
+  if (actor.role === 'sys_admin' || actor.role === 'sec_admin') return;
+  if (
+    actor.role === 'member' &&
+    hasAdminCapability(actor, 'admin.users.suspend')
+  ) {
+    return;
   }
+  throw new AdminSessionError(
+    403,
+    'INSUFFICIENT_ADMIN_ROLE',
+    'Only sys_admin, sec_admin, or a delegated session operator can manage sessions'
+  );
 }
 
 /**
@@ -229,6 +235,13 @@ export function assertAdminCanTargetRole(
       'sec_admin cannot revoke sessions owned by sys_admin'
     );
   }
+  if (actor.role === 'member' && targetRole !== 'member') {
+    throw new AdminSessionError(
+      403,
+      'PRIVILEGE_ESCALATION_FORBIDDEN',
+      'Co-Admins cannot revoke sessions owned by privileged administrators'
+    );
+  }
 }
 
 /** The active-session list keyset query, exported for EXPLAIN QUERY PLAN tests. */
@@ -236,6 +249,8 @@ export function buildAdminSessionListQuery(input: {
   tenantId: string;
   nowIso: string;
   filters: AdminSessionFilters;
+  /** TOM-73 Co-Admin group scope; filters sessions to group members. */
+  scopeGroupId?: string | null;
 }): { sql: string; binds: Array<string | number> } {
   const { filters, tenantId, nowIso } = input;
   const conditions: string[] = [
@@ -252,6 +267,12 @@ export function buildAdminSessionListQuery(input: {
   if (filters.userType !== 'all') {
     conditions.push('u.user_type = ?');
     binds.push(filters.userType);
+  }
+  if (input.scopeGroupId) {
+    conditions.push(
+      'EXISTS (SELECT 1 FROM group_members gm WHERE gm.group_id = ? AND gm.user_id = s.user_id)'
+    );
+    binds.push(input.scopeGroupId);
   }
   if (filters.ip) {
     conditions.push('s.ip_address = ?');
@@ -333,12 +354,15 @@ export async function listAdminSessions(input: {
   actorSessionId: string | null;
   filters: AdminSessionFilters;
   nowIso?: string;
+  /** TOM-73 Co-Admin group scope. */
+  scopeGroupId?: string | null;
 }): Promise<AdminSessionListResult> {
   const nowIso = input.nowIso ?? new Date().toISOString();
   const query = buildAdminSessionListQuery({
     tenantId: input.tenantId,
     nowIso,
     filters: input.filters,
+    scopeGroupId: input.scopeGroupId ?? null,
   });
 
   const [rows, summaryRow] = await Promise.all([

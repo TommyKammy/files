@@ -5,7 +5,12 @@ import {
   SECURITY_BLOCKED_AUDIT_ACTIONS,
   USER_AUDIT_ACTION_PREFIXES,
 } from '@/lib/admin-audit';
-import type { UserRole } from '@/types/files';
+import {
+  canAccessAdminSurface,
+  getFirstAccessibleAdminHref,
+  isGovernanceConsoleUser,
+} from '@/lib/admin-delegations';
+import type { AuthUser, UserRole } from '@/types/files';
 
 /**
  * Pure definitions for the admin console information architecture.
@@ -111,6 +116,46 @@ export function getAdminConsoleNavItems(
 ): AdminConsoleNavItem[] {
   if (!isAdminConsoleRole(role)) return [];
   return ADMIN_CONSOLE_NAV_ITEMS.filter((item) => item.roles.includes(role));
+}
+
+/**
+ * TOM-73 capability-aware nav projection.
+ *
+ * sys_admin / sec_admin keep the full six-item console exactly as before.
+ * A delegated Co-Admin only receives the integrated view plus the focused
+ * routes their capabilities can actually use, so the shell can never render a
+ * tab whose APIs would immediately 403.
+ */
+export function getVisibleAdminNavItems(
+  user: Pick<AuthUser, 'role' | 'userType' | 'adminCapabilities'> | null | undefined
+): AdminConsoleNavItem[] {
+  if (!user || !isGovernanceConsoleUser(user)) return [];
+  if (isAdminConsoleRole(user.role)) {
+    return [...ADMIN_CONSOLE_NAV_ITEMS];
+  }
+  return ADMIN_CONSOLE_NAV_ITEMS.filter((item) =>
+    canAccessAdminSurface(user, item.section)
+  );
+}
+
+/** True when a delegated member may open the focused console section. */
+export function canViewAdminConsoleSection(
+  user: Pick<AuthUser, 'role' | 'userType' | 'adminCapabilities'> | null | undefined,
+  section: AdminConsoleSection
+): boolean {
+  if (!user || !isGovernanceConsoleUser(user)) return false;
+  if (isAdminConsoleRole(user.role)) return true;
+  return canAccessAdminSurface(user, section);
+}
+
+/**
+ * Redirect target shown on a denied direct deep link. Falls back to `/admin`
+ * because every Co-Admin always has at least one capability.
+ */
+export function getAdminDeniedFallbackHref(
+  user: Pick<AuthUser, 'role' | 'userType' | 'adminCapabilities'> | null | undefined
+): string {
+  return getFirstAccessibleAdminHref(user) ?? '/admin';
 }
 
 export function getAdminConsoleNavItem(
@@ -257,6 +302,7 @@ export const ADMIN_SECTION_OWNED_API_PREFIXES: Record<
     '/api/admin/groups',
     '/api/admin/scim-tokens',
     '/api/admin/guests',
+    '/api/admin/delegations',
   ],
   settings: [
     '/api/admin/policies',

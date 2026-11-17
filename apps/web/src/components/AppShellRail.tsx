@@ -10,6 +10,7 @@ import {
   getDropTargetClassName,
   useWorkspaceDrag,
 } from '@/components/WorkspaceDragPortal';
+import { hasAnyAdminCapability } from '@/lib/admin-delegations';
 import { ROOT_DROP_ID } from '@/lib/drag-drop-controller';
 import { logoutSession } from '@/lib/files-api';
 import { isImeComposingEvent } from '@/lib/keyboard-shortcuts';
@@ -51,9 +52,9 @@ export function AppShellRail({
       ? 'admin'
       : (activeView ?? 'workspace');
   const isGuest = user?.userType === 'guest';
-  const isAdmin =
-    user?.userType !== 'guest' &&
-    (user?.role === 'sys_admin' || user?.role === 'sec_admin');
+  // TOM-73: sys_admin / sec_admin plus members holding an active Co-Admin
+  // delegation see the governance entry point. Guests never do.
+  const isAdmin = hasAnyAdminCapability(user);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {

@@ -1,9 +1,15 @@
 import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
-import { requireMemberUser, requireSecOrSysAdmin } from '../services/authorization';
+import {
+  requireAdminCapabilityForMethods,
+  requireAdminConsoleAccess,
+  requireAnyAdminCapability,
+  requireMemberUser,
+} from '../services/authorization';
 import type { OidcHonoEnv } from '../types/oidc';
 import { registerAiSuggestionRoutes } from './admin/ai-suggestions';
 import { registerAdminContentRoutes } from './admin/content';
+import { registerAdminDelegationRoutes } from './admin/delegations';
 import { registerAdminFileRequestRoutes } from './admin/file-requests';
 import { registerAdminGroupRoutes } from './admin/groups';
 import { registerAdminGuestRoutes } from './admin/guests';
@@ -28,7 +34,234 @@ adminGovernanceRoutes.use(
   '*',
   sessionAuthMiddleware({ required: true }),
   requireMemberUser,
-  requireSecOrSysAdmin
+  requireAdminConsoleAccess
+);
+
+/**
+ * P13-1 / TOM-73 capability guards.
+ *
+ * Registered before every route module so a Co-Admin only reaches the
+ * capability surface sys_admin delegated. Route handlers keep their legacy
+ * `sys_admin`-only checks for destructive operations; these middlewares are an
+ * additional narrowing layer, never a replacement for those guards.
+ */
+const guards = adminGovernanceRoutes;
+guards.use('/insights', requireAdminCapabilityForMethods('admin.insights.read', ['GET']));
+guards.use(
+  '/storage-stats',
+  requireAdminCapabilityForMethods('admin.insights.read', ['GET'])
+);
+
+guards.use(
+  '/ai-suggestions',
+  requireAdminCapabilityForMethods('admin.content.unlock', ['GET', 'POST'])
+);
+guards.use(
+  '/ai-suggestions/*',
+  requireAdminCapabilityForMethods('admin.content.unlock', ['GET', 'POST'])
+);
+guards.use('/content', requireAdminCapabilityForMethods('admin.content.unlock', ['GET', 'POST']));
+guards.use(
+  '/content/*',
+  requireAdminCapabilityForMethods('admin.content.unlock', ['GET', 'POST'])
+);
+
+guards.use(
+  '/users',
+  requireAdminCapabilityForMethods('admin.users.read', ['GET'])
+);
+guards.use(
+  '/users',
+  requireAdminCapabilityForMethods('admin.users.manage', ['POST'])
+);
+guards.use(
+  '/users/*',
+  requireAnyAdminCapability([
+    'admin.users.read',
+    'admin.users.suspend',
+    'admin.users.manage',
+  ])
+);
+guards.use(
+  '/users/:id/suspend',
+  requireAdminCapabilityForMethods('admin.users.suspend', ['POST'])
+);
+guards.use(
+  '/users/:id/resume',
+  requireAdminCapabilityForMethods('admin.users.suspend', ['POST'])
+);
+guards.use(
+  '/users/:id/revoke-sessions',
+  requireAdminCapabilityForMethods('admin.users.suspend', ['POST'])
+);
+guards.use(
+  '/users/:id/offboard',
+  requireAdminCapabilityForMethods('admin.users.manage', ['POST'])
+);
+guards.use(
+  '/users/bulk-import',
+  requireAdminCapabilityForMethods('admin.users.manage', ['POST'])
+);
+
+guards.use(
+  '/sessions',
+  requireAdminCapabilityForMethods('admin.users.read', ['GET'])
+);
+guards.use(
+  '/sessions/revoke-all',
+  requireAdminCapabilityForMethods('admin.users.manage', ['POST'])
+);
+guards.use(
+  '/sessions/:id/revoke',
+  requireAdminCapabilityForMethods('admin.users.suspend', ['POST'])
+);
+
+guards.use(
+  '/groups',
+  requireAdminCapabilityForMethods('admin.users.read', ['GET'])
+);
+guards.use(
+  '/groups',
+  requireAdminCapabilityForMethods('admin.groups.manage', ['POST'])
+);
+guards.use(
+  '/groups/*',
+  requireAnyAdminCapability([
+    'admin.users.read',
+    'admin.groups.manage',
+  ])
+);
+guards.use(
+  '/groups/*',
+  requireAdminCapabilityForMethods('admin.groups.manage', [
+    'POST',
+    'PATCH',
+    'DELETE',
+  ])
+);
+
+guards.use(
+  '/guests',
+  requireAdminCapabilityForMethods('admin.users.read', ['GET'])
+);
+guards.use(
+  '/guests/*',
+  requireAnyAdminCapability(['admin.users.read', 'admin.guests.manage'])
+);
+guards.use(
+  '/guests/*',
+  requireAdminCapabilityForMethods('admin.guests.manage', ['POST', 'DELETE'])
+);
+
+guards.use(
+  '/scim-tokens',
+  requireAnyAdminCapability(['admin.users.read', 'admin.users.manage'])
+);
+guards.use(
+  '/scim-tokens/*',
+  requireAnyAdminCapability(['admin.users.read', 'admin.users.manage'])
+);
+guards.use(
+  '/scim-tokens/*',
+  requireAdminCapabilityForMethods('admin.users.manage', ['POST'])
+);
+guards.use(
+  '/scim-tokens',
+  requireAdminCapabilityForMethods('admin.users.manage', ['POST'])
+);
+
+guards.use(
+  '/policies',
+  requireAdminCapabilityForMethods('admin.policies.read', ['GET'])
+);
+guards.use(
+  '/policies',
+  requireAdminCapabilityForMethods('admin.policies.edit', ['PATCH'])
+);
+guards.use(
+  '/policies/inheritance-conflicts',
+  requireAdminCapabilityForMethods('admin.policies.read', ['GET'])
+);
+guards.use('/tos', requireAdminCapabilityForMethods('admin.policies.read', ['GET']));
+guards.use('/tos', requireAdminCapabilityForMethods('admin.policies.edit', ['PUT']));
+guards.use('/siem', requireAdminCapabilityForMethods('admin.policies.read', ['GET']));
+guards.use(
+  '/siem',
+  requireAdminCapabilityForMethods('admin.policies.edit', ['PUT', 'POST'])
+);
+guards.use(
+  '/sso/status',
+  requireAdminCapabilityForMethods('admin.policies.read', ['GET'])
+);
+
+guards.use(
+  '/shared-links',
+  requireAdminCapabilityForMethods('admin.links.revoke', ['GET'])
+);
+guards.use(
+  '/shared-links/*',
+  requireAdminCapabilityForMethods('admin.links.revoke', ['GET', 'POST'])
+);
+
+guards.use(
+  '/file-requests',
+  requireAdminCapabilityForMethods('admin.content.unlock', ['GET'])
+);
+guards.use(
+  '/file-requests/*',
+  requireAdminCapabilityForMethods('admin.content.unlock', ['GET', 'POST'])
+);
+
+guards.use(
+  '/root-folders',
+  requireAdminCapabilityForMethods('admin.root_folders.read', ['GET'])
+);
+guards.use(
+  '/root-folders',
+  requireAdminCapabilityForMethods('admin.users.manage', ['POST'])
+);
+guards.use(
+  '/root-folders/*',
+  requireAdminCapabilityForMethods('admin.root_folders.read', ['GET'])
+);
+guards.use(
+  '/root-folders/*',
+  requireAdminCapabilityForMethods('admin.users.manage', ['POST'])
+);
+
+guards.use(
+  '/permissions',
+  requireAdminCapabilityForMethods('admin.permissions.audit', ['GET'])
+);
+guards.use(
+  '/permissions/*',
+  requireAdminCapabilityForMethods('admin.users.manage', ['POST'])
+);
+
+guards.use(
+  '/trash',
+  requireAdminCapabilityForMethods('admin.trash.manage', ['GET'])
+);
+guards.use(
+  '/trash/restore',
+  requireAdminCapabilityForMethods('admin.trash.manage', ['POST'])
+);
+guards.use(
+  '/trash/empty',
+  requireAdminCapabilityForMethods('admin.users.manage', ['POST'])
+);
+guards.use(
+  '/trash/items',
+  requireAdminCapabilityForMethods('admin.users.manage', ['DELETE'])
+);
+
+guards.use(
+  '/reports',
+  requireAdminCapabilityForMethods('admin.reports.run', ['GET', 'POST', 'PATCH', 'DELETE'])
+);
+guards.use(
+  '/reports/*',
+  requireAdminCapabilityForMethods('admin.reports.run', ['GET', 'POST', 'PATCH', 'DELETE'])
 );
 
 registerStorageStatsRoutes(adminGovernanceRoutes);
@@ -51,5 +284,6 @@ registerAdminRootFolderBulkRoutes(adminGovernanceRoutes);
 registerAdminPermissionRoutes(adminGovernanceRoutes);
 registerAdminTrashRoutes(adminGovernanceRoutes);
 registerAdminReportRoutes(adminGovernanceRoutes);
+registerAdminDelegationRoutes(adminGovernanceRoutes);
 
 export { auditLogsRoutes } from './admin/audit-logs';

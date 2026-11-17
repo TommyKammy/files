@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { getAdminScope } from '../../services/admin-delegations';
 import { getAuthenticatedUser } from '../../services/authorization';
 import {
   AdminRootFolderError,
@@ -91,6 +92,13 @@ export function registerAdminRootFolderRoutes(routes: Hono<OidcHonoEnv>) {
       search: c.req.query('search'),
       ownerMissingOnly: isTruthyFlag(c.req.query('ownerMissingOnly')),
     });
+    const scopeRootFolderId = getAdminScope(user)?.rootFolderId ?? null;
+    if (scopeRootFolderId) {
+      return c.json({
+        ...result,
+        roots: result.roots.filter((root) => root.id === scopeRootFolderId),
+      });
+    }
     return c.json(result);
   });
 

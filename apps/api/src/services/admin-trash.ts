@@ -180,6 +180,8 @@ export interface AdminTrashFilters {
   sort: TrashSort;
   limit: number;
   cursor?: string | null;
+  /** TOM-73 Co-Admin root-folder scope; limits items to this subtree. */
+  scopeRootFolderId?: string | null;
 }
 
 export interface AdminTrashPerson {
@@ -546,6 +548,34 @@ export async function listAdminTrash(
   if (trimmedQuery) {
     whereSql.push("AND t.name LIKE ? ESCAPE '\\'");
     whereBinds.push(`%${escapeLikePattern(trimmedQuery)}%`);
+  }
+  if (filters.scopeRootFolderId) {
+    whereSql.push(
+      `AND (
+         (t.item_type = 'folder' AND EXISTS (
+           SELECT 1 FROM folder_closures fc
+            WHERE fc.tenant_id = ?
+              AND fc.ancestor_id = ?
+              AND fc.descendant_id = t.id
+         ))
+         OR
+         (t.item_type = 'file' AND EXISTS (
+           SELECT 1 FROM files fl
+             JOIN folder_closures fc
+               ON fc.tenant_id = fl.tenant_id
+              AND fc.descendant_id = fl.folder_id
+            WHERE fl.tenant_id = ?
+              AND fl.id = t.id
+              AND fc.ancestor_id = ?
+         ))
+       )`
+    );
+    whereBinds.push(
+      tenantId,
+      filters.scopeRootFolderId,
+      tenantId,
+      filters.scopeRootFolderId
+    );
   }
 
   const cursor = filters.cursor

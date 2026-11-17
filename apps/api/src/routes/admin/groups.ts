@@ -12,6 +12,12 @@ import {
   type AdminGroupFilters,
   type AdminGroupMutationResult,
 } from '../../services/admin-groups';
+import {
+  AdminDelegationError,
+  assertAdminGroupInScope,
+  getAdminScope,
+  hasAdminCapability,
+} from '../../services/admin-delegations';
 import { getAuthenticatedUser } from '../../services/authorization';
 import { emitTenantSyncSignal } from '../../services/sync-notifier';
 import type { OidcHonoEnv } from '../../types/oidc';
@@ -35,6 +41,9 @@ function adminGroupErrorResponse(
   err: unknown
 ): Response {
   if (err instanceof AdminGroupError) {
+    return c.json({ error: err.message, code: err.code }, err.status);
+  }
+  if (err instanceof AdminDelegationError) {
     return c.json({ error: err.message, code: err.code }, err.status);
   }
   throw err;
@@ -70,19 +79,27 @@ async function notifyGroupMutation(
   });
 }
 
-function requireSysAdmin(c: Context<OidcHonoEnv>): Response | null {
+function requireGroupManager(c: Context<OidcHonoEnv>): Response | null {
   const user = getAuthenticatedUser(c);
-  if (user.role !== 'sys_admin') {
-    return c.json(
-      {
-        error: 'Only sys_admin can manage groups',
-        code: 'SYS_ADMIN_REQUIRED',
-      },
-      403
-    );
+  if (user.role === 'sys_admin') return null;
+  // TOM-73: only a delegated member with `admin.groups.manage` may mutate
+  // groups. sec_admin keeps its legacy read-only group visibility.
+  if (
+    user.role === 'member' &&
+    user.userType !== 'guest' &&
+    hasAdminCapability(user, 'admin.groups.manage')
+  ) {
+    return null;
   }
-  return null;
+  return c.json(
+    {
+      error: 'Only sys_admin or a delegated group manager can manage groups',
+      code: 'SYS_ADMIN_REQUIRED',
+    },
+    403
+  );
 }
+
 
 export function registerAdminGroupRoutes(routes: Hono<OidcHonoEnv>) {
   /** GET /api/admin/groups — tenant group list with member/ACL counts. */
@@ -116,6 +133,7 @@ export function registerAdminGroupRoutes(routes: Hono<OidcHonoEnv>) {
       source: sourceRaw,
       limit: parseLimit(c.req.query('limit'), 200, 500),
       offset: parseOffset(c.req.query('offset')),
+      scopeGroupId: getAdminScope(user)?.groupId ?? null,
     };
     return c.json(await listAdminGroups(c.env.DB, user.tenantId, filters));
   });
@@ -134,15 +152,32 @@ export function registerAdminGroupRoutes(routes: Hono<OidcHonoEnv>) {
         404
       );
     }
+    try {
+      await assertAdminGroupInScope(
+        getAdminScope(user)?.groupId ?? null,
+        c.req.param('id')
+      );
+    } catch (err) {
+      return adminGroupErrorResponse(c, err);
+    }
     return c.json(detail);
   });
 
   /** POST /api/admin/groups — manual group creation (sys_admin). */
   routes.post('/groups', async (c) => {
-    const forbidden = requireSysAdmin(c);
+    const forbidden = requireGroupManager(c);
     if (forbidden) return forbidden;
     const user = getAuthenticatedUser(c);
     try {
+      if (getAdminScope(user)?.groupId) {
+        return c.json(
+          {
+            error: 'A group-scoped Co-Admin cannot create new groups',
+            code: 'OUT_OF_DELEGATION_SCOPE',
+          },
+          403
+        );
+      }
       const body = await readJsonBody(c);
       const result = await createAdminGroup({
         db: c.env.DB,
@@ -164,10 +199,14 @@ export function registerAdminGroupRoutes(routes: Hono<OidcHonoEnv>) {
 
   /** PATCH /api/admin/groups/:id — manual group rename (sys_admin). */
   routes.patch('/groups/:id', async (c) => {
-    const forbidden = requireSysAdmin(c);
+    const forbidden = requireGroupManager(c);
     if (forbidden) return forbidden;
     const user = getAuthenticatedUser(c);
     try {
+      await assertAdminGroupInScope(
+        getAdminScope(user)?.groupId ?? null,
+        c.req.param('id')
+      );
       const body = await readJsonBody(c);
       const result = await renameAdminGroup({
         db: c.env.DB,
@@ -190,10 +229,14 @@ export function registerAdminGroupRoutes(routes: Hono<OidcHonoEnv>) {
 
   /** DELETE /api/admin/groups/:id — manual group delete (sys_admin). */
   routes.delete('/groups/:id', async (c) => {
-    const forbidden = requireSysAdmin(c);
+    const forbidden = requireGroupManager(c);
     if (forbidden) return forbidden;
     const user = getAuthenticatedUser(c);
     try {
+      await assertAdminGroupInScope(
+        getAdminScope(user)?.groupId ?? null,
+        c.req.param('id')
+      );
       const result = await deleteAdminGroup({
         db: c.env.DB,
         tenantId: user.tenantId,
@@ -214,10 +257,14 @@ export function registerAdminGroupRoutes(routes: Hono<OidcHonoEnv>) {
 
   /** POST /api/admin/groups/:id/members — add one or more members. */
   routes.post('/groups/:id/members', async (c) => {
-    const forbidden = requireSysAdmin(c);
+    const forbidden = requireGroupManager(c);
     if (forbidden) return forbidden;
     const user = getAuthenticatedUser(c);
     try {
+      await assertAdminGroupInScope(
+        getAdminScope(user)?.groupId ?? null,
+        c.req.param('id')
+      );
       const body = await readJsonBody(c);
       const result = await addAdminGroupMembers({
         db: c.env.DB,
@@ -241,10 +288,14 @@ export function registerAdminGroupRoutes(routes: Hono<OidcHonoEnv>) {
 
   /** DELETE /api/admin/groups/:id/members/:userId — remove a member. */
   routes.delete('/groups/:id/members/:userId', async (c) => {
-    const forbidden = requireSysAdmin(c);
+    const forbidden = requireGroupManager(c);
     if (forbidden) return forbidden;
     const user = getAuthenticatedUser(c);
     try {
+      await assertAdminGroupInScope(
+        getAdminScope(user)?.groupId ?? null,
+        c.req.param('id')
+      );
       const result = await removeAdminGroupMember({
         db: c.env.DB,
         tenantId: user.tenantId,

@@ -1,4 +1,9 @@
 import { Hono } from 'hono';
+import {
+  AdminDelegationError,
+  assertAdminContentTargetInScope,
+  getAdminScope,
+} from '../../services/admin-delegations';
 import { getAuthenticatedUser } from '../../services/authorization';
 import {
   AdminContentError,
@@ -26,6 +31,9 @@ function handleAdminContentError(
       err.status
     );
   }
+  if (err instanceof AdminDelegationError) {
+    return c.json({ error: err.message, code: err.code }, err.status);
+  }
   throw err;
 }
 
@@ -37,6 +45,21 @@ export function registerAdminContentRoutes(routes: Hono<OidcHonoEnv>) {
       const filters = parseAdminContentSearchFilters((name) =>
         c.req.query(name)
       );
+      const scopeRootFolderId = getAdminScope(user)?.rootFolderId ?? null;
+      if (scopeRootFolderId) {
+        if (
+          filters.rootFolderId &&
+          filters.rootFolderId !== scopeRootFolderId
+        ) {
+          throw new AdminDelegationError(
+            403,
+            'OUT_OF_DELEGATION_SCOPE',
+            'rootFolderId is outside the delegated root-folder scope'
+          );
+        }
+        // Force the scope even when the caller omitted (or guessed) a root.
+        filters.rootFolderId = scopeRootFolderId;
+      }
       const result = await searchAdminContent(
         c.env,
         user.tenantId,
@@ -74,6 +97,13 @@ export function registerAdminContentRoutes(routes: Hono<OidcHonoEnv>) {
     }
     try {
       const user = getAuthenticatedUser(c);
+      await assertAdminContentTargetInScope(
+        c.env.DB,
+        user.tenantId,
+        getAdminScope(user)?.rootFolderId ?? null,
+        targetType,
+        c.req.param('targetId')
+      );
       const detail = await getAdminContentDetail(
         c.env,
         user.tenantId,
@@ -100,6 +130,13 @@ export function registerAdminContentRoutes(routes: Hono<OidcHonoEnv>) {
         reason?: unknown;
       } | null;
       const reason = validateAdminContentReason(body?.reason);
+      await assertAdminContentTargetInScope(
+        c.env.DB,
+        user.tenantId,
+        getAdminScope(user)?.rootFolderId ?? null,
+        'file',
+        c.req.param('id')
+      );
       const result = await forceUnlockAdminContentFile(
         c.env,
         user,
@@ -120,6 +157,13 @@ export function registerAdminContentRoutes(routes: Hono<OidcHonoEnv>) {
         reason?: unknown;
       } | null;
       const reason = validateAdminContentReason(body?.reason);
+      await assertAdminContentTargetInScope(
+        c.env.DB,
+        user.tenantId,
+        getAdminScope(user)?.rootFolderId ?? null,
+        'file',
+        c.req.param('id')
+      );
       const result = await inspectAdminContentFile(
         c.env,
         user,

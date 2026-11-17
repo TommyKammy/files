@@ -1,4 +1,10 @@
 import { Hono, type Context } from 'hono';
+import {
+  AdminDelegationError,
+  assertDelegatedTargetUserAllowed,
+  getAdminScope,
+  isDelegatedAdmin,
+} from '../../services/admin-delegations';
 import { getAuthenticatedUser } from '../../services/authorization';
 import {
   ADMIN_SESSION_DEFAULT_LIMIT,
@@ -29,6 +35,9 @@ function adminSessionErrorResponse(
   err: unknown
 ): Response {
   if (err instanceof AdminSessionError) {
+    return c.json({ error: err.message, code: err.code }, err.status);
+  }
+  if (err instanceof AdminDelegationError) {
     return c.json({ error: err.message, code: err.code }, err.status);
   }
   throw err;
@@ -100,6 +109,7 @@ export function registerAdminSessionRoutes(routes: Hono<OidcHonoEnv>) {
       tenantId: user.tenantId,
       actorSessionId: user.sessionId ?? null,
       filters,
+      scopeGroupId: getAdminScope(user)?.groupId ?? null,
     });
     return c.json(result);
   });
@@ -110,6 +120,15 @@ export function registerAdminSessionRoutes(routes: Hono<OidcHonoEnv>) {
    */
   routes.post('/sessions/revoke-all', async (c) => {
     const user = getAuthenticatedUser(c);
+    if (user.role === 'member') {
+      return c.json(
+        {
+          error: 'Tenant-wide session revocation is reserved for sys_admin',
+          code: 'PRIVILEGE_ESCALATION_FORBIDDEN',
+        },
+        403
+      );
+    }
     if (user.role !== 'sys_admin') {
       return c.json(
         {
@@ -157,6 +176,21 @@ export function registerAdminSessionRoutes(routes: Hono<OidcHonoEnv>) {
       | null;
 
     try {
+      if (isDelegatedAdmin(user)) {
+        const sessionTarget = await c.env.DB.prepare(
+          'SELECT user_id FROM sessions WHERE tenant_id = ? AND id = ?'
+        )
+          .bind(user.tenantId, c.req.param('id'))
+          .first<{ user_id: string }>();
+        if (sessionTarget) {
+          await assertDelegatedTargetUserAllowed(
+            c.env.DB,
+            user.tenantId,
+            user,
+            sessionTarget.user_id
+          );
+        }
+      }
       const result = await revokeAdminSession({
         db: c.env.DB,
         tenantId: user.tenantId,
@@ -197,6 +231,14 @@ export function registerAdminSessionRoutes(routes: Hono<OidcHonoEnv>) {
       | null;
 
     try {
+      if (isDelegatedAdmin(user)) {
+        await assertDelegatedTargetUserAllowed(
+          c.env.DB,
+          user.tenantId,
+          user,
+          c.req.param('id')
+        );
+      }
       const result = await revokeAdminUserSessions({
         db: c.env.DB,
         tenantId: user.tenantId,

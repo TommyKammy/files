@@ -31,6 +31,11 @@ export const SECURITY_AUDIT_ACTION_PREFIXES = ['auth.'] as const;
 /** Prefix preset for asynchronous and scheduled admin reports. */
 export const ADMIN_REPORT_AUDIT_ACTION_PREFIXES = ['admin.report.'] as const;
 
+/** Prefix preset for Co-Admin delegation changes (TOM-73). */
+export const ADMIN_DELEGATION_AUDIT_ACTION_PREFIXES = [
+  'admin.delegation.',
+] as const;
+
 /**
  * Exact blocked-action preset used by the insights dashboard drill-down.
  * Kept explicit so `/admin/reports?auditPreset=security` shows only rejected
@@ -92,6 +97,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.session.revoke': 'セッション強制失効',
   'admin.session.revoke_user': 'ユーザー全セッション強制失効',
   'admin.session.revoke_all': 'テナント全セッション緊急失効',
+  'admin.delegation.created': '共同管理者委任の作成',
+  'admin.delegation.updated': '共同管理者委任の更新',
+  'admin.delegation.deleted': '共同管理者委任の削除',
   'admin.report.requested': '非同期レポート作成要求',
   'admin.report.generated': '非同期レポート生成完了',
   'admin.report.downloaded': '非同期レポートダウンロード',
@@ -175,6 +183,12 @@ export function isSecurityAuditAction(action: string): boolean {
 
 export function isAdminReportAuditAction(action: string): boolean {
   return ADMIN_REPORT_AUDIT_ACTION_PREFIXES.some((prefix) =>
+    action.startsWith(prefix)
+  );
+}
+
+export function isAdminDelegationAuditAction(action: string): boolean {
+  return ADMIN_DELEGATION_AUDIT_ACTION_PREFIXES.some((prefix) =>
     action.startsWith(prefix)
   );
 }

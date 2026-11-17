@@ -10,9 +10,10 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { isDelegatedCoAdmin } from '@/lib/admin-delegations';
 import {
   ADMIN_ROLE_BADGE_LABELS,
-  getAdminConsoleNavItems,
+  getVisibleAdminNavItems,
   isAdminConsoleRole,
   type AdminConsoleSection,
 } from '@/lib/admin-console-nav';
@@ -27,9 +28,10 @@ const SECTION_ICONS = {
   reports: FileText,
 } as const;
 
-const ROLE_BADGE_CLASS: Record<'sys_admin' | 'sec_admin', string> = {
+const ROLE_BADGE_CLASS: Record<'sys_admin' | 'sec_admin' | 'co_admin', string> = {
   sys_admin: 'border-[#d9dcf5] bg-[#eef0fc] text-[#3f4a9e]',
   sec_admin: 'border-[#e7dfc7] bg-[#faf5e8] text-[#8a6a1f]',
+  co_admin: 'border-[#cfe8dc] bg-[#edf8f2] text-[#1f6b4a]',
 };
 
 /**
@@ -49,10 +51,17 @@ export function AdminConsoleShell({
   section: AdminConsoleSection;
   children: ReactNode;
 }) {
-  const items = getAdminConsoleNavItems(user.role);
+  const items = getVisibleAdminNavItems(user);
   const roleBadge = isAdminConsoleRole(user.role)
     ? ADMIN_ROLE_BADGE_LABELS[user.role]
-    : null;
+    : isDelegatedCoAdmin(user)
+      ? '共同管理者 (Co-Admin)'
+      : null;
+  const roleBadgeKey = isAdminConsoleRole(user.role)
+    ? user.role
+    : isDelegatedCoAdmin(user)
+      ? 'co_admin'
+      : null;
 
   return (
     <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:gap-5">
@@ -65,11 +74,11 @@ export function AdminConsoleShell({
           <div className="text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-[#55565a]">
             管理コンソール
           </div>
-          {roleBadge && isAdminConsoleRole(user.role) && (
+          {roleBadge && roleBadgeKey && (
             <span
               data-testid="admin-console-role-badge"
-              data-role={user.role}
-              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[0.625rem] font-medium ${ROLE_BADGE_CLASS[user.role]}`}
+              data-role={roleBadgeKey}
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[0.625rem] font-medium ${ROLE_BADGE_CLASS[roleBadgeKey]}`}
             >
               {roleBadge}
             </span>

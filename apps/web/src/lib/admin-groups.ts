@@ -1,4 +1,5 @@
 import type {
+  AdminCapability,
   AdminGroupListQuery,
   AdminGroupRow,
   AdminGroupSource,
@@ -33,21 +34,52 @@ export const ADMIN_SCIM_TOKEN_STATUS_LABELS: Record<
   revoked: '失効済み',
 };
 
-/** Both admin roles may inspect groups; only sys_admin may mutate them. */
-export function canViewAdminGroups(role: AdminGroupViewerRole): boolean {
-  return role === 'sys_admin' || role === 'sec_admin';
+function hasGroupViewerCapability(
+  capabilities: readonly AdminCapability[] | null | undefined,
+  capability: AdminCapability
+): boolean {
+  return (capabilities ?? []).includes(capability);
 }
 
-export function canManageAdminGroups(role: AdminGroupViewerRole): boolean {
-  return role === 'sys_admin';
+/** Both admin roles may inspect groups; only sys_admin may mutate them. */
+export function canViewAdminGroups(
+  role: AdminGroupViewerRole,
+  capabilities?: readonly AdminCapability[] | null
+): boolean {
+  return (
+    role === 'sys_admin' ||
+    role === 'sec_admin' ||
+    (role === 'member' &&
+      (hasGroupViewerCapability(capabilities, 'admin.users.read') ||
+        hasGroupViewerCapability(capabilities, 'admin.groups.manage')))
+  );
+}
+
+export function canManageAdminGroups(
+  role: AdminGroupViewerRole,
+  capabilities?: readonly AdminCapability[] | null
+): boolean {
+  return (
+    role === 'sys_admin' ||
+    (role === 'member' &&
+      hasGroupViewerCapability(capabilities, 'admin.groups.manage'))
+  );
 }
 
 /** Alias matching the member-console naming convention. */
 export const canAdministrateGroups = canManageAdminGroups;
 
-export function groupPermissionNotice(role: AdminGroupViewerRole): string {
+export function groupPermissionNotice(
+  role: AdminGroupViewerRole,
+  capabilities?: readonly AdminCapability[] | null
+): string {
   if (role === 'sec_admin') {
     return 'sec_admin はグループ一覧・詳細・所属メンバー・付与済み権限を閲覧できます。グループの作成・改名・削除・メンバー追加/削除・SCIM トークン管理は sys_admin 専用です。';
+  }
+  if (role === 'member' && canViewAdminGroups(role, capabilities)) {
+    return canManageAdminGroups(role, capabilities)
+      ? 'Co-Admin は委任されたグループスコープ内のグループ名・メンバーを管理できます。スコープ外のグループと新規グループ作成は拒否されます。'
+      : 'Co-Admin は委任されたグループスコープ内のグループを閲覧できます。変更には admin.groups.manage の委任が必要です。';
   }
   return 'sys_admin は手動グループの作成・改名・削除・メンバー追加/削除と SCIM トークンの発行・ローテーション・失効を実行できます。SCIM 同期グループは IdP が管理するため読み取り専用です。';
 }
@@ -63,18 +95,23 @@ export function isScimManagedGroup(
 
 export function canEditAdminGroup(
   role: AdminGroupViewerRole,
-  group: Pick<AdminGroupRow, 'source' | 'externalIdpId'>
+  group: Pick<AdminGroupRow, 'source' | 'externalIdpId'>,
+  capabilities?: readonly AdminCapability[] | null
 ): boolean {
-  return canManageAdminGroups(role) && !isScimManagedGroup(group);
+  return canManageAdminGroups(role, capabilities) && !isScimManagedGroup(group);
 }
 
 export function groupReadOnlyReason(
   role: AdminGroupViewerRole,
-  group: Pick<AdminGroupRow, 'source' | 'externalIdpId'>
+  group: Pick<AdminGroupRow, 'source' | 'externalIdpId'>,
+  capabilities?: readonly AdminCapability[] | null
 ): string | null {
   if (isScimManagedGroup(group)) return SCIM_MANAGED_GROUP_REASON;
-  if (!canManageAdminGroups(role)) {
-    return 'グループの変更は sys_admin 専用です。sec_admin は閲覧のみ可能です。';
+  if (!canManageAdminGroups(role, capabilities)) {
+    if (role === 'sec_admin') {
+      return 'グループの変更は sys_admin 専用です。sec_admin は閲覧のみ可能です。';
+    }
+    return 'グループの変更は sys_admin または admin.groups.manage を委任された Co-Admin 専用です。';
   }
   return null;
 }

@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
+import { resolveAdminAuthorization } from '../services/admin-delegations';
 import { recordAuthControlAudit } from '../services/auth-audit';
 import { sha256Hex } from '../services/crypto-utils';
 import {
@@ -228,7 +229,7 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
           await next();
           return;
         }
-        const devUser = {
+        const devUserBase = {
           id: devUserId,
           tenantId: devTenantId,
           email: c.req.header('X-Dev-User-Email') ?? 'dev-admin@example.com',
@@ -240,6 +241,17 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
           expiresAt,
           sessionId: c.req.header('X-Dev-Session-Id') ?? null,
         } satisfies AuthUser;
+        // TOM-73: dev-bypass requests resolve delegations from D1 as well so
+        // API tests and the E2E dev login share one authorization model.
+        const devAuthorization = await resolveAdminAuthorization(
+          c.env.DB,
+          devUserBase
+        );
+        const devUser: AuthUser = {
+          ...devUserBase,
+          adminCapabilities: devAuthorization.capabilities,
+          adminScope: devAuthorization.scope,
+        };
         c.set('user', devUser);
 
         const ipBlocked = await enforceSessionIpAllowlist(c, devUser);
@@ -338,7 +350,7 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
       return;
     }
 
-    const authenticatedUser = {
+    const authenticatedUserBase = {
       id: row.id,
       tenantId: row.tenant_id,
       email: row.email,
@@ -350,6 +362,15 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
       expiresAt: row.user_expires_at,
       sessionId: row.session_id,
     } satisfies AuthUser;
+    const authorization = await resolveAdminAuthorization(
+      c.env.DB,
+      authenticatedUserBase
+    );
+    const authenticatedUser: AuthUser = {
+      ...authenticatedUserBase,
+      adminCapabilities: authorization.capabilities,
+      adminScope: authorization.scope,
+    };
     c.set('user', authenticatedUser);
 
     const ipBlocked = await enforceSessionIpAllowlist(c, authenticatedUser);

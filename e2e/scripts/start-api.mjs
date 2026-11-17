@@ -5,7 +5,7 @@
  * Guarantees:
  * - listens on the E2E-only port (default 18787), never :8787
  * - persists only under .playwright/wrangler-state, never apps/api/.wrangler
- * - initializes a fresh D1 database (migrations 0001-0021 + seed-local.sql)
+ * - initializes a fresh D1 database (migrations 0001-0022 + seed-local.sql)
  * - overrides every connection-sensitive var even when apps/api/.dev.vars exists
  * - refuses to start (and never deletes state) when the target port is occupied
  */
@@ -125,7 +125,7 @@ runWrangler([
   'scripts/seed-local.sql',
   '--yes',
 ]);
-console.log('[e2e-api] D1 migrations 0001-0021 + seed-local.sql applied');
+console.log('[e2e-api] D1 migrations 0001-0022 + seed-local.sql applied');
 
 const child = spawn(
   wranglerBin,

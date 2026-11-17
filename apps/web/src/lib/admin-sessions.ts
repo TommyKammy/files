@@ -1,4 +1,5 @@
 import type {
+  AdminCapability,
   AdminSessionListQuery,
   AdminSessionUserTypeFilter,
   UserRole,
@@ -35,10 +36,22 @@ export const ADMIN_SESSION_STATUS_LABELS = {
 
 export const ADMIN_SESSION_REVOKE_REASON_MAX = 300;
 
-export function canViewAdminSessions(
-  role: UserRole | null | undefined
+function hasSessionCapability(
+  capabilities: readonly AdminCapability[] | null | undefined,
+  capability: AdminCapability
 ): boolean {
-  return role === 'sys_admin' || role === 'sec_admin';
+  return (capabilities ?? []).includes(capability);
+}
+
+export function canViewAdminSessions(
+  role: UserRole | null | undefined,
+  capabilities?: readonly AdminCapability[] | null
+): boolean {
+  return (
+    role === 'sys_admin' ||
+    role === 'sec_admin' ||
+    (role === 'member' && hasSessionCapability(capabilities, 'admin.users.read'))
+  );
 }
 
 export function canRevokeAllAdminSessions(
@@ -53,20 +66,31 @@ export function canRevokeAllAdminSessions(
  */
 export function adminSessionTargetGuardReason(
   actorRole: UserRole | null | undefined,
-  targetRole: UserRole
+  targetRole: UserRole,
+  capabilities?: readonly AdminCapability[] | null
 ): string | null {
   if (actorRole === 'sec_admin' && targetRole === 'sys_admin') {
     return 'セキュリティ管理者 (sec_admin) はシステム管理者 (sys_admin) のセッションを失効できません。';
+  }
+  if (
+    actorRole === 'member' &&
+    (!hasSessionCapability(capabilities, 'admin.users.suspend') ||
+      targetRole !== 'member')
+  ) {
+    return 'Co-Admin は委任された一般メンバーのセッションのみ失効できます。';
   }
   return null;
 }
 
 export function canRevokeAdminSession(
   actorRole: UserRole | null | undefined,
-  targetRole: UserRole
+  targetRole: UserRole,
+  capabilities?: readonly AdminCapability[] | null
 ): boolean {
-  if (!canViewAdminSessions(actorRole)) return false;
-  return adminSessionTargetGuardReason(actorRole, targetRole) === null;
+  if (!canViewAdminSessions(actorRole, capabilities)) return false;
+  return (
+    adminSessionTargetGuardReason(actorRole, targetRole, capabilities) === null
+  );
 }
 
 /** Trims and enforces the API's 1–300 character optional reason contract. */

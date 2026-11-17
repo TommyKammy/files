@@ -25,6 +25,8 @@ export interface AdminGroupFilters {
   source: AdminGroupSourceFilter;
   limit: number;
   offset: number;
+  /** TOM-73 Co-Admin group scope; restricts the list to this group. */
+  scopeGroupId?: string | null;
 }
 
 export interface AdminGroupRow {
@@ -189,7 +191,8 @@ function toGroupRow(row: RawGroupRow): AdminGroupRow {
 
 async function loadGroupSummary(
   db: D1Database,
-  tenantId: string
+  tenantId: string,
+  scopeGroupId?: string | null
 ): Promise<AdminGroupSummary> {
   const row = await db
     .prepare(
@@ -197,9 +200,9 @@ async function loadGroupSummary(
               SUM(CASE WHEN external_idp_id IS NULL THEN 1 ELSE 0 END) AS manual_count,
               SUM(CASE WHEN external_idp_id IS NOT NULL THEN 1 ELSE 0 END) AS scim_count
          FROM groups
-        WHERE tenant_id = ?`
+        WHERE tenant_id = ?${scopeGroupId ? ' AND id = ?' : ''}`
     )
-    .bind(tenantId)
+    .bind(...(scopeGroupId ? [tenantId, scopeGroupId] : [tenantId]))
     .first<{ total: number; manual_count: number | null; scim_count: number | null }>();
   return {
     total: row?.total ?? 0,
@@ -230,6 +233,10 @@ export async function listAdminGroups(
   } else if (filters.source === 'manual') {
     conditions.push('g.external_idp_id IS NULL');
   }
+  if (filters.scopeGroupId) {
+    conditions.push('g.id = ?');
+    bindings.push(filters.scopeGroupId);
+  }
 
   const whereSql = conditions.join(' AND ');
   const [countRow, summary, rows] = await Promise.all([
@@ -237,7 +244,7 @@ export async function listAdminGroups(
       .prepare(`SELECT COUNT(*) AS total FROM groups g WHERE ${whereSql}`)
       .bind(...bindings)
       .first<{ total: number }>(),
-    loadGroupSummary(db, tenantId),
+    loadGroupSummary(db, tenantId, filters.scopeGroupId ?? null),
     db
       .prepare(
         `SELECT g.id,

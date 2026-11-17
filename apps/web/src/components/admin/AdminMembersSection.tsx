@@ -194,7 +194,7 @@ export function AdminMembersSection({
 }) {
   const baseId = useId();
   const role = user?.role;
-  const canView = canViewAdminMembers(role);
+  const canView = canViewAdminMembers(role, user?.adminCapabilities);
   const canAdministrate = canAdministrateMembers(role);
 
   const [query, setQuery] = useState<AdminMemberListQuery>(DEFAULT_QUERY);
@@ -466,7 +466,11 @@ export function AdminMembersSection({
     ? adminSessionTargetGuardReason(role, detail.user.role)
     : null;
   const canRevokeMemberSessions = detail
-    ? canRevokeAdminSession(role, detail.user.role)
+    ? canRevokeAdminSession(
+        role,
+        detail.user.role,
+        user?.adminCapabilities
+      ) && !(role === 'member' && detail.user.id === user?.id)
     : false;
 
   async function refreshDetailQuietly(memberId: string) {
@@ -641,8 +645,8 @@ export function AdminMembersSection({
   function openAction(nextAction: MemberAction, member: AdminMemberRow) {
     if (
       nextAction === 'suspend'
-        ? !memberCanBeSuspended(role, user?.id, member)
-        : !memberCanBeResumed(role, user?.id, member)
+        ? !memberCanBeSuspended(role, user?.id, member, user?.adminCapabilities)
+        : !memberCanBeResumed(role, user?.id, member, user?.adminCapabilities)
     ) {
       return;
     }
@@ -885,7 +889,7 @@ export function AdminMembersSection({
             : 'border-amber-200 bg-amber-50 text-amber-900'
         }`}
       >
-        {memberPermissionNotice(role)}
+        {memberPermissionNotice(role, user?.adminCapabilities)}
       </p>
 
       <p role="status" className="sr-only">

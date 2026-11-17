@@ -46,6 +46,35 @@ export type Capability =
 export type UserRole = 'sys_admin' | 'sec_admin' | 'member';
 export type UserType = 'member' | 'guest';
 
+/** TOM-73 fine-grained governance capabilities delegated by sys_admin. */
+export type AdminCapability =
+  | 'admin.insights.read'
+  | 'admin.users.read'
+  | 'admin.users.suspend'
+  | 'admin.users.manage'
+  | 'admin.guests.manage'
+  | 'admin.groups.manage'
+  | 'admin.content.unlock'
+  | 'admin.root_folders.read'
+  | 'admin.permissions.audit'
+  | 'admin.trash.manage'
+  | 'admin.links.revoke'
+  | 'admin.reports.run'
+  | 'admin.audit.read'
+  | 'admin.policies.read'
+  | 'admin.policies.edit';
+
+export interface AdminScope {
+  groupId: string | null;
+  rootFolderId: string | null;
+}
+
+export type AdminDelegationPreset =
+  | 'helpdesk'
+  | 'auditor'
+  | 'group_manager'
+  | 'content_operator';
+
 /** `full` = a grant applies; `path` = traversal-only ancestor. */
 export type AccessMode = 'full' | 'path';
 
@@ -121,6 +150,10 @@ export interface AuthUser {
   expiresAt?: string | null;
   /** Current D1 session id (never the token hash). */
   sessionId?: string | null;
+  /** TOM-73 effective admin capabilities; omitted for non-admin members. */
+  adminCapabilities?: AdminCapability[];
+  /** Delegation scope; null for sys_admin/sec_admin/guests/no delegation. */
+  adminScope?: AdminScope | null;
 }
 
 export interface DevAuthAccount {
@@ -2573,4 +2606,66 @@ export interface AdminReportSignedUrlResponse {
   reportType: AdminReportType;
   rowCount: number;
   byteSize: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* P13-1 / TOM-73 Co-Admin delegations                                 */
+/* ------------------------------------------------------------------ */
+
+export interface AdminDelegationRow {
+  id: string;
+  tenantId: string;
+  userId: string;
+  preset: AdminDelegationPreset | null;
+  permissions: AdminCapability[];
+  scopeGroupId: string | null;
+  scopeRootFolderId: string | null;
+  note: string | null;
+  grantedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  userName: string | null;
+  userEmail: string | null;
+  userStatus: 'active' | 'suspended' | null;
+  groupName: string | null;
+  rootFolderName: string | null;
+  grantedByName: string | null;
+}
+
+export interface AdminDelegationPresetInfo {
+  id: AdminDelegationPreset;
+  capabilities: AdminCapability[];
+}
+
+export interface AdminDelegationCapabilityInfo {
+  id: AdminCapability;
+  label: string;
+}
+
+export interface AdminDelegationListResponse {
+  delegations: AdminDelegationRow[];
+  presets: AdminDelegationPresetInfo[];
+  capabilities: AdminDelegationCapabilityInfo[];
+}
+
+export interface AdminDelegationMutationResponse {
+  ok?: boolean;
+  delegation: AdminDelegationRow;
+}
+
+export interface AdminDelegationInput {
+  userId: string;
+  preset?: AdminDelegationPreset | null;
+  permissions?: AdminCapability[];
+  scopeGroupId?: string | null;
+  scopeRootFolderId?: string | null;
+  note?: string | null;
+}
+
+export interface AdminDelegationUpdateInput {
+  preset?: AdminDelegationPreset | null;
+  permissions?: AdminCapability[];
+  scopeGroupId?: string | null;
+  scopeRootFolderId?: string | null;
+  note?: string | null;
 }

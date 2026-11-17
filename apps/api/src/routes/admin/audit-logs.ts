@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../../middleware/session-auth';
 import {
   getAuthenticatedUser,
+  requireAdminCapability,
+  requireAdminConsoleAccess,
   requireMemberUser,
-  requireSecOrSysAdmin,
 } from '../../services/authorization';
 import { normalizeAuditTimeBoundary } from '../../services/audit-filters';
 import type { OidcHonoEnv } from '../../types/oidc';
@@ -14,7 +15,8 @@ auditLogsRoutes.use(
   '*',
   sessionAuthMiddleware({ required: true }),
   requireMemberUser,
-  requireSecOrSysAdmin
+  requireAdminConsoleAccess,
+  requireAdminCapability('admin.audit.read')
 );
 
 const MAX_AUDIT_ACTION_FILTERS = 20;

@@ -25,6 +25,34 @@ export type ResourceRole =
 export type ShareAccessScope = 'public' | 'company_only' | 'collaborators_only';
 export type UserType = 'member' | 'guest';
 
+/**
+ * Fine-grained governance capabilities delegated by `sys_admin` (TOM-73).
+ * The canonical runtime list lives in `services/admin-delegations.ts`; this
+ * union keeps API/UI projections typed without importing server code.
+ */
+export type AdminCapability =
+  | 'admin.insights.read'
+  | 'admin.users.read'
+  | 'admin.users.suspend'
+  | 'admin.users.manage'
+  | 'admin.guests.manage'
+  | 'admin.groups.manage'
+  | 'admin.content.unlock'
+  | 'admin.root_folders.read'
+  | 'admin.permissions.audit'
+  | 'admin.trash.manage'
+  | 'admin.links.revoke'
+  | 'admin.reports.run'
+  | 'admin.audit.read'
+  | 'admin.policies.read'
+  | 'admin.policies.edit';
+
+/** Optional group / root-folder boundary for a Co-Admin delegation. */
+export interface AdminScope {
+  groupId: string | null;
+  rootFolderId: string | null;
+}
+
 export interface Env {
   DB: D1Database;
   BUCKET: R2Bucket;
@@ -78,6 +106,15 @@ export interface AuthUser {
    * without `X-Dev-Session-Id`; never exposes `token_hash`.
    */
   sessionId?: string | null;
+  /**
+   * Effective fine-grained governance capabilities (TOM-73). Always projected
+   * by the session middleware; `sys_admin` receives the full canonical set,
+   * `sec_admin` its legacy security-operator subset, delegated members their
+   * delegation, and guests an empty array.
+   */
+  adminCapabilities?: AdminCapability[];
+  /** Delegation scope; `null` for sys_admin/sec_admin/guests/no delegation. */
+  adminScope?: AdminScope | null;
 }
 
 export interface AppVariables {

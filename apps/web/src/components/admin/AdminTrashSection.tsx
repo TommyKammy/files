@@ -56,7 +56,10 @@ function TrashIcon({ type }: { type: AdminTrashItem['type'] }) {
 
 export function AdminTrashSection({ user }: { user: AuthUser | null }) {
   const isPrivilegedAdmin =
-    user?.role === 'sys_admin' || user?.role === 'sec_admin';
+    user?.role === 'sys_admin' ||
+    user?.role === 'sec_admin' ||
+    (user?.role === 'member' &&
+      (user?.adminCapabilities ?? []).includes('admin.trash.manage'));
   const trash = useAdminTrash(user, Boolean(isPrivilegedAdmin));
   const {
     filters,

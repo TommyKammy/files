@@ -90,8 +90,9 @@ function GroupSourceBadge({ source }: { source: 'scim' | 'manual' }) {
 export function AdminGroupsSection({ user }: { user: AuthUser | null }) {
   const baseId = useId();
   const role = user?.role;
-  const canView = canViewAdminGroups(role);
-  const canManage = canManageAdminGroups(role);
+  const canView = canViewAdminGroups(role, user?.adminCapabilities);
+  const canManage = canManageAdminGroups(role, user?.adminCapabilities);
+  const canCreateGroup = canManage && !user?.adminScope?.groupId;
 
   const [query, setQuery] = useState<AdminGroupListQuery>(DEFAULT_QUERY);
   const [draft, setDraft] = useState<DraftFilters>(DEFAULT_DRAFT);
@@ -409,10 +410,10 @@ export function AdminGroupsSection({ user }: { user: AuthUser | null }) {
 
   const rows = data?.groups ?? [];
   const canEditOpenGroup = detail
-    ? canEditAdminGroup(role, detail.group)
+    ? canEditAdminGroup(role, detail.group, user?.adminCapabilities)
     : false;
   const openGroupReadOnlyReason = detail
-    ? groupReadOnlyReason(role, detail.group)
+    ? groupReadOnlyReason(role, detail.group, user?.adminCapabilities)
     : null;
 
   return (
@@ -443,11 +444,13 @@ export function AdminGroupsSection({ user }: { user: AuthUser | null }) {
             type="button"
             data-testid="group-open-create"
             onClick={openCreate}
-            disabled={!canManage}
+            disabled={!canCreateGroup}
             title={
-              canManage
+              canCreateGroup
                 ? 'グループを作成'
-                : 'グループ作成は sys_admin 専用です'
+                : user?.adminScope?.groupId
+                  ? 'グループスコープ付き Co-Admin は新規グループを作成できません'
+                  : 'グループ作成は sys_admin 専用です'
             }
             className="inline-flex h-7 items-center gap-1 rounded-md bg-[#5e6ad2] px-2.5 text-[0.6875rem] font-medium text-white transition hover:bg-[#4f5ac2] disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -479,7 +482,7 @@ export function AdminGroupsSection({ user }: { user: AuthUser | null }) {
             : 'border-amber-200 bg-amber-50 text-amber-900'
         }`}
       >
-        {groupPermissionNotice(role)}
+        {groupPermissionNotice(role, user?.adminCapabilities)}
       </p>
 
       <div className="mb-4 grid gap-2 sm:grid-cols-3">

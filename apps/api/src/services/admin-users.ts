@@ -42,6 +42,8 @@ export interface AdminUserFilters {
   sortDir: AdminUserSortDir;
   limit: number;
   offset: number;
+  /** TOM-73 Co-Admin group scope; only members of this group are returned. */
+  scopeGroupId?: string | null;
 }
 
 export interface AdminUserRow {
@@ -412,6 +414,12 @@ function buildWhere(filters: AdminUserFilters): {
   if (filters.department) {
     conditions.push('u.department = ?');
     binds.push(filters.department);
+  }
+  if (filters.scopeGroupId) {
+    conditions.push(
+      'EXISTS (SELECT 1 FROM group_members gm WHERE gm.group_id = ? AND gm.user_id = u.id)'
+    );
+    binds.push(filters.scopeGroupId);
   }
 
   return {

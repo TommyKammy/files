@@ -104,12 +104,22 @@ export interface TrashRestoreContextResponse {
  * - restoring the Trash row (file restore keeps the historical sec/sys admin bypass)
  * - writing into the *destination* (same editor rule as move/file-update)
  */
-export function isPrivilegedAdmin(user: Pick<AuthUser, 'role'>): boolean {
-  return user.role === 'sec_admin' || user.role === 'sys_admin';
+export function isPrivilegedAdmin(
+  user: Pick<AuthUser, 'role'> &
+    Partial<Pick<AuthUser, 'userType' | 'adminCapabilities'>>
+): boolean {
+  if (user.userType === 'guest') return false;
+  if (user.role === 'sec_admin' || user.role === 'sys_admin') return true;
+  // TOM-73: a delegated content operator may restore Trash inside its scope.
+  return (
+    user.role === 'member' &&
+    (user.adminCapabilities ?? []).includes('admin.trash.manage')
+  );
 }
 
 export function canRestoreTargetItem(
-  user: Pick<AuthUser, 'role'>,
+  user: Pick<AuthUser, 'role'> &
+    Partial<Pick<AuthUser, 'userType' | 'adminCapabilities'>>,
   targetType: TrashItemType,
   effectiveRole: ResourceRole | null
 ): boolean {

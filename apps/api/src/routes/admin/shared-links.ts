@@ -1,4 +1,9 @@
 import { Hono } from 'hono';
+import {
+  AdminDelegationError,
+  assertAdminSharedLinkTargetInScope,
+  getAdminScope,
+} from '../../services/admin-delegations';
 import { buildAuditLogStmt } from '../../services/audit';
 import { getAuthenticatedUser } from '../../services/authorization';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
@@ -11,6 +16,28 @@ export function registerAdminSharedLinkRoutes(routes: Hono<OidcHonoEnv>) {
     const user = getAuthenticatedUser(c);
     const limitRaw = Number.parseInt(c.req.query('limit') ?? '50', 10);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 50;
+    const scopeRootFolderId = getAdminScope(user)?.rootFolderId ?? null;
+
+    const scopeClause = scopeRootFolderId
+      ? `AND (
+           (sl.target_type = 'folder' AND EXISTS (
+             SELECT 1 FROM folder_closures fc
+              WHERE fc.tenant_id = sl.tenant_id
+                AND fc.ancestor_id = ?
+                AND fc.descendant_id = sl.target_id
+           ))
+           OR
+           (sl.target_type = 'file' AND EXISTS (
+             SELECT 1 FROM files fl
+              JOIN folder_closures fc
+                ON fc.tenant_id = fl.tenant_id
+               AND fc.descendant_id = fl.folder_id
+              WHERE fl.tenant_id = sl.tenant_id
+                AND fl.id = sl.target_id
+                AND fc.ancestor_id = ?
+           ))
+         )`
+      : '';
 
     const rows = await c.env.DB.prepare(
       `SELECT sl.id, sl.target_type, sl.target_id, sl.access_scope, sl.can_download,
@@ -26,9 +53,14 @@ export function registerAdminSharedLinkRoutes(routes: Hono<OidcHonoEnv>) {
        FROM shared_links sl
        LEFT JOIN users u ON u.id = sl.created_by
        WHERE sl.tenant_id = ? AND sl.revoked_at IS NULL
+       ${scopeClause}
        ORDER BY sl.created_at DESC LIMIT ?`
     )
-      .bind(user.tenantId, limit)
+      .bind(
+        ...(scopeRootFolderId
+          ? [user.tenantId, scopeRootFolderId, scopeRootFolderId, limit]
+          : [user.tenantId, limit])
+      )
       .all();
 
     return c.json({ links: rows.results });
@@ -58,6 +90,21 @@ export function registerAdminSharedLinkRoutes(routes: Hono<OidcHonoEnv>) {
 
     if (!link || link.revoked_at !== null) {
       return c.json({ error: 'Active shared link not found' }, 404);
+    }
+
+    try {
+      await assertAdminSharedLinkTargetInScope(
+        c.env.DB,
+        user.tenantId,
+        getAdminScope(user)?.rootFolderId ?? null,
+        link.target_type,
+        link.target_id
+      );
+    } catch (err) {
+      if (err instanceof AdminDelegationError) {
+        return c.json({ error: err.message, code: err.code }, err.status);
+      }
+      throw err;
     }
 
     let targetFolderId: string | null = link.target_type === 'folder' ? link.target_id : null;

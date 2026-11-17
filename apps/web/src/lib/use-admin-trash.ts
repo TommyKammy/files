@@ -19,6 +19,7 @@ import {
   removeAdminTrashItems,
 } from '@/lib/admin-trash';
 import type {
+  AdminCapability,
   AdminTrashFiltersState,
   AdminTrashItem,
   AdminTrashPerson,
@@ -26,6 +27,7 @@ import type {
   TrashBulkItemRef,
   TrashBulkItemResult,
   UserRole,
+  UserType,
 } from '@/types/files';
 
 export interface AdminTrashRestoreFormOptions {
@@ -60,12 +62,29 @@ function summarizeBulkOutcome(
 }
 
 export function useAdminTrash(
-  user: { role: UserRole } | null | undefined,
+  user:
+    | {
+        role: UserRole;
+        userType?: UserType;
+        adminCapabilities?: AdminCapability[];
+      }
+    | null
+    | undefined,
   enabled: boolean
 ) {
   const role = user?.role;
-  const canRestore = role === 'sys_admin' || role === 'sec_admin';
+  const canRestore =
+    role === 'sys_admin' ||
+    role === 'sec_admin' ||
+    (role === 'member' &&
+      (user?.adminCapabilities ?? []).includes('admin.trash.manage'));
   const canPurge = role === 'sys_admin';
+  // The restore/purge timeline is an audit-log projection. Do not mount its
+  // fetch for a Co-Admin who was not delegated `admin.audit.read`.
+  const canViewTimeline =
+    role === 'sys_admin' ||
+    role === 'sec_admin' ||
+    (user?.adminCapabilities ?? []).includes('admin.audit.read');
 
   const [filters, setFilters] = useState<AdminTrashFiltersState>(
     DEFAULT_ADMIN_TRASH_FILTERS
@@ -133,7 +152,7 @@ export function useAdminTrash(
 
   const loadTimeline = useCallback(
     async (mode: 'reset' | 'more' = 'reset') => {
-      if (!enabled) return;
+      if (!enabled || !canViewTimeline) return;
       const requestId = ++auditRequestRef.current;
       if (mode === 'reset') {
         setAuditLoading(true);
@@ -164,7 +183,7 @@ export function useAdminTrash(
         }
       }
     },
-    [enabled]
+    [canViewTimeline, enabled]
   );
 
   useEffect(() => {
@@ -176,9 +195,9 @@ export function useAdminTrash(
   }, [enabled, refresh]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !canViewTimeline) return;
     void loadTimeline('reset');
-  }, [enabled, loadTimeline]);
+  }, [canViewTimeline, enabled, loadTimeline]);
 
   const loadMore = useCallback(async () => {
     if (!enabled || !nextCursor || loadingMore) return;

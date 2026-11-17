@@ -13,6 +13,10 @@ import type {
   AdminBulkTransferOwnerPayload,
   AdminContentDetail,
   AdminContentForceUnlockResponse,
+  AdminDelegationInput,
+  AdminDelegationListResponse,
+  AdminDelegationMutationResponse,
+  AdminDelegationUpdateInput,
   AdminContentInspectResponse,
   AdminContentSearchFilters,
   AdminContentSearchResponse,
@@ -634,6 +638,49 @@ export function deleteAdminReportSchedule(
 ): Promise<{ ok: boolean; id: string }> {
   return apiFetch(
     `/api/admin/reports/schedules/${encodeURIComponent(scheduleId)}`,
+    { method: 'DELETE' }
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* P13-1 / TOM-73 Co-Admin delegations (sys_admin only)                */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/admin/delegations — active delegations plus preset metadata. */
+export function fetchAdminDelegations(): Promise<AdminDelegationListResponse> {
+  return apiFetch('/api/admin/delegations');
+}
+
+/** POST /api/admin/delegations — grant a member a Co-Admin delegation. */
+export function createAdminDelegation(
+  input: AdminDelegationInput
+): Promise<AdminDelegationMutationResponse> {
+  return apiFetch('/api/admin/delegations', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+/** PATCH /api/admin/delegations/:id — update preset, scopes, or note. */
+export function updateAdminDelegation(
+  delegationId: string,
+  input: AdminDelegationUpdateInput
+): Promise<AdminDelegationMutationResponse> {
+  return apiFetch(
+    `/api/admin/delegations/${encodeURIComponent(delegationId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }
+  );
+}
+
+/** DELETE /api/admin/delegations/:id — revoke immediately. */
+export function deleteAdminDelegation(
+  delegationId: string
+): Promise<AdminDelegationMutationResponse & { ok: boolean }> {
+  return apiFetch(
+    `/api/admin/delegations/${encodeURIComponent(delegationId)}`,
     { method: 'DELETE' }
   );
 }

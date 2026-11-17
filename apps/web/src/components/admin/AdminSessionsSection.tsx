@@ -19,6 +19,7 @@ import {
 import {
   ADMIN_SESSION_USER_TYPE_FILTER_LABELS,
   ADMIN_SESSION_USER_TYPE_LABELS,
+  canRevokeAdminSession,
   canRevokeAllAdminSessions,
   canViewAdminSessions,
   shortAdminSessionId,
@@ -72,8 +73,11 @@ export function AdminSessionsSection({
   user: AuthUser | null;
 }) {
   const role = user?.role;
-  const canView = canViewAdminSessions(role);
+  const canView = canViewAdminSessions(role, user?.adminCapabilities);
   const canRevokeAll = canRevokeAllAdminSessions(role);
+  const canRevokeSession = (session: AdminSessionRow) =>
+    canRevokeAdminSession(role, session.userRole, user?.adminCapabilities) &&
+    !(role === 'member' && session.userId === user?.id);
 
   const [userType, setUserType] =
     useState<AdminSessionUserTypeFilter>('all');
@@ -546,13 +550,19 @@ export function AdminSessionsSection({
                   <button
                     type="button"
                     data-testid="admin-session-revoke"
-                    disabled={revokeBusy}
+                    disabled={revokeBusy || !canRevokeSession(session)}
+                    title={
+                      canRevokeSession(session)
+                        ? 'セッションを強制失効'
+                        : 'このセッションを失効する権限がありません'
+                    }
                     onClick={() => {
+                      if (!canRevokeSession(session)) return;
                       setPendingRevoke(session);
                       setRevokeReason('');
                       setError(null);
                     }}
-                    className="inline-flex h-6 items-center rounded border border-red-200 bg-red-50 px-2 text-[0.625rem] font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                    className="inline-flex h-6 items-center rounded border border-red-200 bg-red-50 px-2 text-[0.625rem] font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     強制失効
                   </button>

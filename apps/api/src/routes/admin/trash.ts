@@ -1,4 +1,9 @@
 import { Hono } from 'hono';
+import {
+  AdminDelegationError,
+  assertAdminTrashItemsInScope,
+  getAdminScope,
+} from '../../services/admin-delegations';
 import { getAuthenticatedUser } from '../../services/authorization';
 import {
   emptyAdminTrash,
@@ -95,6 +100,9 @@ function handleAdminTrashError(
       },
       err.status
     );
+  }
+  if (err instanceof AdminDelegationError) {
+    return c.json({ error: err.message, code: err.code }, err.status);
   }
   throw err;
 }
@@ -218,6 +226,7 @@ export function registerAdminTrashRoutes(routes: Hono<OidcHonoEnv>) {
       sort: rawSort as TrashSort,
       limit: parseTrashLimit(c.req.query('limit')),
       cursor: c.req.query('cursor') ?? null,
+      scopeRootFolderId: getAdminScope(user)?.rootFolderId ?? null,
     };
 
     try {
@@ -266,6 +275,15 @@ export function registerAdminTrashRoutes(routes: Hono<OidcHonoEnv>) {
           400
         );
       }
+
+      const scopeRootFolderId = getAdminScope(user)?.rootFolderId ?? null;
+      await assertAdminTrashItemsInScope(
+        c.env.DB,
+        user.tenantId,
+        scopeRootFolderId,
+        items,
+        target.provided ? target.value : null
+      );
 
       const result = await restoreAdminTrashItems(c.env.DB, user, items, {
         conflictPolicy,

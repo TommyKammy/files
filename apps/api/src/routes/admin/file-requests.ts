@@ -1,4 +1,9 @@
 import { Hono } from 'hono';
+import {
+  AdminDelegationError,
+  assertAdminFolderInScope,
+  getAdminScope,
+} from '../../services/admin-delegations';
 import { buildAuditLogStmt } from '../../services/audit';
 import { getAuthenticatedUser } from '../../services/authorization';
 import { queueSiemEvent } from '../../services/siem-webhook';
@@ -60,6 +65,18 @@ export function registerAdminFileRequestRoutes(routes: Hono<OidcHonoEnv>) {
 
     const conditions = ['fr.tenant_id = ?'];
     const binds: unknown[] = [user.tenantId];
+    const scopeRootFolderId = getAdminScope(user)?.rootFolderId ?? null;
+    if (scopeRootFolderId) {
+      conditions.push(
+        `EXISTS (
+           SELECT 1 FROM folder_closures fc
+            WHERE fc.tenant_id = fr.tenant_id
+              AND fc.ancestor_id = ?
+              AND fc.descendant_id = fr.folder_id
+         )`
+      );
+      binds.push(scopeRootFolderId);
+    }
     if (status === 'active') conditions.push('fr.is_active = 1');
     if (status === 'inactive') conditions.push('fr.is_active = 0');
     if (search) {
@@ -119,6 +136,20 @@ export function registerAdminFileRequestRoutes(routes: Hono<OidcHonoEnv>) {
         { error: 'File request not found', code: 'FILE_REQUEST_NOT_FOUND' },
         404
       );
+    }
+
+    try {
+      await assertAdminFolderInScope(
+        c.env.DB,
+        user.tenantId,
+        getAdminScope(user)?.rootFolderId ?? null,
+        existing.folder_id
+      );
+    } catch (err) {
+      if (err instanceof AdminDelegationError) {
+        return c.json({ error: err.message, code: err.code }, err.status);
+      }
+      throw err;
     }
 
     const nowIso = new Date().toISOString();

@@ -1,5 +1,6 @@
 import { buildAdminAuditPresetHref } from '@/lib/admin-console-nav';
 import type {
+  AdminCapability,
   AdminMemberAggregations,
   AdminMemberBulkAction,
   AdminMemberBulkImportResponse,
@@ -88,14 +89,36 @@ export function memberRoleBadgeClass(role: UserRole): string {
 
 export type AdminMemberViewerRole = UserRole | null | undefined;
 
-/** Member list, detail and CSV export are available to both admin roles. */
-export function canViewAdminMembers(role: AdminMemberViewerRole): boolean {
-  return role === 'sys_admin' || role === 'sec_admin';
+function hasViewerCapability(
+  capabilities: readonly AdminCapability[] | null | undefined,
+  capability: AdminCapability
+): boolean {
+  return (capabilities ?? []).includes(capability);
 }
 
-/** Suspend/resume of ordinary members is delegated to sec_admin. */
-export function canManageMemberLifecycle(role: AdminMemberViewerRole): boolean {
-  return role === 'sys_admin' || role === 'sec_admin';
+/** Member list, detail and CSV export are available to both admin roles. */
+export function canViewAdminMembers(
+  role: AdminMemberViewerRole,
+  capabilities?: readonly AdminCapability[] | null
+): boolean {
+  return (
+    role === 'sys_admin' ||
+    role === 'sec_admin' ||
+    (role === 'member' && hasViewerCapability(capabilities, 'admin.users.read'))
+  );
+}
+
+/** Suspend/resume of ordinary members is delegated to sec_admin / helpdesk. */
+export function canManageMemberLifecycle(
+  role: AdminMemberViewerRole,
+  capabilities?: readonly AdminCapability[] | null
+): boolean {
+  return (
+    role === 'sys_admin' ||
+    role === 'sec_admin' ||
+    (role === 'member' &&
+      hasViewerCapability(capabilities, 'admin.users.suspend'))
+  );
 }
 
 /** Registration, role/quota edits and bulk import are sys_admin only. */
@@ -103,9 +126,17 @@ export function canAdministrateMembers(role: AdminMemberViewerRole): boolean {
   return role === 'sys_admin';
 }
 
-export function memberPermissionNotice(role: AdminMemberViewerRole): string {
+export function memberPermissionNotice(
+  role: AdminMemberViewerRole,
+  capabilities?: readonly AdminCapability[] | null
+): string {
   if (role === 'sec_admin') {
     return 'sec_admin はメンバー一覧・詳細・CSV エクスポートと、一般メンバーの停止・再開を実行できます。新規追加・ロール/クォータ更新・一括登録・sys_admin / sec_admin への操作は sys_admin 専用です。';
+  }
+  if (role === 'member' && canViewAdminMembers(role, capabilities)) {
+    return hasViewerCapability(capabilities, 'admin.users.suspend')
+      ? 'Co-Admin は委任されたスコープ内の一般メンバーの閲覧・停止/再開を実行できます。ロール変更・新規追加・オフボーディング・他の管理者への操作は禁止されています。'
+      : 'Co-Admin は委任されたスコープ内の一般メンバーを閲覧できます。停止/再開には admin.users.suspend の委任が必要です。';
   }
   return 'sys_admin はメンバーの新規追加・ロール/部署/個人クォータ更新・停止/再開・CSV 一括登録をすべて実行できます。最後の有効な sys_admin と自分自身の権限変更は拒否されます。';
 }
@@ -113,23 +144,29 @@ export function memberPermissionNotice(role: AdminMemberViewerRole): string {
 export function memberCanBeSuspended(
   viewerRole: AdminMemberViewerRole,
   viewerId: string | null | undefined,
-  member: Pick<AdminMemberRow, 'id' | 'role' | 'status'>
+  member: Pick<AdminMemberRow, 'id' | 'role' | 'status'>,
+  capabilities?: readonly AdminCapability[] | null
 ): boolean {
-  if (!canManageMemberLifecycle(viewerRole)) return false;
+  if (!canManageMemberLifecycle(viewerRole, capabilities)) return false;
   if (!viewerId || member.id === viewerId) return false;
   if (member.status === 'suspended') return false;
-  if (viewerRole === 'sec_admin') return member.role === 'member';
+  if (viewerRole === 'sec_admin' || viewerRole === 'member') {
+    return member.role === 'member';
+  }
   return true;
 }
 
 export function memberCanBeResumed(
   viewerRole: AdminMemberViewerRole,
   viewerId: string | null | undefined,
-  member: Pick<AdminMemberRow, 'id' | 'role' | 'status'>
+  member: Pick<AdminMemberRow, 'id' | 'role' | 'status'>,
+  capabilities?: readonly AdminCapability[] | null
 ): boolean {
-  if (!canManageMemberLifecycle(viewerRole)) return false;
+  if (!canManageMemberLifecycle(viewerRole, capabilities)) return false;
   if (member.status !== 'suspended') return false;
-  if (viewerRole === 'sec_admin') return member.role === 'member';
+  if (viewerRole === 'sec_admin' || viewerRole === 'member') {
+    return member.role === 'member';
+  }
   return true;
 }
 

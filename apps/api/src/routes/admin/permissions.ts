@@ -1,4 +1,8 @@
 import { Hono } from 'hono';
+import {
+  AdminDelegationError,
+  getAdminScope,
+} from '../../services/admin-delegations';
 import { getAuthenticatedUser } from '../../services/authorization';
 import {
   AdminBulkOperationError,
@@ -210,10 +214,26 @@ export function registerAdminPermissionRoutes(routes: Hono<OidcHonoEnv>) {
       roles.push(role);
     }
 
+    const requestedRootFolderId = c.req.query('rootFolderId')?.trim() || null;
+    const scopeRootFolderId = getAdminScope(user)?.rootFolderId ?? null;
+    if (
+      scopeRootFolderId &&
+      requestedRootFolderId &&
+      requestedRootFolderId !== scopeRootFolderId
+    ) {
+      return c.json(
+        {
+          error: 'rootFolderId is outside the delegated root-folder scope',
+          code: 'OUT_OF_DELEGATION_SCOPE',
+        },
+        403
+      );
+    }
+
     const filters: PermissionAuditFilters = {
       targetType,
       targetId: c.req.query('targetId')?.trim() || null,
-      rootFolderId: c.req.query('rootFolderId')?.trim() || null,
+      rootFolderId: scopeRootFolderId ?? requestedRootFolderId,
       includeInherited: isTruthyFlag(c.req.query('includeInherited')),
       grantee: c.req.query('grantee')?.trim() || null,
       granteeType: granteeTypeRaw as 'user' | 'group' | null,
@@ -301,6 +321,9 @@ export function registerAdminPermissionRoutes(routes: Hono<OidcHonoEnv>) {
         return c.json({ error: err.message, code: err.code }, err.status);
       }
       if (err instanceof AdminBulkOperationError) {
+        return c.json({ error: err.message, code: err.code }, err.status);
+      }
+      if (err instanceof AdminDelegationError) {
         return c.json({ error: err.message, code: err.code }, err.status);
       }
       throw err;

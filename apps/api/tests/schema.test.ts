@@ -2,7 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-describe('D1 schema & migrations (0001-0021)', () => {
+describe('D1 schema & migrations (0001-0022)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -926,5 +926,91 @@ describe('D1 schema & migrations (0001-0021)', () => {
         "UPDATE tenant_policies SET quota_critical_threshold_pct = 101 WHERE tenant_id = 't1'"
       ).run()
     ).rejects.toThrow();
+
+    // Migration 0022: Co-Admin delegations with optional group / root-folder
+    // scopes, one active grant per (tenant, user).
+    const [delegationTable, delegationCols, delegationIndexes] =
+      await Promise.all([
+        env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'admin_delegations'"
+        ).first<{ name: string }>(),
+        env.DB.prepare('PRAGMA table_info(admin_delegations)').all<{
+          name: string;
+          pk: number;
+        }>(),
+        env.DB.prepare(
+          `SELECT name FROM sqlite_master
+            WHERE type = 'index'
+              AND name IN (
+                'idx_admin_delegations_tenant_user',
+                'idx_admin_delegations_tenant_created'
+              )
+            ORDER BY name`
+        ).all<{ name: string }>(),
+      ]);
+    expect(delegationTable?.name).toBe('admin_delegations');
+    expect(delegationCols.results.map((column) => column.name)).toEqual([
+      'id',
+      'tenant_id',
+      'user_id',
+      'preset',
+      'permissions_json',
+      'scope_group_id',
+      'scope_root_folder_id',
+      'note',
+      'granted_by',
+      'created_at',
+      'updated_at',
+    ]);
+    expect(
+      delegationCols.results
+        .filter((column) => column.pk > 0)
+        .map((column) => column.name)
+        .sort()
+    ).toEqual(['id']);
+    expect(delegationIndexes.results.map((row) => row.name)).toEqual([
+      'idx_admin_delegations_tenant_created',
+      'idx_admin_delegations_tenant_user',
+    ]);
+
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO users (id, tenant_id, email, display_name, role) VALUES ('delegated-member', 't1', 'delegated@example.com', 'Delegated', 'member')"
+      ),
+      env.DB.prepare(
+        "INSERT INTO groups (id, tenant_id, name) VALUES ('delegation-group', 't1', 'Delegation Group')"
+      ),
+    ]);
+    await env.DB.prepare(
+      `INSERT INTO admin_delegations (
+         id, tenant_id, user_id, preset, permissions_json, scope_group_id,
+         scope_root_folder_id, note, granted_by, created_at, updated_at
+       ) VALUES (
+         'delegation-schema', 't1', 'delegated-member', 'auditor',
+         '["admin.insights.read","admin.audit.read"]', 'delegation-group',
+         'fld1', 'schema test', 'u1',
+         '2026-11-17T00:00:00.000Z', '2026-11-17T00:00:00.000Z'
+       )`
+    ).run();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO admin_delegations (
+           id, tenant_id, user_id, permissions_json, granted_by, created_at, updated_at
+         ) VALUES ('delegation-duplicate', 't1', 'delegated-member', '[]', 'u1',
+                   '2026-11-17T00:00:00.000Z', '2026-11-17T00:00:00.000Z')`
+      ).run()
+    ).rejects.toThrow();
+
+    // Deleting the scoped group restricts the delegation, it never deletes it.
+    await env.DB.prepare(
+      "DELETE FROM groups WHERE id = 'delegation-group'"
+    ).run();
+    const scopedDelegation = await env.DB.prepare(
+      "SELECT scope_group_id, permissions_json FROM admin_delegations WHERE id = 'delegation-schema'"
+    ).first<{ scope_group_id: string | null; permissions_json: string }>();
+    expect(scopedDelegation).toEqual({
+      scope_group_id: null,
+      permissions_json: '["admin.insights.read","admin.audit.read"]',
+    });
   });
 });
