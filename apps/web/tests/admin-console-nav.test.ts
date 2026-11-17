@@ -57,7 +57,8 @@ test('role-aware nav projection only exposes the console to admins', () => {
 
 test('each focused route only fetches the APIs owned by its sections', () => {
   assert.deepEqual(getAdminSectionFetchPlan('insights'), {
-    storageStats: true,
+    insights: true,
+    storageStats: false,
     aiSuggestions: false,
     sharedLinks: false,
     policies: false,
@@ -66,6 +67,7 @@ test('each focused route only fetches the APIs owned by its sections', () => {
     completesImmediately: false,
   });
   assert.deepEqual(getAdminSectionFetchPlan('content'), {
+    insights: false,
     storageStats: false,
     aiSuggestions: true,
     sharedLinks: false,
@@ -75,6 +77,7 @@ test('each focused route only fetches the APIs owned by its sections', () => {
     completesImmediately: false,
   });
   assert.deepEqual(getAdminSectionFetchPlan('users'), {
+    insights: false,
     storageStats: false,
     aiSuggestions: false,
     sharedLinks: false,
@@ -84,6 +87,7 @@ test('each focused route only fetches the APIs owned by its sections', () => {
     completesImmediately: true,
   });
   assert.deepEqual(getAdminSectionFetchPlan('settings'), {
+    insights: false,
     storageStats: false,
     aiSuggestions: false,
     sharedLinks: true,
@@ -93,6 +97,7 @@ test('each focused route only fetches the APIs owned by its sections', () => {
     completesImmediately: false,
   });
   assert.deepEqual(getAdminSectionFetchPlan('reports'), {
+    insights: false,
     storageStats: false,
     aiSuggestions: false,
     sharedLinks: false,
@@ -103,6 +108,7 @@ test('each focused route only fetches the APIs owned by its sections', () => {
   });
 
   const all = getAdminSectionFetchPlan('all');
+  assert.equal(all.insights, true);
   assert.equal(all.storageStats, true);
   assert.equal(all.aiSuggestions, true);
   assert.equal(all.sharedLinks, true);
@@ -138,6 +144,8 @@ test('auditPreset query parsing is case/separator tolerant and null-safe', () =>
   assert.equal(parseAdminAuditPreset('ROOT_FOLDER'), 'rootFolder');
   assert.equal(parseAdminAuditPreset('guest'), 'guest');
   assert.equal(parseAdminAuditPreset('permission'), 'permission');
+  assert.equal(parseAdminAuditPreset('security'), 'security');
+  assert.equal(parseAdminAuditPreset('SECURITY'), 'security');
   assert.equal(parseAdminAuditPreset(['rootFolder', 'guest']), 'rootFolder');
   assert.equal(parseAdminAuditPreset(''), null);
   assert.equal(parseAdminAuditPreset('unknown'), null);
@@ -162,6 +170,14 @@ test('auditPreset query parsing is case/separator tolerant and null-safe', () =>
     'admin.permission.',
   ]);
   assert.equal(ADMIN_AUDIT_PRESETS.permission.presetKind, 'permission');
+  assert.equal(ADMIN_AUDIT_PRESETS.security.presetKind, 'security');
+  assert.ok(
+    ADMIN_AUDIT_PRESETS.security.actions.includes('auth.ip_blocked')
+  );
+  assert.ok(
+    ADMIN_AUDIT_PRESETS.security.actions.includes('shared_link.password_failed')
+  );
+  assert.equal(ADMIN_AUDIT_PRESETS.security.actionPrefixes.length, 0);
 
   assert.equal(
     buildAdminAuditPresetHref('rootFolder'),

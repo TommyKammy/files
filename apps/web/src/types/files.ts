@@ -788,6 +788,51 @@ export interface StorageStatsResponse {
   d1EstimatedBytes: number | null;
 }
 
+export type AdminInsightsRangeDays = 7 | 30;
+
+export interface AdminInsightsBlockedActionRow {
+  action: string;
+  count: number;
+}
+
+export interface AdminInsightsTrendPoint {
+  day: string;
+  activeUsers: number;
+  activeGuests: number;
+  newFiles: number;
+  downloads: number;
+  sharedLinksCreated: number;
+  blockedAudits: number;
+  usedBytesSnapshot: number;
+  totalFilesSnapshot: number;
+}
+
+export interface AdminInsightsResponse {
+  rangeDays: AdminInsightsRangeDays;
+  generatedAt: string;
+  storage: StorageStatsResponse;
+  security: {
+    blocked7dCount: number;
+    blocked30dCount: number;
+    blockedRecentCount: number;
+    blockedByAction: AdminInsightsBlockedActionRow[];
+    unsetSharedFilesCount: number;
+    activeSharedLinksCount: number;
+    publicSharedLinksCount: number;
+    activeFileLocksCount: number;
+    expiringGuestsCount: number;
+  };
+  collaboration: {
+    activeMembers: number;
+    suspendedMembers: number;
+    activeGuests: number;
+    expiringGuests72h: number;
+    groupsCount: number;
+    activeSessionsCount: number;
+  };
+  trends: AdminInsightsTrendPoint[];
+}
+
 export interface AiSuggestionItem {
   fileId: string;
   folderId: string | null;

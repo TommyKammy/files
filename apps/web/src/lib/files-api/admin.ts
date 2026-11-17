@@ -15,6 +15,8 @@ import type {
   AdminContentInspectResponse,
   AdminContentSearchFilters,
   AdminContentSearchResponse,
+  AdminInsightsRangeDays,
+  AdminInsightsResponse,
   AdminPermissionAuditQuery,
   AdminPermissionAuditResponse,
   AdminRootFolderListResponse,
@@ -52,6 +54,13 @@ import {
 
 export function fetchAdminStorageStats(): Promise<StorageStatsResponse> {
   return apiFetch('/api/admin/storage-stats');
+}
+
+/** GET /api/admin/insights?days=7|30 — pre-aggregated usage/security KPIs. */
+export function fetchAdminInsights(
+  days: AdminInsightsRangeDays = 7
+): Promise<AdminInsightsResponse> {
+  return apiFetch(`/api/admin/insights?days=${days === 30 ? 30 : 7}`);
 }
 
 export function fetchAdminAiSuggestions(params?: {

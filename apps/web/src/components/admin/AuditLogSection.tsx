@@ -34,7 +34,7 @@ export function AuditLogSection({
   auditActionFilter: string;
   auditActionPrefixFilter?: string;
   auditActionPrefixes?: readonly string[];
-  auditPresetKind?: 'permission' | 'guest' | 'user' | null;
+  auditPresetKind?: 'permission' | 'guest' | 'user' | 'security' | null;
   auditTargetType?: string;
   auditStatusFilter: '' | 'allowed' | 'blocked';
   auditLoadingMore: boolean;
@@ -85,7 +85,11 @@ export function AuditLogSection({
         <div className="flex flex-wrap items-center gap-2">
           {auditPresetActions.length > 0 && (
             <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[0.6875rem] font-medium text-blue-800">
-              <span>ルートフォルダ監査のみ</span>
+              <span>
+                {auditPresetKind === 'security'
+                  ? 'セキュリティブロック監査のみ'
+                  : 'ルートフォルダ監査のみ'}
+              </span>
               {onClearPreset && (
                 <button
                   type="button"

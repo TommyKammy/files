@@ -2,7 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-describe('D1 schema & migrations (0001-0018)', () => {
+describe('D1 schema & migrations (0001-0019)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -619,6 +619,84 @@ describe('D1 schema & migrations (0001-0018)', () => {
     await expect(
       env.DB.prepare(
         "UPDATE tenant_policies SET ip_allowlist_enabled = 2 WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
+
+    // Migration 0019: admin insights pre-aggregation and bounded-scan indexes.
+    const [insightsTable, insightCols, insightIndexes] = await Promise.all([
+      env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tenant_daily_insights'"
+      ).first<{ name: string }>(),
+      env.DB.prepare('PRAGMA table_info(tenant_daily_insights)').all<{
+        name: string;
+        pk: number;
+      }>(),
+      env.DB.prepare(
+        `SELECT name FROM sqlite_master
+          WHERE type = 'index'
+            AND name IN (
+              'idx_files_active_created',
+              'idx_shared_links_tenant_created'
+            )
+          ORDER BY name`
+      ).all<{ name: string }>(),
+    ]);
+    expect(insightsTable?.name).toBe('tenant_daily_insights');
+    expect(insightCols.results.map((column) => column.name)).toEqual([
+      'tenant_id',
+      'day_utc',
+      'active_users_count',
+      'active_guests_count',
+      'new_files_count',
+      'downloads_count',
+      'shared_links_created_count',
+      'blocked_audit_count',
+      'used_bytes_snapshot',
+      'total_files_snapshot',
+      'updated_at',
+    ]);
+    expect(
+      insightCols.results
+        .filter((column) => column.pk > 0)
+        .map((column) => column.name)
+        .sort()
+    ).toEqual(['day_utc', 'tenant_id']);
+    expect(insightIndexes.results.map((row) => row.name)).toEqual([
+      'idx_files_active_created',
+      'idx_shared_links_tenant_created',
+    ]);
+
+    await env.DB.prepare(
+      `INSERT INTO tenant_daily_insights (
+         tenant_id, day_utc, active_users_count, active_guests_count,
+         new_files_count, downloads_count, shared_links_created_count,
+         blocked_audit_count, used_bytes_snapshot, total_files_snapshot,
+         updated_at
+       ) VALUES ('t1', '2026-11-17', 2, 1, 3, 4, 5, 6, 7000, 7,
+                 '2026-11-17T00:00:00.000Z')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO tenant_daily_insights (
+         tenant_id, day_utc, active_users_count, active_guests_count,
+         new_files_count, downloads_count, shared_links_created_count,
+         blocked_audit_count, used_bytes_snapshot, total_files_snapshot,
+         updated_at
+       ) VALUES ('t1', '2026-11-17', 99, 0, 0, 0, 0, 0, 0, 0,
+                 '2026-11-18T00:00:00.000Z')
+       ON CONFLICT(tenant_id, day_utc) DO UPDATE SET
+         active_users_count = excluded.active_users_count,
+         updated_at = excluded.updated_at`
+    ).run();
+    const insightRow = await env.DB.prepare(
+      "SELECT active_users_count, updated_at FROM tenant_daily_insights WHERE tenant_id = 't1' AND day_utc = '2026-11-17'"
+    ).first<{ active_users_count: number; updated_at: string }>();
+    expect(insightRow).toEqual({
+      active_users_count: 99,
+      updated_at: '2026-11-18T00:00:00.000Z',
+    });
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_daily_insights SET new_files_count = -1 WHERE tenant_id = 't1' AND day_utc = '2026-11-17'"
       ).run()
     ).rejects.toThrow();
   });

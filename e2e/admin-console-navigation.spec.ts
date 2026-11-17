@@ -147,6 +147,7 @@ test.describe('Admin console multi-view navigation (TOM-63)', () => {
       '/api/admin/ai-suggestions',
       '/api/audit-logs',
       '/api/admin/guests',
+      '/api/admin/insights',
     ];
 
     // /admin/users: only the guest section self-fetches.
@@ -161,12 +162,13 @@ test.describe('Admin console multi-view navigation (TOM-63)', () => {
     expect(users.apiPaths).not.toContain('/api/admin/policies');
     await users.page.close();
 
-    // /admin/insights: storage stats only.
+    // /admin/insights: the dedicated insights aggregate (including its O(1)
+    // storage snapshot) only. No other admin endpoint may be fetched.
     const insights = await openRoute('/admin/insights', 'インサイト', [
-      '/api/admin/storage-stats',
+      '/api/admin/insights',
     ]);
     for (const path of forbidden.filter(
-      (path) => path !== '/api/admin/storage-stats'
+      (path) => path !== '/api/admin/insights'
     )) {
       expect(insights.apiPaths).not.toContain(path);
     }

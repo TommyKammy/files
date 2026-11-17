@@ -2,6 +2,7 @@ import {
   GUEST_AUDIT_ACTION_PREFIXES,
   PERMISSION_AUDIT_ACTION_PREFIXES,
   ROOT_FOLDER_AUDIT_ACTIONS,
+  SECURITY_BLOCKED_AUDIT_ACTIONS,
   USER_AUDIT_ACTION_PREFIXES,
 } from '@/lib/admin-audit';
 import type { UserRole } from '@/types/files';
@@ -51,7 +52,8 @@ export const ADMIN_CONSOLE_NAV_ITEMS: readonly AdminConsoleNavItem[] = [
     href: '/admin/insights',
     label: 'インサイト',
     heading: 'インサイト',
-    summary: 'ストレージ使用量・機密分類内訳・D1 メタデータ容量を監視します。',
+    summary:
+      '利用統計・セキュリティブロック・共有リスクを 7日/30日の KPI と日次トレンドで監視します。',
     roles: ['sys_admin', 'sec_admin'],
   },
   {
@@ -135,6 +137,7 @@ export function getAdminConsoleSectionFromPathname(
 }
 
 export interface AdminSectionFetchPlan {
+  insights: boolean;
   storageStats: boolean;
   aiSuggestions: boolean;
   sharedLinks: boolean;
@@ -160,6 +163,7 @@ export const ADMIN_SECTION_FETCH_PLANS: Record<
   AdminSectionFetchPlan
 > = {
   all: {
+    insights: true,
     storageStats: true,
     aiSuggestions: true,
     sharedLinks: true,
@@ -169,7 +173,8 @@ export const ADMIN_SECTION_FETCH_PLANS: Record<
     completesImmediately: false,
   },
   insights: {
-    storageStats: true,
+    insights: true,
+    storageStats: false,
     aiSuggestions: false,
     sharedLinks: false,
     policies: false,
@@ -178,6 +183,7 @@ export const ADMIN_SECTION_FETCH_PLANS: Record<
     completesImmediately: false,
   },
   content: {
+    insights: false,
     storageStats: false,
     aiSuggestions: true,
     sharedLinks: false,
@@ -187,6 +193,7 @@ export const ADMIN_SECTION_FETCH_PLANS: Record<
     completesImmediately: false,
   },
   users: {
+    insights: false,
     storageStats: false,
     aiSuggestions: false,
     sharedLinks: false,
@@ -196,6 +203,7 @@ export const ADMIN_SECTION_FETCH_PLANS: Record<
     completesImmediately: true,
   },
   settings: {
+    insights: false,
     storageStats: false,
     aiSuggestions: false,
     sharedLinks: true,
@@ -205,6 +213,7 @@ export const ADMIN_SECTION_FETCH_PLANS: Record<
     completesImmediately: false,
   },
   reports: {
+    insights: false,
     storageStats: false,
     aiSuggestions: false,
     sharedLinks: false,
@@ -226,6 +235,7 @@ export function adminSectionHasDashboardFetch(
 ): boolean {
   const plan = getAdminSectionFetchPlan(section);
   return (
+    plan.insights ||
     plan.storageStats ||
     plan.aiSuggestions ||
     plan.sharedLinks ||
@@ -235,12 +245,17 @@ export function adminSectionHasDashboardFetch(
   );
 }
 
-export type AdminAuditPreset = 'rootFolder' | 'guest' | 'permission' | 'user';
+export type AdminAuditPreset =
+  | 'rootFolder'
+  | 'guest'
+  | 'permission'
+  | 'user'
+  | 'security';
 
 export interface AdminAuditPresetConfig {
   actions: readonly string[];
   actionPrefixes: readonly string[];
-  presetKind: 'permission' | 'guest' | 'user' | null;
+  presetKind: 'permission' | 'guest' | 'user' | 'security' | null;
 }
 
 export const ADMIN_AUDIT_PRESETS: Record<
@@ -267,6 +282,11 @@ export const ADMIN_AUDIT_PRESETS: Record<
     actionPrefixes: USER_AUDIT_ACTION_PREFIXES,
     presetKind: 'user',
   },
+  security: {
+    actions: SECURITY_BLOCKED_AUDIT_ACTIONS,
+    actionPrefixes: [],
+    presetKind: 'security',
+  },
 };
 
 export const AUDIT_PRESET_QUERY_KEY = 'auditPreset';
@@ -282,6 +302,7 @@ export function parseAdminAuditPreset(
   if (normalized === 'guest') return 'guest';
   if (normalized === 'permission') return 'permission';
   if (normalized === 'user') return 'user';
+  if (normalized === 'security') return 'security';
   return null;
 }
 

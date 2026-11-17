@@ -28,6 +28,31 @@ export const SESSION_AUDIT_ACTION_PREFIXES = ['admin.session.'] as const;
 /** Prefix preset used by IP allowlist / SSO authentication controls. */
 export const SECURITY_AUDIT_ACTION_PREFIXES = ['auth.'] as const;
 
+/**
+ * Exact blocked-action preset used by the insights dashboard drill-down.
+ * Kept explicit so `/admin/reports?auditPreset=security` shows only rejected
+ * security events instead of every allowed shared-link read.
+ */
+export const SECURITY_BLOCKED_AUDIT_ACTIONS = [
+  'auth.account_link_conflict',
+  'auth.oidc_verification_failed',
+  'auth.sso_domain_blocked',
+  'auth.sso_required_blocked',
+  'auth.suspended_user_login',
+  'auth.token_exchange_failed',
+  'auth.ip_blocked',
+  'file.content_access_denied',
+  'file_request.blocked_extension',
+  'file_request.rate_limited',
+  'shared_link.active_content_blocked',
+  'shared_link.download_blocked',
+  'shared_link.download_limit_exceeded',
+  'shared_link.password_failed',
+  'shared_link.password_locked',
+  'ai.classification_quota_exceeded',
+  'workspace.copy_denied',
+] as const;
+
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.root_folder.create': 'ルートフォルダ作成',
   'admin.root_folder.owner_transfer': '所有者移管',
@@ -90,6 +115,13 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.folder.restore': '管理者によるフォルダ復元',
   'admin.file.restore': '管理者によるファイル復元',
   'workspace.copy_denied': 'コピー拒否 (DLP)',
+  'shared_link.password_failed': '共有リンクのパスワード失敗',
+  'shared_link.password_locked': '共有リンクのパスワード一時ロック',
+  'shared_link.download_blocked': '共有リンクのダウンロード遮断',
+  'shared_link.active_content_blocked': '共有リンクのアクティブコンテンツ遮断',
+  'shared_link.download_limit_exceeded': '共有リンクのダウンロード上限超過',
+  'file.content_access_denied': '権限不足によるコンテンツアクセス拒否',
+  'ai.classification_quota_exceeded': 'AI 分類クォータ超過',
 };
 
 export function formatAuditActionLabel(action: string): string {

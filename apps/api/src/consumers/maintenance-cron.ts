@@ -1,6 +1,7 @@
 import { purgeExpiredSyncChanges } from '../services/sync-changes';
 import { purgeExpiredWopiDrafts } from '../services/wopi-drafts';
 import { purgeExpiredActiveFileLocks } from '../services/active-file-lock-index';
+import { runDailyInsightsAggregation } from '../services/admin-insights';
 import type { Env } from '../types/api';
 import {
   cleanupGuestArtifacts,
@@ -27,6 +28,8 @@ export interface MaintenanceSummary {
   invitationsCleaned: number;
   otpChallengesPurged: number;
   expiringSoonNotified: number;
+  insightTenantsAggregated: number;
+  insightDaysAggregated: number;
 }
 
 interface TenantPolicyRetentionRow {
@@ -41,6 +44,7 @@ interface TenantPolicyRetentionRow {
  * 2. Delete expired/revoked sessions
  * 3. Delete >24h stale pending uploads & orphan R2 objects
  * 4. Purge soft-deleted items older than tenant `trash_retention_days` while keeping `tenant_storage_stats` consistent
+ * 5. Refresh yesterday/today `tenant_daily_insights` rows for the admin insights dashboard
  */
 export async function runDailyMaintenance(
   env: Env,
@@ -92,6 +96,12 @@ export async function runDailyMaintenance(
     nowIso
   );
   const syncChangesPurged = await purgeExpiredSyncChanges(env.DB, nowMs);
+  // Snapshot after trash purge / guest suspension so the daily insight row
+  // matches the O(1) storage counters read by the dashboard.
+  const {
+    tenantsProcessed: insightTenantsAggregated,
+    daysAggregated: insightDaysAggregated,
+  } = await runDailyInsightsAggregation(env.DB, now);
 
   return {
     sessionsDeleted,
@@ -109,5 +119,7 @@ export async function runDailyMaintenance(
     invitationsCleaned,
     otpChallengesPurged,
     expiringSoonNotified,
+    insightTenantsAggregated,
+    insightDaysAggregated,
   };
 }

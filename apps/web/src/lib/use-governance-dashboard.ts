@@ -7,6 +7,7 @@ import {
   ApiClientError,
   bulkApproveAiSuggestions,
   fetchAdminAiSuggestions,
+  fetchAdminInsights,
   fetchAdminPolicies,
   fetchAdminSharedLinks,
   fetchAdminStorageStats,
@@ -21,6 +22,8 @@ import {
 } from '@/lib/sync-store';
 import type {
   AdminContentInspectPolicy,
+  AdminInsightsRangeDays,
+  AdminInsightsResponse,
   AdminSharedLinkRow,
   AiSuggestionItem,
   AuditLogEntry,
@@ -46,6 +49,9 @@ import {
   parseAdminAuditPreset,
   type AdminConsoleSection,
 } from '@/lib/admin-console-nav';
+import {
+  ADMIN_INSIGHTS_DEFAULT_DAYS,
+} from '@/lib/admin-insights';
 
 export function useGovernanceDashboard({
   section = 'all',
@@ -73,6 +79,15 @@ export function useGovernanceDashboard({
   const [notice, setNotice] = useState<string | null>(null);
 
   const [stats, setStats] = useState<StorageStatsResponse | null>(null);
+  const [insights, setInsights] = useState<AdminInsightsResponse | null>(null);
+  const [insightsDays, setInsightsDays] = useState<AdminInsightsRangeDays>(
+    ADMIN_INSIGHTS_DEFAULT_DAYS
+  );
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const insightsDaysRef = useRef<AdminInsightsRangeDays>(
+    ADMIN_INSIGHTS_DEFAULT_DAYS
+  );
+  const insightsRequestRef = useRef(0);
   const [suggestions, setSuggestions] = useState<AiSuggestionItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [labelFilter, setLabelFilter] = useState<ClassificationLabel | 'all'>('all');
@@ -143,7 +158,7 @@ export function useGovernanceDashboard({
       : []
   );
   const [auditPresetKind, setAuditPresetKind] = useState<
-    'permission' | 'guest' | 'user' | null
+    'permission' | 'guest' | 'user' | 'security' | null
   >(initialAuditPresetConfig?.presetKind ?? null);
   const [auditTargetType, setAuditTargetType] = useState('');
   const [auditStatusFilter, setAuditStatusFilter] = useState<'' | 'allowed' | 'blocked'>('');
@@ -189,7 +204,7 @@ export function useGovernanceDashboard({
         setError(null);
       }
       try {
-        const [statsRes, aiRes, linksRes, policyRes, logsRes, conflictsRes] =
+        const [statsRes, aiRes, linksRes, policyRes, logsRes, conflictsRes, insightsRes] =
           await Promise.all([
             plan.storageStats ? fetchAdminStorageStats() : Promise.resolve(null),
             plan.aiSuggestions
@@ -224,10 +239,24 @@ export function useGovernanceDashboard({
             plan.inheritanceConflicts
               ? fetchInheritanceConflicts()
               : Promise.resolve(null),
+            plan.insights
+              ? fetchAdminInsights(insightsDaysRef.current)
+              : Promise.resolve(null),
           ]);
 
         if (statsRes) {
           setStats(statsRes);
+        }
+        if (insightsRes) {
+          if (insightsRes.rangeDays === insightsDaysRef.current) {
+            setInsights(insightsRes);
+            // Focused `/admin/insights` reads storage from the insights
+            // payload itself so the route never calls
+            // `/api/admin/storage-stats`.
+            if (!statsRes) {
+              setStats(insightsRes.storage);
+            }
+          }
         }
         if (aiRes) {
           setSuggestions(aiRes.suggestions);
@@ -332,6 +361,7 @@ export function useGovernanceDashboard({
     const unlistenRevocations = syncStore.subscribeSecurityRevocations((event) => {
       if (event.kind === 'user.suspended') {
         setStats(null);
+        setInsights(null);
         setSuggestions([]);
         setSharedLinks([]);
         setAuditLogs([]);
@@ -756,6 +786,9 @@ export function useGovernanceDashboard({
 
   function handleClearAuditPreset() {
     setAuditActionPreset([]);
+    setAuditPresetKind((current) =>
+      current === 'security' ? null : current
+    );
   }
 
   function handleClearAuditPrefixPreset() {
@@ -779,6 +812,35 @@ export function useGovernanceDashboard({
 
   function handleAuditTargetTypeChange(value: string) {
     setAuditTargetType(value);
+  }
+
+  async function handleInsightsDaysChange(
+    days: AdminInsightsRangeDays
+  ): Promise<void> {
+    if (!isPrivilegedAdmin || insightsDays === days) return;
+    insightsDaysRef.current = days;
+    setInsightsDays(days);
+    const requestId = insightsRequestRef.current + 1;
+    insightsRequestRef.current = requestId;
+    setInsightsLoading(true);
+    try {
+      const result = await fetchAdminInsights(days);
+      if (requestId !== insightsRequestRef.current) return;
+      setInsights(result);
+      if (section === 'insights') setStats(result.storage);
+      setError(null);
+    } catch (err) {
+      if (requestId !== insightsRequestRef.current) return;
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'インサイトデータの読み込みに失敗しました'
+      );
+    } finally {
+      if (requestId === insightsRequestRef.current) {
+        setInsightsLoading(false);
+      }
+    }
   }
 
   async function handleLoadMoreLogs() {
@@ -822,6 +884,9 @@ export function useGovernanceDashboard({
     error,
     notice,
     stats,
+    insights,
+    insightsDays,
+    insightsLoading,
     suggestions,
     selectedIds,
     labelFilter,
@@ -874,6 +939,7 @@ export function useGovernanceDashboard({
     handleBulkApprove,
     handleSingleApprove,
     handleEmergencyRevoke,
+    handleInsightsDaysChange,
     handlePolicySubmit,
     handleAdvancedRolesUpdate,
     handleFolderStructureUpdate,

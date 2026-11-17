@@ -6,6 +6,7 @@ import { registerAiSuggestionRoutes } from './admin/ai-suggestions';
 import { registerAdminContentRoutes } from './admin/content';
 import { registerAdminGroupRoutes } from './admin/groups';
 import { registerAdminGuestRoutes } from './admin/guests';
+import { registerAdminInsightsRoutes } from './admin/insights';
 import { registerAdminPermissionRoutes } from './admin/permissions';
 import { registerAdminPolicyRoutes } from './admin/policies';
 import { registerAdminRootFolderBulkRoutes } from './admin/root-folders-bulk';
@@ -27,6 +28,7 @@ adminGovernanceRoutes.use(
 );
 
 registerStorageStatsRoutes(adminGovernanceRoutes);
+registerAdminInsightsRoutes(adminGovernanceRoutes);
 registerAiSuggestionRoutes(adminGovernanceRoutes);
 registerAdminContentRoutes(adminGovernanceRoutes);
 registerAdminSharedLinkRoutes(adminGovernanceRoutes);

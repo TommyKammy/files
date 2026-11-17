@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { AccessControlSettingsSection } from '@/components/admin/AccessControlSettingsSection';
 import { AdminAuthControlSection } from '@/components/admin/AdminAuthControlSection';
 import { AdminContentManagerSection } from '@/components/admin/AdminContentManagerSection';
+import { AdminInsightsDashboardSection } from '@/components/admin/AdminInsightsDashboardSection';
 import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
 import { AdminGuestsSection } from '@/components/admin/AdminGuestsSection';
 import { AdminGroupsSection } from '@/components/admin/AdminGroupsSection';
@@ -22,7 +23,6 @@ import { AdminTrashSection } from '@/components/admin/AdminTrashSection';
 import { AuditLogSection } from '@/components/admin/AuditLogSection';
 import { GuestPolicySection } from '@/components/admin/GuestPolicySection';
 import { SharedLinksPolicySection } from '@/components/admin/SharedLinksPolicySection';
-import { StorageStatsSection } from '@/components/admin/StorageStatsSection';
 import { AdminConsoleShell } from '@/components/AdminConsoleShell';
 import { AppShellRail } from '@/components/AppShellRail';
 import {
@@ -51,6 +51,9 @@ export function HybridGovernanceDashboard({
     error,
     notice,
     stats,
+    insights,
+    insightsDays,
+    insightsLoading,
     suggestions,
     selectedIds,
     labelFilter,
@@ -99,6 +102,7 @@ export function HybridGovernanceDashboard({
     handleBulkApprove,
     handleSingleApprove,
     handleEmergencyRevoke,
+    handleInsightsDaysChange,
     handlePolicySubmit,
     handleAdvancedRolesUpdate,
     handleFolderStructureUpdate,
@@ -269,8 +273,17 @@ export function HybridGovernanceDashboard({
             </div>
           ) : (
             <>
-              {showSection('insights') && stats && (
-                <StorageStatsSection stats={stats} usedPct={usedPct} />
+              {showSection('insights') && (
+                <AdminInsightsDashboardSection
+                  insights={insights}
+                  stats={stats}
+                  usedPct={usedPct}
+                  days={insightsDays}
+                  loading={insightsLoading}
+                  onDaysChange={(days) => {
+                    void handleInsightsDaysChange(days);
+                  }}
+                />
               )}
 
               {showSection('content') && (
