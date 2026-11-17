@@ -24,12 +24,14 @@ export function AdminSectionTabs({
   activeTabId,
   onSelectTab,
   ariaLabel = '管理コンソールのセクション内タブ',
+  badges,
 }: {
   section: AdminConsoleSection;
   tabs: readonly AdminConsoleTabItem[];
   activeTabId: string | null;
   onSelectTab: (tabId: string) => void;
   ariaLabel?: string;
+  badges?: Partial<Record<string, number>>;
 }) {
   const tablistRef = useRef<HTMLDivElement | null>(null);
 
@@ -98,6 +100,7 @@ export function AdminSectionTabs({
     >
       {tabs.map((tab) => {
         const active = tab.id === activeTabId;
+        const badgeCount = badges?.[tab.id];
         return (
           <button
             key={tab.id}
@@ -117,6 +120,15 @@ export function AdminSectionTabs({
             className="relative inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-t-md px-3 text-[0.75rem] font-medium text-[#55565a] transition-colors after:pointer-events-none after:content-[''] hover:text-[#111214] aria-selected:text-[#3f4a9e] aria-selected:after:absolute aria-selected:after:inset-x-0 aria-selected:after:bottom-0 aria-selected:after:border-b-2 aria-selected:after:border-[#5e6ad2]"
           >
             {tab.label}
+            {typeof badgeCount === 'number' && badgeCount > 0 && (
+              <span
+                data-testid={`admin-tab-badge-${tab.id}`}
+                aria-hidden="true"
+                className="ml-1.5 inline-flex items-center rounded-full bg-[#eef0fb] px-1.5 py-0.5 text-[0.625rem] font-semibold leading-none text-[#3f4a9e]"
+              >
+                {badgeCount}
+              </span>
+            )}
           </button>
         );
       })}
@@ -128,10 +140,12 @@ export function AdminSectionTabs({
 export function AdminTabPanel({
   section,
   tabId,
+  summary,
   children,
 }: {
   section: AdminConsoleSection;
   tabId: string;
+  summary?: string;
   children: ReactNode;
 }) {
   return (
@@ -142,6 +156,14 @@ export function AdminTabPanel({
       data-testid={`admin-tabpanel-${tabId}`}
       className="space-y-4"
     >
+      {summary && (
+        <p
+          data-testid="admin-active-tab-summary"
+          className="text-[0.6875rem] text-[#55565a]"
+        >
+          {summary}
+        </p>
+      )}
       {children}
     </div>
   );

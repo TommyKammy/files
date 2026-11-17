@@ -443,7 +443,13 @@ export function useGovernanceDashboard({
     setAuditActionPreset(config ? [...config.actions] : []);
     setAuditActionPrefixPreset(config ? [...config.actionPrefixes] : []);
     setAuditPresetKind(config?.presetKind ?? null);
-  }, [auditPreset]);
+    // `?auditPreset=...` links always land on the audit-logs tab so the
+    // preset results are visible at the top of the reports page instead of
+    // requiring a scroll to a stacked audit section.
+    if (parsed && section === 'reports') {
+      setSelectedTabId('audit-logs');
+    }
+  }, [auditPreset, section]);
 
   // Adopt a new `?tab=` value when the server component passes a changed
   // search param (client-side navigation or history restore).
@@ -847,16 +853,6 @@ export function useGovernanceDashboard({
     }
   }
 
-  function scrollToAuditLogs() {
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        document
-          .getElementById('admin-audit-logs')
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    });
-  }
-
   function handleShowRootFolderAudit() {
     if (section !== 'all') {
       router.push(buildAdminAuditPresetHref('rootFolder'));
@@ -868,7 +864,7 @@ export function useGovernanceDashboard({
     setAuditActionPrefixPreset([]);
     setAuditPresetKind(null);
     setAuditTargetType('');
-    scrollToAuditLogs();
+    selectTab('reports');
   }
 
   function handleShowPermissionAudit() {
@@ -879,7 +875,14 @@ export function useGovernanceDashboard({
     setAuditActionPrefixPreset([...PERMISSION_AUDIT_ACTION_PREFIXES]);
     setAuditPresetKind('permission');
     setAuditTargetType('');
-    scrollToAuditLogs();
+    // The reports section has a dedicated audit-logs tab; the integrated
+    // `/admin` view exposes it inside the reports tab. Switch tabs instead
+    // of scrolling to a section that may be stacked below the fold.
+    if (section === 'reports') {
+      selectTab('audit-logs');
+    } else if (section === 'all') {
+      selectTab('reports');
+    }
   }
 
   /** Guest lifecycle preset: `guest.*` and `admin.guest.*`. */
@@ -895,7 +898,7 @@ export function useGovernanceDashboard({
     setAuditActionPrefixPreset([...GUEST_AUDIT_ACTION_PREFIXES]);
     setAuditPresetKind('guest');
     setAuditTargetType('');
-    scrollToAuditLogs();
+    selectTab('reports');
   }
 
   /** Internal member administration preset: `admin.user.*`. */
@@ -911,7 +914,7 @@ export function useGovernanceDashboard({
     setAuditActionPrefixPreset([...USER_AUDIT_ACTION_PREFIXES]);
     setAuditPresetKind('user');
     setAuditTargetType('');
-    scrollToAuditLogs();
+    selectTab('reports');
   }
 
   function handleClearAuditPreset() {

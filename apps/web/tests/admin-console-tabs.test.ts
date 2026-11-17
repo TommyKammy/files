@@ -8,6 +8,7 @@ import {
   getAdminTabDomId,
   getAdminTabFetchPlan,
   getAdminTabPanelDomId,
+  getAdminTabPreloadChunkIds,
   getAdminTabsForSection,
   getVisibleAdminTabs,
   parseAdminTabQuery,
@@ -661,4 +662,116 @@ test('getAdminTabFetchPlan falls back to the section plan before resolution', ()
     getAdminTabFetchPlan('insights', undefined),
     getAdminSectionFetchPlan('insights')
   );
+});
+
+test('getAdminTabPreloadChunkIds preloads only the active content tab', () => {
+  assert.deepEqual(getAdminTabPreloadChunkIds('content', 'manager'), [
+    'content-manager',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('content', 'root-folders'), [
+    'admin-root-folders',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('content', 'trash'), [
+    'admin-trash',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('content', 'file-requests'), [
+    'admin-file-requests',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('content', 'ai-classification'), [
+    'ai-suggestion-queue',
+  ]);
+
+  // The default content tab must not download the other four chunks.
+  assert.equal(
+    getAdminTabPreloadChunkIds('content', 'manager').length,
+    1
+  );
+});
+
+test('getAdminTabPreloadChunkIds scopes reports tabs', () => {
+  assert.deepEqual(getAdminTabPreloadChunkIds('reports', 'audit-logs'), [
+    'audit-log',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('reports', 'permissions'), [
+    'admin-permission-audit',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('reports', 'jobs'), [
+    'admin-reports',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('reports', 'unknown-tab'), []);
+  assert.deepEqual(getAdminTabPreloadChunkIds('reports', null), []);
+});
+
+test('getAdminTabPreloadChunkIds keeps the integrated /admin view tab-scoped', () => {
+  // Landing on `/admin` only needs the overview chunk, not every section.
+  assert.deepEqual(getAdminTabPreloadChunkIds('all', 'overview'), [
+    'insights-dashboard',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('all', 'content'), [
+    'content-manager',
+    'ai-suggestion-queue',
+    'admin-file-requests',
+    'admin-trash',
+    'admin-root-folders',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('all', 'users'), [
+    'admin-members',
+    'admin-groups',
+    'admin-scim-tokens',
+    'admin-guests',
+    'admin-delegations',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('all', 'settings'), [
+    'access-control-settings',
+    'admin-auth-control',
+    'admin-compliance-settings',
+    'admin-siem-settings',
+    'admin-sessions',
+    'shared-links-policy',
+    'guest-policy',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('all', 'integrations'), [
+    'admin-auth-control',
+    'admin-scim-tokens',
+    'admin-siem-settings',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('all', 'reports'), [
+    'admin-reports',
+    'admin-permission-audit',
+    'audit-log',
+  ]);
+
+  // A tab switch must never preload the whole integrated dashboard.
+  const allChunks = new Set(
+    ADMIN_CONSOLE_TABS.all.flatMap((tab) =>
+      getAdminTabPreloadChunkIds('all', tab.id)
+    )
+  );
+  assert.equal(allChunks.size, 21);
+  for (const tab of ADMIN_CONSOLE_TABS.all) {
+    const chunks = getAdminTabPreloadChunkIds('all', tab.id);
+    assert.ok(chunks.length > 0, tab.id);
+    assert.ok(chunks.length < allChunks.size, tab.id);
+    assert.equal(new Set(chunks).size, chunks.length, tab.id);
+  }
+  assert.deepEqual(getAdminTabPreloadChunkIds('all', 'unknown-tab'), []);
+  assert.deepEqual(getAdminTabPreloadChunkIds('all', null), []);
+});
+
+test('getAdminTabPreloadChunkIds covers every tab and the insights fallback', () => {
+  assert.deepEqual(getAdminTabPreloadChunkIds('insights', null), [
+    'insights-dashboard',
+  ]);
+  assert.deepEqual(getAdminTabPreloadChunkIds('insights', undefined), [
+    'insights-dashboard',
+  ]);
+
+  for (const section of ['all', 'content', 'users', 'settings', 'reports'] as const) {
+    for (const tab of getAdminTabsForSection(section)) {
+      assert.ok(
+        getAdminTabPreloadChunkIds(section, tab.id).length > 0,
+        `${section}/${tab.id}`
+      );
+    }
+  }
 });

@@ -28,7 +28,20 @@ test.describe('Admin reports & enhanced audit search (TOM-68)', () => {
     await expect(
       page.getByRole('heading', { name: 'レポートと監査', exact: true })
     ).toBeVisible();
-    await expect(page.getByTestId('admin-reports-section')).toBeVisible();
+
+    // The reports page is now split into horizontal tabs. The audit log tab
+    // is the default, and the async report/schedule section must not be
+    // stacked underneath it on the same page.
+    await expect(page.getByTestId('admin-tab-audit-logs')).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    await expect(page.getByTestId('admin-tabpanel-audit-logs')).toBeVisible();
+    await expect(page.getByTestId('admin-tab-jobs')).toHaveAttribute(
+      'aria-selected',
+      'false'
+    );
+    await expect(page.getByTestId('admin-reports-section')).toHaveCount(0);
 
     const from = utcDay(-3);
     const to = utcDay(0);
@@ -93,6 +106,18 @@ test.describe('Admin reports & enhanced audit search (TOM-68)', () => {
     await expect(
       page.getByRole('heading', { name: 'レポートと監査', exact: true })
     ).toBeVisible();
+    await expect(page.getByTestId('admin-tab-audit-logs')).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+
+    // Report jobs and recurring schedules live in the `jobs` tab.
+    await page.getByTestId('admin-tab-jobs').click();
+    await expect(page.getByTestId('admin-tab-jobs')).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    await expect(page.getByTestId('admin-tabpanel-jobs')).toBeVisible();
     await expect(page.getByTestId('admin-reports-section')).toBeVisible();
 
     const createResponse = page.waitForResponse((response) => {

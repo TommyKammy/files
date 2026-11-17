@@ -23,6 +23,10 @@ import {
   type AdminConsoleSection,
 } from '@/lib/admin-console-nav';
 import type { AdminSectionFetchPlan } from '@/lib/admin-console-nav';
+import {
+  getAdminTabPreloadChunkIds,
+  type AdminSectionChunkId,
+} from '@/lib/admin-console-tabs';
 import { hasAdminCapability } from '@/lib/admin-delegations';
 import { readQuotaThresholds } from '@/lib/admin-compliance';
 import { useGovernanceDashboard } from '@/lib/use-governance-dashboard';
@@ -135,35 +139,35 @@ const AuditLogSection = dynamic(loadAuditLog);
 const GuestPolicySection = dynamic(loadGuestPolicy);
 const SharedLinksPolicySection = dynamic(loadSharedLinksPolicy);
 
+// Map the pure `getAdminTabPreloadChunkIds` plan to the actual dynamic
+// import loaders. Only the active tab's chunks are preloaded, so `/admin`
+// does not download every section chunk and `/admin/content` does not
+// download all five content tabs on first paint.
 const ADMIN_SECTION_PRELOADERS: Record<
-  Exclude<AdminConsoleSection, 'all'>,
-  ReadonlyArray<() => Promise<unknown>>
+  AdminSectionChunkId,
+  () => Promise<unknown>
 > = {
-  insights: [loadAdminInsightsDashboard],
-  content: [
-    loadAiSuggestionQueue,
-    loadAdminContentManager,
-    loadAdminFileRequests,
-    loadAdminTrash,
-    loadAdminRootFolders,
-  ],
-  users: [
-    loadAdminMembers,
-    loadAdminGroups,
-    loadAdminScimTokens,
-    loadAdminGuests,
-    loadAdminDelegations,
-  ],
-  settings: [
-    loadAccessControlSettings,
-    loadAdminAuthControl,
-    loadAdminComplianceSettings,
-    loadAdminSiemSettings,
-    loadAdminSessions,
-    loadSharedLinksPolicy,
-    loadGuestPolicy,
-  ],
-  reports: [loadAdminReports, loadAdminPermissionAudit, loadAuditLog],
+  'insights-dashboard': loadAdminInsightsDashboard,
+  'content-manager': loadAdminContentManager,
+  'ai-suggestion-queue': loadAiSuggestionQueue,
+  'admin-file-requests': loadAdminFileRequests,
+  'admin-trash': loadAdminTrash,
+  'admin-root-folders': loadAdminRootFolders,
+  'admin-members': loadAdminMembers,
+  'admin-groups': loadAdminGroups,
+  'admin-guests': loadAdminGuests,
+  'admin-delegations': loadAdminDelegations,
+  'admin-scim-tokens': loadAdminScimTokens,
+  'access-control-settings': loadAccessControlSettings,
+  'admin-auth-control': loadAdminAuthControl,
+  'admin-compliance-settings': loadAdminComplianceSettings,
+  'admin-siem-settings': loadAdminSiemSettings,
+  'admin-sessions': loadAdminSessions,
+  'shared-links-policy': loadSharedLinksPolicy,
+  'guest-policy': loadGuestPolicy,
+  'admin-permission-audit': loadAdminPermissionAudit,
+  'admin-reports': loadAdminReports,
+  'audit-log': loadAuditLog,
 };
 
 function tabPlanHasFetch(plan: AdminSectionFetchPlan): boolean {
@@ -283,16 +287,12 @@ export function HybridGovernanceDashboard({
   } = useGovernanceDashboard({ section, auditPreset, initialTab });
 
   useEffect(() => {
-    // Preload the active route's dynamic chunks alongside auth/bundle fetches
-    // so components mount without an extra chunk download waterfall.
-    const loaders =
-      section === 'all'
-        ? Object.values(ADMIN_SECTION_PRELOADERS).flat()
-        : (ADMIN_SECTION_PRELOADERS[section] ?? []);
-    for (const load of loaders) {
-      void load();
+    // Preload only the active tab's dynamic chunks alongside auth/bundle
+    // fetches so the tab mounts without an extra chunk download waterfall.
+    for (const chunkId of getAdminTabPreloadChunkIds(section, activeTabId)) {
+      void ADMIN_SECTION_PRELOADERS[chunkId]();
     }
-  }, [section]);
+  }, [section, activeTabId]);
 
   const navItem = getAdminConsoleNavItem(section);
   const hasDashboardFetch = tabPlanHasFetch(tabFetchPlan);
@@ -845,6 +845,7 @@ export function HybridGovernanceDashboard({
               activeTabId={activeTabId}
               onSelectTab={selectTab}
               ariaLabel={`${navItem.label}のセクション内タブ`}
+              badges={{ 'ai-classification': suggestions.length }}
             />
           )}
 
@@ -888,7 +889,11 @@ export function HybridGovernanceDashboard({
               </span>
             </div>
           ) : visibleTabs.length > 0 && activeTab ? (
-            <AdminTabPanel section={section} tabId={activeTab.id}>
+            <AdminTabPanel
+              section={section}
+              tabId={activeTab.id}
+              summary={activeTab.summary}
+            >
               {activeTabContent}
             </AdminTabPanel>
           ) : (

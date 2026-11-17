@@ -17,8 +17,8 @@ import type { AdminCapability, AuthUser } from '@/types/files';
  *
  * Every console section exposes a horizontal WAI-ARIA tablist whose tab set is
  * a role/capability projection. Keeping the definitions, visibility filter,
- * URL parsing and per-tab fetch plan here makes the contract unit-testable
- * without React, Next.js or a browser.
+ * URL parsing and the per-tab fetch/preload plans here makes the contract
+ * unit-testable without React, Next.js or a browser.
  */
 
 export type AdminAllTab =
@@ -491,6 +491,117 @@ function fetchPlan(
   overrides: Partial<AdminSectionFetchPlan>
 ): AdminSectionFetchPlan {
   return { ...emptyFetchPlan(), ...overrides };
+}
+
+/**
+ * Dynamic-import chunk identifiers for the admin console.
+ *
+ * `HybridGovernanceDashboard` maps each id to its `next/dynamic` loader so the
+ * shell can preload exactly the chunks the active tab mounts instead of every
+ * module of the section (or every section of `/admin`).
+ */
+export type AdminSectionChunkId =
+  | 'insights-dashboard'
+  | 'content-manager'
+  | 'ai-suggestion-queue'
+  | 'admin-file-requests'
+  | 'admin-trash'
+  | 'admin-root-folders'
+  | 'admin-members'
+  | 'admin-groups'
+  | 'admin-guests'
+  | 'admin-delegations'
+  | 'admin-scim-tokens'
+  | 'access-control-settings'
+  | 'admin-auth-control'
+  | 'admin-compliance-settings'
+  | 'admin-siem-settings'
+  | 'admin-sessions'
+  | 'shared-links-policy'
+  | 'guest-policy'
+  | 'admin-permission-audit'
+  | 'admin-reports'
+  | 'audit-log';
+
+const ADMIN_TAB_PRELOAD_CHUNKS: Record<
+  AdminConsoleSection,
+  Readonly<Record<string, readonly AdminSectionChunkId[]>>
+> = {
+  all: {
+    overview: ['insights-dashboard'],
+    content: [
+      'content-manager',
+      'ai-suggestion-queue',
+      'admin-file-requests',
+      'admin-trash',
+      'admin-root-folders',
+    ],
+    users: [
+      'admin-members',
+      'admin-groups',
+      'admin-scim-tokens',
+      'admin-guests',
+      'admin-delegations',
+    ],
+    settings: [
+      'access-control-settings',
+      'admin-auth-control',
+      'admin-compliance-settings',
+      'admin-siem-settings',
+      'admin-sessions',
+      'shared-links-policy',
+      'guest-policy',
+    ],
+    integrations: [
+      'admin-auth-control',
+      'admin-scim-tokens',
+      'admin-siem-settings',
+    ],
+    reports: ['admin-reports', 'admin-permission-audit', 'audit-log'],
+  },
+  insights: {},
+  content: {
+    manager: ['content-manager'],
+    'root-folders': ['admin-root-folders'],
+    trash: ['admin-trash'],
+    'file-requests': ['admin-file-requests'],
+    'ai-classification': ['ai-suggestion-queue'],
+  },
+  users: {
+    members: ['admin-members', 'admin-scim-tokens'],
+    groups: ['admin-groups'],
+    guests: ['admin-guests'],
+    delegations: ['admin-delegations'],
+  },
+  settings: {
+    sharing: ['shared-links-policy', 'guest-policy'],
+    access: ['access-control-settings'],
+    security: ['admin-auth-control', 'admin-sessions'],
+    compliance: ['admin-compliance-settings'],
+    integrations: ['admin-scim-tokens', 'admin-siem-settings'],
+  },
+  reports: {
+    'audit-logs': ['audit-log'],
+    permissions: ['admin-permission-audit'],
+    jobs: ['admin-reports'],
+  },
+};
+
+/**
+ * Chunks to preload for the active `(section, tabId)` pair.
+ *
+ * The focused `/admin/insights` route has no tablist but still renders the
+ * insights dashboard, so it keeps a section-level fallback. Every other
+ * section only preloads the modules mounted by the selected tab; unknown or
+ * not-yet-resolved tabs preload nothing rather than the whole section.
+ */
+export function getAdminTabPreloadChunkIds(
+  section: AdminConsoleSection,
+  tabId: string | null | undefined
+): readonly AdminSectionChunkId[] {
+  if (section === 'insights') return ['insights-dashboard'];
+  if (!tabId) return [];
+  return ADMIN_TAB_PRELOAD_CHUNKS[section][tabId] ?? [];
 }
 
 /**
