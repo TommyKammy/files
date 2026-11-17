@@ -7,6 +7,7 @@ import {
   getFolderStructureMode,
   ROOT_CREATION_ADMIN_ONLY_MESSAGE,
 } from '../folder-structure';
+import { getUserStorageQuotaStatus } from '../user-storage-stats';
 import {
   FileUploadError,
   MULTIPART_MAX_BYTES,
@@ -155,6 +156,24 @@ export async function initializePendingUpload(
       413,
       'QUOTA_EXCEEDED',
       `Tenant storage quota exceeded (remaining ${quota.remainingBytes} bytes)`
+    );
+  }
+
+  // Personal quota is opt-in per member (`storage_quota_bytes IS NULL` keeps
+  // the historical tenant-only behaviour).
+  const userQuota = await getUserStorageQuotaStatus(db, user.tenantId, user.id);
+  if (
+    userQuota.quotaBytes !== null &&
+    userQuota.usedBytes + additionalBytes > userQuota.quotaBytes
+  ) {
+    const remainingBytes = Math.max(
+      0,
+      userQuota.quotaBytes - userQuota.usedBytes
+    );
+    throw new FileUploadError(
+      413,
+      'USER_QUOTA_EXCEEDED',
+      `Personal storage quota exceeded (remaining ${remainingBytes} bytes)`
     );
   }
 

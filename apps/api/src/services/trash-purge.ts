@@ -19,6 +19,7 @@ import type { FileRow } from './file-upload-common';
 import type { FolderRow } from './folder-closure-service';
 import { buildSyncChangeStmt } from './sync-changes';
 import { extractLastSyncSeq } from './sync-notifier';
+import { buildUserStorageDeltaStmt } from './user-storage-stats';
 import {
   TrashRequestError,
   type TrashItemRefInput,
@@ -32,6 +33,7 @@ export interface PurgeFileRow {
   classification: ClassificationLabel;
   size_bytes: number;
   upload_state: 'pending' | 'active' | 'failed';
+  created_by: string;
 }
 
 interface PurgeDraftObjectRow extends FileVersionObjectRow {
@@ -176,6 +178,27 @@ function buildStatsDecrementStmts(
             WHERE tenant_id = ? AND classification = ?`
         )
         .bind(delta.count, delta.bytes, nowIso, tenantId, classification)
+    );
+  }
+
+  const userDelta = new Map<string, { count: number; bytes: number }>();
+  for (const file of files) {
+    if (file.upload_state !== 'active') continue;
+    const prev = userDelta.get(file.created_by) ?? { count: 0, bytes: 0 };
+    userDelta.set(file.created_by, {
+      count: prev.count + 1,
+      bytes: prev.bytes + file.size_bytes,
+    });
+  }
+  for (const [userId, delta] of userDelta.entries()) {
+    stmts.push(
+      buildUserStorageDeltaStmt(db, {
+        tenantId,
+        userId,
+        countDelta: -delta.count,
+        bytesDelta: -delta.bytes,
+        nowIso,
+      })
     );
   }
   return stmts;
@@ -356,7 +379,7 @@ async function loadFilesInFolders(
     const placeholders = chunk.map(() => '?').join(', ');
     const res = await db
       .prepare(
-        `SELECT id, classification, size_bytes, upload_state
+        `SELECT id, classification, size_bytes, upload_state, created_by
            FROM files
           WHERE tenant_id = ? AND folder_id IN (${placeholders})`
       )

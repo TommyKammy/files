@@ -180,6 +180,11 @@ export async function issueSessionForUser(
       JSON.stringify(params.auditMetadata),
       nowIso
     ),
+    c.env.DB.prepare(
+      `UPDATE users
+          SET last_login_at = ?
+        WHERE tenant_id = ? AND id = ?`
+    ).bind(nowIso, params.tenantId, params.userId),
   ]);
 
   const useSecure = shouldUseSecureHostCookie(c.env, c.req.url);
@@ -203,6 +208,7 @@ export async function pickRepresentativeDevAccount(
          FROM users u
         WHERE u.tenant_id = ?
           AND u.status = 'active'
+          AND u.user_type = 'member'
           AND u.role = ?
         ORDER BY CASE
           WHEN EXISTS (

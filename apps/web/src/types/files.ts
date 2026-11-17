@@ -1178,6 +1178,165 @@ export interface AdminGuestResendInviteResponse {
   notice?: string;
 }
 
+/* ------------------------------------------------------------------ */
+/* P11-2 / TOM-64 admin internal member administration                 */
+/* ------------------------------------------------------------------ */
+
+export type AdminMemberRoleFilter = 'all' | UserRole;
+export type AdminMemberStatusFilter = 'all' | 'active' | 'suspended';
+export type AdminMemberSortBy =
+  | 'email'
+  | 'displayName'
+  | 'department'
+  | 'role'
+  | 'status'
+  | 'createdAt'
+  | 'lastLoginAt'
+  | 'usedBytes';
+export type AdminMemberSortDir = 'asc' | 'desc';
+export type AdminMemberAccountStatus = Exclude<
+  AdminMemberStatusFilter,
+  'all'
+>;
+
+export interface AdminMemberRow {
+  id: string;
+  email: string;
+  displayName: string;
+  department: string | null;
+  role: UserRole;
+  status: AdminMemberAccountStatus;
+  storageQuotaBytes: number | null;
+  usedBytes: number;
+  fileCount: number;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminMemberDepartmentSummary {
+  department: string | null;
+  count: number;
+}
+
+export interface AdminMemberAggregations {
+  total: number;
+  byStatus: Record<AdminMemberStatusFilter, number>;
+  byRole: Record<UserRole, number>;
+  departments: AdminMemberDepartmentSummary[];
+}
+
+export interface AdminMemberListQuery {
+  query?: string;
+  role?: AdminMemberRoleFilter;
+  status?: AdminMemberStatusFilter;
+  department?: string;
+  sortBy?: AdminMemberSortBy;
+  sortDir?: AdminMemberSortDir;
+  limit?: number;
+  offset?: number;
+  format?: 'json' | 'csv';
+}
+
+export interface AdminMemberListResponse {
+  users: AdminMemberRow[];
+  total: number;
+  limit: number;
+  offset: number;
+  nextOffset: number | null;
+  sort: { by: AdminMemberSortBy; dir: AdminMemberSortDir };
+  summary: AdminMemberAggregations;
+  aggregations: AdminMemberAggregations;
+}
+
+export interface AdminMemberRootFolder {
+  id: string;
+  name: string;
+  classification: string;
+  createdAt: string;
+}
+
+export interface AdminMemberGroup {
+  id: string;
+  name: string;
+}
+
+export interface AdminMemberAuditLog {
+  id: string;
+  action: string;
+  status: 'allowed' | 'blocked';
+  actorEmail: string | null;
+  actorIp: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface AdminMemberDetailResponse {
+  user: AdminMemberRow & { updatedAt: string };
+  rootFolders: AdminMemberRootFolder[];
+  groups: AdminMemberGroup[];
+  activeSessionCount: number;
+  recentAuditLogs: AdminMemberAuditLog[];
+}
+
+export interface AdminMemberMutationResponse {
+  ok: boolean;
+  replayed?: boolean;
+  user: AdminMemberRow;
+  sessionsRevoked?: number;
+  syncSeq: number | null;
+  notice?: string;
+}
+
+export interface AdminMemberCreateInput {
+  email: string;
+  displayName: string;
+  department?: string | null;
+  role?: UserRole;
+  storageQuotaBytes?: number | null;
+}
+
+export interface AdminMemberUpdateInput {
+  displayName?: string;
+  department?: string | null;
+  role?: UserRole;
+  storageQuotaBytes?: number | null;
+}
+
+export type AdminMemberBulkAction =
+  | 'create'
+  | 'update'
+  | 'unchanged'
+  | 'error';
+
+export interface AdminMemberBulkRowResult {
+  rowNumber: number;
+  email: string;
+  action: AdminMemberBulkAction;
+  displayName: string | null;
+  department: string | null;
+  role: UserRole | null;
+  storageQuotaBytes: number | null;
+  userId?: string;
+  code?: string;
+  error?: string;
+}
+
+export interface AdminMemberBulkImportResponse {
+  ok: boolean;
+  dryRun: boolean;
+  replayed: boolean;
+  totalRows: number;
+  createdCount: number;
+  updatedCount: number;
+  unchangedCount: number;
+  errorCount: number;
+  results: AdminMemberBulkRowResult[];
+  syncSeq: number | null;
+  notice: string;
+}
+
 export interface GuestInvitationListResponse {
   invitations: GuestInvitationSummary[];
 }

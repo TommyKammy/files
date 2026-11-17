@@ -1,6 +1,7 @@
 import type { AuthUser } from '../../types/api';
 import { buildAuditLogStmt } from '../audit';
 import { buildSyncChangeStmt } from '../sync-changes';
+import { buildUserStorageDeltaStmt } from '../user-storage-stats';
 import type { FileRow, FileVersionRow } from './shared';
 
 export function buildFinalizeActivationStatements({
@@ -81,6 +82,13 @@ export function buildFinalizeActivationStatements({
         countDelta,
         netDeltaBytes
       ),
+    buildUserStorageDeltaStmt(db, {
+      tenantId: user.tenantId,
+      userId: file.created_by,
+      countDelta,
+      bytesDelta: netDeltaBytes,
+      nowIso,
+    }),
     buildAuditLogStmt(db, {
       tenantId: user.tenantId,
       actorId: user.id,

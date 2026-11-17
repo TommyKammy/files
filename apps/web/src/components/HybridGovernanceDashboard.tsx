@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { AccessControlSettingsSection } from '@/components/admin/AccessControlSettingsSection';
 import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
 import { AdminGuestsSection } from '@/components/admin/AdminGuestsSection';
+import { AdminMembersSection } from '@/components/admin/AdminMembersSection';
 import { AdminPermissionAuditSection } from '@/components/admin/AdminPermissionAuditSection';
 import { AdminRootFoldersSection } from '@/components/admin/AdminRootFoldersSection';
 import { AdminTrashSection } from '@/components/admin/AdminTrashSection';
@@ -97,6 +98,7 @@ export function HybridGovernanceDashboard({
     handleShowRootFolderAudit,
     handleShowPermissionAudit,
     handleShowGuestAudit,
+    handleShowMemberAudit,
     handleClearAuditPreset,
     handleClearAuditPrefixPreset,
     handleLoadMoreLogs,
@@ -326,10 +328,16 @@ export function HybridGovernanceDashboard({
               )}
 
               {showSection('users') && (
-                <AdminGuestsSection
-                  user={user}
-                  onShowAuditLogs={handleShowGuestAudit}
-                />
+                <div className="space-y-4">
+                  <AdminMembersSection
+                    user={user}
+                    onShowAuditLogs={handleShowMemberAudit}
+                  />
+                  <AdminGuestsSection
+                    user={user}
+                    onShowAuditLogs={handleShowGuestAudit}
+                  />
+                </div>
               )}
 
               {showSection('reports') && (

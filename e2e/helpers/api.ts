@@ -1075,3 +1075,181 @@ export async function offboardAdminGuestApi(
     permissionsDeleted: number;
   };
 }
+
+/* ------------------------------------------------------------------ */
+/* P11-2 / TOM-64 admin internal member helpers                        */
+/* ------------------------------------------------------------------ */
+
+export type AdminMemberRole = 'sys_admin' | 'sec_admin' | 'member';
+
+export interface AdminMemberListItem {
+  id: string;
+  email: string;
+  displayName: string;
+  department: string | null;
+  role: AdminMemberRole;
+  status: 'active' | 'suspended';
+  storageQuotaBytes: number | null;
+  usedBytes: number;
+  fileCount: number;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminMemberListLike {
+  users: AdminMemberListItem[];
+  total: number;
+  summary: {
+    total: number;
+    byStatus: Record<string, number>;
+    byRole: Record<string, number>;
+    departments: Array<{ department: string | null; count: number }>;
+  };
+}
+
+export interface AdminMemberDetailLike {
+  user: AdminMemberListItem & { updatedAt: string };
+  rootFolders: Array<{ id: string; name: string; classification: string }>;
+  groups: Array<{ id: string; name: string }>;
+  activeSessionCount: number;
+  recentAuditLogs: Array<{ id: string; action: string }>;
+}
+
+export interface AdminMemberBulkImportLike {
+  ok: boolean;
+  dryRun: boolean;
+  replayed: boolean;
+  totalRows: number;
+  createdCount: number;
+  updatedCount: number;
+  unchangedCount: number;
+  errorCount: number;
+  results: Array<{
+    rowNumber: number;
+    email: string;
+    action: 'create' | 'update' | 'unchanged' | 'error';
+    code?: string;
+    error?: string;
+  }>;
+  notice: string;
+}
+
+export function adminMemberIdempotencyKey(
+  action: string,
+  memberId: string
+): string {
+  return `e2e-member-${action}-${memberId}-${crypto.randomUUID()}`;
+}
+
+export async function listAdminMembers(
+  actor: ApiActor,
+  query: Record<string, string | number> = {}
+): Promise<AdminMemberListLike> {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    qs.set(key, String(value));
+  }
+  const res = await actor.api.get(
+    `/api/admin/users${qs.toString() ? `?${qs.toString()}` : ''}`
+  );
+  assertOk(res, 'GET /api/admin/users');
+  return (await res.json()) as AdminMemberListLike;
+}
+
+export async function findAdminMemberByEmail(
+  actor: ApiActor,
+  email: string
+): Promise<AdminMemberListItem> {
+  const body = await listAdminMembers(actor, { query: email, limit: 200 });
+  const member = body.users.find((item) => item.email === email);
+  expect(member, `admin member list should contain ${email}`).toBeTruthy();
+  return member!;
+}
+
+export async function createAdminMemberApi(
+  actor: ApiActor,
+  input: {
+    email: string;
+    displayName: string;
+    department?: string | null;
+    role?: AdminMemberRole;
+    storageQuotaBytes?: number | null;
+  }
+): Promise<AdminMemberListItem> {
+  const res = await actor.api.post('/api/admin/users', {
+    data: {
+      email: input.email,
+      displayName: input.displayName,
+      department: input.department ?? null,
+      role: input.role ?? 'member',
+      storageQuotaBytes: input.storageQuotaBytes ?? null,
+    },
+  });
+  expect(res.status(), `POST /api/admin/users for ${input.email}`).toBe(201);
+  const body = (await res.json()) as { user: AdminMemberListItem };
+  return body.user;
+}
+
+export async function getAdminMemberDetail(
+  actor: ApiActor,
+  memberId: string
+): Promise<AdminMemberDetailLike> {
+  const res = await actor.api.get(
+    `/api/admin/users/${encodeURIComponent(memberId)}`
+  );
+  assertOk(res, `GET /api/admin/users/${memberId}`);
+  return (await res.json()) as AdminMemberDetailLike;
+}
+
+export async function suspendAdminMemberApi(
+  actor: ApiActor,
+  memberId: string
+): Promise<{ sessionsRevoked: number }> {
+  const key = adminMemberIdempotencyKey('suspend', memberId);
+  const res = await actor.api.post(
+    `/api/admin/users/${encodeURIComponent(memberId)}/suspend`,
+    { headers: { 'Idempotency-Key': key }, data: { idempotencyKey: key } }
+  );
+  assertOk(res, `POST /api/admin/users/${memberId}/suspend`);
+  return (await res.json()) as { sessionsRevoked: number };
+}
+
+export async function resumeAdminMemberApi(
+  actor: ApiActor,
+  memberId: string
+): Promise<void> {
+  const key = adminMemberIdempotencyKey('resume', memberId);
+  const res = await actor.api.post(
+    `/api/admin/users/${encodeURIComponent(memberId)}/resume`,
+    { headers: { 'Idempotency-Key': key }, data: { idempotencyKey: key } }
+  );
+  assertOk(res, `POST /api/admin/users/${memberId}/resume`);
+}
+
+export async function bulkImportAdminMembersApi(
+  actor: ApiActor,
+  input: {
+    csv?: string;
+    rows?: Array<Record<string, unknown>>;
+    dryRun?: boolean;
+    idempotencyKey?: string;
+  }
+): Promise<AdminMemberBulkImportLike> {
+  const headers: Record<string, string> = {};
+  if (input.idempotencyKey) {
+    headers['Idempotency-Key'] = input.idempotencyKey;
+  }
+  const res = await actor.api.post('/api/admin/users/bulk-import', {
+    headers,
+    data: {
+      ...(input.csv !== undefined ? { csv: input.csv } : {}),
+      ...(input.rows !== undefined ? { rows: input.rows } : {}),
+      ...(input.dryRun !== undefined ? { dryRun: input.dryRun } : {}),
+      ...(input.idempotencyKey
+        ? { idempotencyKey: input.idempotencyKey }
+        : {}),
+    },
+  });
+  assertOk(res, 'POST /api/admin/users/bulk-import');
+  return (await res.json()) as AdminMemberBulkImportLike;
+}

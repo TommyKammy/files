@@ -36,6 +36,7 @@ import {
   GUEST_AUDIT_ACTION_PREFIXES,
   PERMISSION_AUDIT_ACTION_PREFIXES,
   ROOT_FOLDER_AUDIT_ACTIONS,
+  USER_AUDIT_ACTION_PREFIXES,
 } from '@/lib/admin-audit';
 import {
   ADMIN_AUDIT_PRESETS,
@@ -134,7 +135,7 @@ export function useGovernanceDashboard({
       : []
   );
   const [auditPresetKind, setAuditPresetKind] = useState<
-    'permission' | 'guest' | null
+    'permission' | 'guest' | 'user' | null
   >(initialAuditPresetConfig?.presetKind ?? null);
   const [auditTargetType, setAuditTargetType] = useState('');
   const [auditStatusFilter, setAuditStatusFilter] = useState<'' | 'allowed' | 'blocked'>('');
@@ -696,6 +697,22 @@ export function useGovernanceDashboard({
     scrollToAuditLogs();
   }
 
+  /** Internal member administration preset: `admin.user.*`. */
+  function handleShowMemberAudit() {
+    if (section !== 'all') {
+      router.push(buildAdminAuditPresetHref('user'));
+      return;
+    }
+    setAuditActionFilter('');
+    setAuditActionPreset([]);
+    setAuditStatusFilter('');
+    setAuditActionPrefixFilter('');
+    setAuditActionPrefixPreset([...USER_AUDIT_ACTION_PREFIXES]);
+    setAuditPresetKind('user');
+    setAuditTargetType('');
+    scrollToAuditLogs();
+  }
+
   function handleClearAuditPreset() {
     setAuditActionPreset([]);
   }
@@ -805,6 +822,7 @@ export function useGovernanceDashboard({
     handleClearAuditPrefixPreset,
     handleShowPermissionAudit,
     handleShowGuestAudit,
+    handleShowMemberAudit,
     setPolicy,
     loadAll,
     toggleSelection,

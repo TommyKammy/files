@@ -34,7 +34,7 @@ export function AuditLogSection({
   auditActionFilter: string;
   auditActionPrefixFilter?: string;
   auditActionPrefixes?: readonly string[];
-  auditPresetKind?: 'permission' | 'guest' | null;
+  auditPresetKind?: 'permission' | 'guest' | 'user' | null;
   auditTargetType?: string;
   auditStatusFilter: '' | 'allowed' | 'blocked';
   auditLoadingMore: boolean;
@@ -101,7 +101,11 @@ export function AuditLogSection({
           {prefixHighlight && (
             <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[0.6875rem] font-medium text-indigo-800">
               <span>
-                {auditPresetKind === 'guest' ? 'ゲスト監査のみ' : '権限監査のみ'}
+                {auditPresetKind === 'guest'
+                  ? 'ゲスト監査のみ'
+                  : auditPresetKind === 'user'
+                    ? 'メンバー監査のみ'
+                    : '権限監査のみ'}
               </span>
               {onClearPrefixPreset && (
                 <button
@@ -109,7 +113,9 @@ export function AuditLogSection({
                   aria-label={
                     auditPresetKind === 'guest'
                       ? 'ゲスト監査ログのプレフィックス絞り込みを解除'
-                      : '権限監査ログのプレフィックス絞り込みを解除'
+                      : auditPresetKind === 'user'
+                        ? 'メンバー監査ログのプレフィックス絞り込みを解除'
+                        : '権限監査ログのプレフィックス絞り込みを解除'
                   }
                   onClick={onClearPrefixPreset}
                   className="rounded-full p-0.5 hover:bg-indigo-100"

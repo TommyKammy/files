@@ -1,5 +1,6 @@
 import { buildAuditLogStmt } from './audit';
 import { buildSyncChangeStmt } from './sync-changes';
+import { buildUserStorageDeltaStmt } from './user-storage-stats';
 import type { ConditionalWriteGuard } from './statement-guard';
 import type { AuthUser } from '../types/api';
 import type { FileRow, FileVersionRow } from './file-upload-common';
@@ -129,6 +130,17 @@ export function buildFileVersionRestoreStatements({
         newVersionId,
         netDeltaBytes
       ),
+    buildUserStorageDeltaStmt(
+      db,
+      {
+        tenantId: user.tenantId,
+        userId: file.created_by,
+        countDelta: 0,
+        bytesDelta: netDeltaBytes,
+        nowIso,
+      },
+      restoredVersionGuard
+    ),
     buildAuditLogStmt(
       db,
       {

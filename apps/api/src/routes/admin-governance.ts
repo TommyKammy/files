@@ -11,6 +11,7 @@ import { registerAdminRootFolderRoutes } from './admin/root-folders';
 import { registerAdminSharedLinkRoutes } from './admin/shared-links';
 import { registerStorageStatsRoutes } from './admin/storage';
 import { registerAdminTrashRoutes } from './admin/trash';
+import { registerAdminUserRoutes } from './admin/users';
 
 export const adminGovernanceRoutes = new Hono<OidcHonoEnv>();
 adminGovernanceRoutes.use(
@@ -25,6 +26,7 @@ registerAiSuggestionRoutes(adminGovernanceRoutes);
 registerAdminSharedLinkRoutes(adminGovernanceRoutes);
 registerAdminPolicyRoutes(adminGovernanceRoutes);
 registerAdminGuestRoutes(adminGovernanceRoutes);
+registerAdminUserRoutes(adminGovernanceRoutes);
 registerAdminRootFolderRoutes(adminGovernanceRoutes);
 registerAdminRootFolderBulkRoutes(adminGovernanceRoutes);
 registerAdminPermissionRoutes(adminGovernanceRoutes);

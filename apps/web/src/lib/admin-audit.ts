@@ -19,6 +19,9 @@ export const GUEST_AUDIT_ACTION_PREFIXES = [
   'admin.guest.',
 ] as const;
 
+/** Prefix preset used by the internal member administration action. */
+export const USER_AUDIT_ACTION_PREFIXES = ['admin.user.'] as const;
+
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.root_folder.create': 'ルートフォルダ作成',
   'admin.root_folder.owner_transfer': '所有者移管',
@@ -40,6 +43,11 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.guest.resume': 'ゲストの再開',
   'admin.guest.offboard': 'ゲストの完全オフボーディング',
   'admin.guest.resend_invite': 'ゲスト招待の再送',
+  'admin.user.create': '社内メンバー登録',
+  'admin.user.update': '社内メンバー更新',
+  'admin.user.suspend': '社内メンバー停止',
+  'admin.user.resume': '社内メンバー再開',
+  'admin.user.bulk_import': '社内メンバー一括登録',
   'guest.auto_suspended_expired': 'ゲストの期限切れ自動停止',
   'guest.expiry_reminder': 'ゲスト有効期限リマインド',
   'shared_link.create': '共有リンク作成',
@@ -78,6 +86,12 @@ export function isPermissionAuditAction(action: string): boolean {
 
 export function isGuestAuditAction(action: string): boolean {
   return GUEST_AUDIT_ACTION_PREFIXES.some((prefix) =>
+    action.startsWith(prefix)
+  );
+}
+
+export function isUserAuditAction(action: string): boolean {
+  return USER_AUDIT_ACTION_PREFIXES.some((prefix) =>
     action.startsWith(prefix)
   );
 }

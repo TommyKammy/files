@@ -1,6 +1,7 @@
 import { buildAuditLogStmt } from './audit';
 import { buildSyncChangeStmt } from './sync-changes';
 import { extractLastSyncSeq } from './sync-notifier';
+import { buildUserStorageDeltaStmt } from './user-storage-stats';
 import { chunkArray, executeBatchChunks } from '../utils/batch';
 import { selectUnreferencedR2Keys } from './r2-gc';
 import type { FileRow, FileVersionRow } from './file-upload-common';
@@ -250,6 +251,13 @@ export async function finalizeWopiDraft({
       countDelta,
       netDeltaBytes
     ),
+    buildUserStorageDeltaStmt(env.DB, {
+      tenantId: session.tenant_id,
+      userId: file.created_by,
+      countDelta,
+      bytesDelta: netDeltaBytes,
+      nowIso,
+    }),
     buildAuditLogStmt(env.DB, {
       tenantId: session.tenant_id,
       actorId: actor.id,

@@ -2,6 +2,7 @@ import {
   GUEST_AUDIT_ACTION_PREFIXES,
   PERMISSION_AUDIT_ACTION_PREFIXES,
   ROOT_FOLDER_AUDIT_ACTIONS,
+  USER_AUDIT_ACTION_PREFIXES,
 } from '@/lib/admin-audit';
 import type { UserRole } from '@/types/files';
 
@@ -67,7 +68,8 @@ export const ADMIN_CONSOLE_NAV_ITEMS: readonly AdminConsoleNavItem[] = [
     href: '/admin/users',
     label: 'ユーザーとグループ',
     heading: 'ユーザーとグループ',
-    summary: '外部ゲストの検索・ライフサイクル・監査・エクスポートを管理します。',
+    summary:
+      '社内メンバーと外部ゲストの検索・ロール/クォータ管理・停止/再開・一括登録・監査を管理します。',
     roles: ['sys_admin', 'sec_admin'],
   },
   {
@@ -233,12 +235,12 @@ export function adminSectionHasDashboardFetch(
   );
 }
 
-export type AdminAuditPreset = 'rootFolder' | 'guest' | 'permission';
+export type AdminAuditPreset = 'rootFolder' | 'guest' | 'permission' | 'user';
 
 export interface AdminAuditPresetConfig {
   actions: readonly string[];
   actionPrefixes: readonly string[];
-  presetKind: 'permission' | 'guest' | null;
+  presetKind: 'permission' | 'guest' | 'user' | null;
 }
 
 export const ADMIN_AUDIT_PRESETS: Record<
@@ -260,6 +262,11 @@ export const ADMIN_AUDIT_PRESETS: Record<
     actionPrefixes: PERMISSION_AUDIT_ACTION_PREFIXES,
     presetKind: 'permission',
   },
+  user: {
+    actions: [],
+    actionPrefixes: USER_AUDIT_ACTION_PREFIXES,
+    presetKind: 'user',
+  },
 };
 
 export const AUDIT_PRESET_QUERY_KEY = 'auditPreset';
@@ -274,6 +281,7 @@ export function parseAdminAuditPreset(
   if (normalized === 'rootfolder') return 'rootFolder';
   if (normalized === 'guest') return 'guest';
   if (normalized === 'permission') return 'permission';
+  if (normalized === 'user') return 'user';
   return null;
 }
 

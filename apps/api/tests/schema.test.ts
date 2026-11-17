@@ -2,7 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-describe('D1 schema & migrations (0001-0014)', () => {
+describe('D1 schema & migrations (0001-0015)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -417,5 +417,53 @@ describe('D1 schema & migrations (0001-0014)', () => {
       offboarded_at: null,
       expiring_notified_at: null,
     });
+
+    // Migration 0015: internal member administration, personal storage quotas
+    // and the O(1) per-user storage counter. `last_login_at` must not be
+    // re-added by this migration.
+    const [userCols0015, memberIndex, userStatsTable, userStatsCols] =
+      await Promise.all([
+        env.DB.prepare('PRAGMA table_info(users)').all<{ name: string }>(),
+        env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_users_tenant_member_status'"
+        ).first<{ name: string }>(),
+        env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'user_storage_stats'"
+        ).first<{ name: string }>(),
+        env.DB.prepare('PRAGMA table_info(user_storage_stats)').all<{
+          name: string;
+          pk: number;
+        }>(),
+      ]);
+    expect(userCols0015.results.map((column) => column.name)).toContain(
+      'storage_quota_bytes'
+    );
+    expect(memberIndex?.name).toBe('idx_users_tenant_member_status');
+    expect(userStatsTable?.name).toBe('user_storage_stats');
+    expect(userStatsCols.results.map((column) => column.name)).toEqual([
+      'tenant_id',
+      'user_id',
+      'file_count',
+      'total_bytes',
+      'updated_at',
+    ]);
+    expect(
+      userStatsCols.results
+        .filter((column) => column.pk > 0)
+        .map((column) => column.name)
+        .sort()
+    ).toEqual(['tenant_id', 'user_id']);
+
+    await expect(
+      env.DB.prepare(
+        "UPDATE users SET storage_quota_bytes = 0 WHERE id = 'u1'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO user_storage_stats (tenant_id, user_id, file_count, total_bytes)
+         VALUES ('t1', 'u1', -1, 0)`
+      ).run()
+    ).rejects.toThrow();
   });
 });
