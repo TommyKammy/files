@@ -631,6 +631,29 @@ describe('OIDC SSO, BFF Session Auth & Dev Bypass Isolation', () => {
       { ...stagingEnv, ...noIdpOverrides }
     );
     expect(stagingLoginRes.status).toBe(400);
+
+    // 9. Canonical seeded dev accounts stay representative even if a newly promoted sec_admin sorts earlier by UUID
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO users (id, tenant_id, email, display_name, role, status, user_type, created_at)
+         VALUES ('dev-sec-001', 'tenant-default', 'dev-sec@example.com', 'Dev Sec', 'sec_admin', 'active', 'member', '2026-01-01T00:00:00Z')`
+      ),
+      env.DB.prepare(
+        `INSERT INTO users (id, tenant_id, email, display_name, role, status, user_type, created_at)
+         VALUES ('00000000-0000-0000-0000-000000000001', 'tenant-default', 'uuid-sec@example.com', 'UUID Sec', 'sec_admin', 'active', 'member', '2026-11-17T00:00:00Z')`
+      ),
+    ]);
+    const seededAccountsRes = await app.fetch(
+      new Request('http://127.0.0.1:8787/auth/dev-accounts'),
+      localEnv
+    );
+    expect(seededAccountsRes.status).toBe(200);
+    const seededBody = (await seededAccountsRes.json()) as {
+      accounts: Array<{ id: string; role: string }>;
+    };
+    expect(seededBody.accounts.find((a) => a.role === 'sec_admin')?.id).toBe(
+      'dev-sec-001'
+    );
   });
 });
 

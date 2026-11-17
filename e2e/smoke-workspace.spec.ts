@@ -78,7 +78,14 @@ test.describe('workspace baseline E2E', () => {
     const me = await page.request.get('/api/auth/me');
     expect(me.status()).toBe(200);
     const meBody = (await me.json()) as {
-      user: { id: string; role: string; tenantId: string };
+      user: {
+        id: string;
+        role: string;
+        tenantId: string;
+        sessionId: string | null;
+        adminCapabilities: string[];
+        adminScope: unknown;
+      };
     };
     expect(meBody.user).toEqual({
       id: 'dev-admin-001',
@@ -90,6 +97,13 @@ test.describe('workspace baseline E2E', () => {
       userType: 'member',
       externalOrg: null,
       expiresAt: null,
+      sessionId: expect.any(String),
+      adminCapabilities: expect.arrayContaining([
+        'admin.insights.read',
+        'admin.users.read',
+        'admin.policies.edit',
+      ]),
+      adminScope: null,
     });
   });
 

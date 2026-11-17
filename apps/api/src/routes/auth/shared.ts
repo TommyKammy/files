@@ -211,6 +211,11 @@ export async function pickRepresentativeDevAccount(
           AND u.user_type = 'member'
           AND u.role = ?
         ORDER BY CASE
+          WHEN u.id IN ('dev-admin-001', 'dev-sec-001', 'dev-member-001') THEN 0
+          WHEN u.id LIKE 'dev-%' THEN 1
+          ELSE 2
+        END ASC,
+        CASE
           WHEN EXISTS (
             SELECT 1
               FROM permissions p
@@ -230,7 +235,7 @@ export async function pickRepresentativeDevAccount(
                  )
                )
           ) THEN 0 ELSE 1
-        END ASC, u.id ASC
+        END ASC, u.created_at ASC, u.id ASC
         LIMIT 1`
     )
     .bind(tenantId, role)
