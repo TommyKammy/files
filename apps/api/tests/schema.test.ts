@@ -2,7 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-describe('D1 schema & migrations (0001-0020)', () => {
+describe('D1 schema & migrations (0001-0021)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -808,6 +808,122 @@ describe('D1 schema & migrations (0001-0020)', () => {
     await expect(
       env.DB.prepare(
         "UPDATE admin_report_schedules SET enabled = 2 WHERE id = 'report-schedule-schema'"
+      ).run()
+    ).rejects.toThrow();
+
+    // Migration 0021: custom ToS acceptance, file-request governance,
+    // branding, SIEM webhook and quota warning thresholds.
+    const [tosTable, acceptanceTable, acceptanceIndexes, policyCols0021] =
+      await Promise.all([
+        env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tenant_tos_policies'"
+        ).first<{ name: string }>(),
+        env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'user_tos_acceptances'"
+        ).first<{ name: string }>(),
+        env.DB.prepare(
+          `SELECT name FROM sqlite_master
+            WHERE type = 'index'
+              AND name IN (
+                'idx_user_tos_acceptances_tenant_user',
+                'idx_user_tos_acceptances_tenant_accepted'
+              )
+            ORDER BY name`
+        ).all<{ name: string }>(),
+        env.DB.prepare('PRAGMA table_info(tenant_policies)').all<{
+          name: string;
+        }>(),
+      ]);
+    expect(tosTable?.name).toBe('tenant_tos_policies');
+    expect(acceptanceTable?.name).toBe('user_tos_acceptances');
+    expect(acceptanceIndexes.results.map((row) => row.name)).toEqual([
+      'idx_user_tos_acceptances_tenant_accepted',
+      'idx_user_tos_acceptances_tenant_user',
+    ]);
+    expect(policyCols0021.results.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        'allow_file_requests',
+        'file_request_max_size_bytes',
+        'file_request_enforce_allowed_extensions',
+        'branding_org_name',
+        'branding_contact_info',
+        'branding_footer_note',
+        'siem_webhook_enabled',
+        'siem_webhook_url',
+        'siem_webhook_secret_encrypted',
+        'siem_events_json',
+        'quota_warn_threshold_pct',
+        'quota_critical_threshold_pct',
+      ])
+    );
+
+    const governanceDefaults = await env.DB.prepare(
+      `SELECT allow_file_requests, file_request_max_size_bytes,
+              file_request_enforce_allowed_extensions, branding_org_name,
+              siem_webhook_enabled, siem_webhook_url,
+              siem_webhook_secret_encrypted, siem_events_json,
+              quota_warn_threshold_pct, quota_critical_threshold_pct
+         FROM tenant_policies WHERE tenant_id = 't1'`
+    ).first<{
+      allow_file_requests: number;
+      file_request_max_size_bytes: number;
+      file_request_enforce_allowed_extensions: number;
+      branding_org_name: string | null;
+      siem_webhook_enabled: number;
+      siem_webhook_url: string | null;
+      siem_webhook_secret_encrypted: string | null;
+      siem_events_json: string;
+      quota_warn_threshold_pct: number;
+      quota_critical_threshold_pct: number;
+    }>();
+    expect(governanceDefaults).toEqual({
+      allow_file_requests: 1,
+      file_request_max_size_bytes: 104857600,
+      file_request_enforce_allowed_extensions: 0,
+      branding_org_name: null,
+      siem_webhook_enabled: 0,
+      siem_webhook_url: null,
+      siem_webhook_secret_encrypted: null,
+      siem_events_json: '["security_blocked","admin_mutation"]',
+      quota_warn_threshold_pct: 80,
+      quota_critical_threshold_pct: 90,
+    });
+
+    await env.DB.prepare(
+      `INSERT INTO tenant_tos_policies (
+         tenant_id, enabled, version, target_audience, title, body_markdown, updated_at
+       ) VALUES ('t1', 1, 3, 'guests_only', '利用規約', '本文', '2026-11-17T00:00:00.000Z')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO user_tos_acceptances (
+         id, tenant_id, user_id, version, accepted_at
+       ) VALUES ('tos-accept-schema', 't1', 'u1', 3, '2026-11-17T00:00:00.000Z')`
+    ).run();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO user_tos_acceptances (
+           id, tenant_id, user_id, version, accepted_at
+         ) VALUES ('tos-accept-dup', 't1', 'u1', 3, '2026-11-17T00:00:00.000Z')`
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_tos_policies SET target_audience = 'everyone' WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_policies SET allow_file_requests = 2 WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_policies SET quota_warn_threshold_pct = 40 WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_policies SET quota_critical_threshold_pct = 101 WHERE tenant_id = 't1'"
       ).run()
     ).rejects.toThrow();
   });

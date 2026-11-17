@@ -16,6 +16,7 @@ import type {
   AdminContentInspectResponse,
   AdminContentSearchFilters,
   AdminContentSearchResponse,
+  AdminFileRequestRow,
   AdminInsightsRangeDays,
   AdminInsightsResponse,
   AdminPermissionAuditQuery,
@@ -34,8 +35,10 @@ import type {
   AdminSessionListResponse,
   AdminSessionRevokeResponse,
   AdminSharedLinkRow,
+  AdminSiemSettings,
   AdminSsoStatusResponse,
   AdminTenantSessionsRevokeResponse,
+  AdminTosPolicy,
   AdminTrashListResponse,
   AdminTrashRestoreResponse,
   AdminUserSessionsRevokeResponse,
@@ -51,6 +54,8 @@ import type {
   TenantPolicyRow,
   TrashBulkItemRef,
   UpdateAdminPoliciesPayload,
+  UpdateAdminSiemPayload,
+  UpdateAdminTosPayload,
   TrashBulkResponse,
   TrashEmptyResponse,
   TrashSort,
@@ -132,6 +137,76 @@ export function updateAdminPolicies(
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
+}
+
+/** GET /api/admin/tos — full policy text for sys_admin / sec_admin. */
+export function fetchAdminTos(): Promise<{ tos: AdminTosPolicy }> {
+  return apiFetch('/api/admin/tos');
+}
+
+/** PUT /api/admin/tos — sys_admin only. */
+export function updateAdminTos(
+  payload: UpdateAdminTosPayload
+): Promise<{ tos: AdminTosPolicy }> {
+  return apiFetch('/api/admin/tos', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** GET /api/admin/siem — secret is never returned, only `secretConfigured`. */
+export function fetchAdminSiem(): Promise<{ siem: AdminSiemSettings }> {
+  return apiFetch('/api/admin/siem');
+}
+
+/** PUT /api/admin/siem — sys_admin only. */
+export function updateAdminSiem(
+  payload: UpdateAdminSiemPayload
+): Promise<{ siem: AdminSiemSettings }> {
+  return apiFetch('/api/admin/siem', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** POST /api/admin/siem/test — signed test delivery. */
+export function testAdminSiem(): Promise<{
+  ok: boolean;
+  delivered: boolean;
+  status: number | null;
+  error?: string;
+}> {
+  return apiFetch('/api/admin/siem/test', { method: 'POST' });
+}
+
+/** GET /api/admin/file-requests — tenant-wide blind dropbox inventory. */
+export function fetchAdminFileRequests(params?: {
+  status?: 'active' | 'inactive' | 'all';
+  search?: string;
+}): Promise<{
+  fileRequests: AdminFileRequestRow[];
+  status: string;
+  search: string;
+}> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set('status', params.status);
+  if (params?.search?.trim()) qs.set('search', params.search.trim());
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return apiFetch(`/api/admin/file-requests${suffix}`);
+}
+
+/** POST /api/admin/file-requests/:id/disable — emergency tenant-wide stop. */
+export function disableAdminFileRequest(
+  id: string
+): Promise<{
+  ok: boolean;
+  fileRequest: AdminFileRequestRow;
+  alreadyDisabled: boolean;
+}> {
+  return apiFetch(
+    `/api/admin/file-requests/${encodeURIComponent(id)}/disable`,
+    { method: 'POST' }
+  );
 }
 
 export function fetchAdminRootFolders(params?: {

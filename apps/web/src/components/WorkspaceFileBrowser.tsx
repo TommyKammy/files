@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShellRail } from '@/components/AppShellRail';
 import { FileDropzoneUploader } from '@/components/FileDropzoneUploader';
 import { SignInCard } from '@/components/SignInCard';
+import { TosAcceptanceModal } from '@/components/TosAcceptanceModal';
 import type { InspectorTarget } from '@/components/WorkspaceInspectorDrawer';
 import { WorkspaceInspectorOverlay } from '@/components/WorkspaceInspectorOverlay';
 import { WorkspaceFileListSection } from '@/components/WorkspaceFileListSection';
@@ -56,6 +57,7 @@ import { useWorkspaceTrashBulkActions } from '@/lib/use-workspace-trash-bulk-act
 import { getTrashBulkCapabilities } from '@/lib/trash-bulk';
 import { formatTrashRestoreSuccessMessage } from '@/lib/trash-restore-options';
 import { useWorkspaceUploads } from '@/lib/use-workspace-uploads';
+import { useTosAcceptance } from '@/lib/use-tos-acceptance';
 import { useWorkspaceVirtualization } from '@/lib/use-workspace-virtualization';
 import { describeWorkspaceRow } from '@/lib/workspace-row-presentation';
 import { getWorkspaceRowKey, isRowSelectable, toDragWorkspaceItem, type WorkspaceTableRow } from '@/lib/workspace-table-row';
@@ -135,12 +137,18 @@ export function WorkspaceFileBrowser() {
     trashError,
     error,
     setError,
+    errorCode,
     loadingMore,
     isInitialLoading,
     nextCursor,
     loadActiveView,
     handleLoadMore,
   } = useWorkspaceData({ folderId, isTrashView, syncStore });
+
+  const tosGate = useTosAcceptance({
+    bootstrapStatus: snapshot.tosStatus ?? null,
+    apiErrorCode: errorCode,
+  });
 
   const prefetcher = useMemo(
     () => new IntentPrefetcher(syncStore),
@@ -1458,6 +1466,15 @@ export function WorkspaceFileBrowser() {
 
         return (
           <div className="flex min-h-screen bg-[#efeff1] text-[#111214]">
+          {tosGate.blocked && (
+            <TosAcceptanceModal
+              tos={tosGate.status}
+              branding={tosGate.branding}
+              accepting={tosGate.accepting}
+              error={tosGate.error}
+              onAccept={() => void tosGate.accept()}
+            />
+          )}
           <a
             href="#workspace-main"
             className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-[#111214] focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#5e6ad2]"

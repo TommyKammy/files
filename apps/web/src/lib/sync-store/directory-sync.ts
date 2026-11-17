@@ -33,6 +33,7 @@ export interface DirectorySyncContext {
   authStatus: 'unknown' | 'authenticated' | 'unauthenticated';
   hydratedScopeKey: string | null;
   policy: TenantPolicyRow | null;
+  tosStatus: import('@/types/files').TosStatus | null;
   purgedBeforeSeq: number;
   bootstrapDone: boolean;
   syncSeq: number;
@@ -125,6 +126,7 @@ function isUnauthorizedError(err: unknown): boolean {
         ctx.hydratedScopeKey = `${res.user.tenantId}:${res.user.id}`;
         ctx.writeHintFn(res.user);
         ctx.policy = res.policy;
+        ctx.tosStatus = res.tosStatus ?? null;
         ctx.purgedBeforeSeq = res.purgedBeforeSeq;
         ctx.bootstrapDone = true;
 

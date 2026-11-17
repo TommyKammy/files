@@ -82,6 +82,8 @@ export interface AdminInsightsStorageSummary {
     { fileCount: number; totalBytes: number }
   >;
   d1EstimatedBytes: number | null;
+  quotaWarnThresholdPct: number;
+  quotaCriticalThresholdPct: number;
 }
 
 export interface AdminInsightsResponse {
@@ -295,9 +297,12 @@ export function buildAdminInsightsQueries(input: {
     ),
     bindQuery(
       'tenantQuota',
-      `SELECT storage_quota_bytes
-         FROM tenants
-        WHERE id = ?`,
+      `SELECT t.storage_quota_bytes,
+              p.quota_warn_threshold_pct,
+              p.quota_critical_threshold_pct
+         FROM tenants t
+         LEFT JOIN tenant_policies p ON p.tenant_id = t.id
+        WHERE t.id = ?`,
       [tenantId]
     ),
     bindQuery(
@@ -560,6 +565,8 @@ function emptyStorageSummary(): AdminInsightsStorageSummary {
       unset: { fileCount: 0, totalBytes: 0 },
     },
     d1EstimatedBytes: null,
+    quotaWarnThresholdPct: 80,
+    quotaCriticalThresholdPct: 90,
   };
 }
 
@@ -603,7 +610,12 @@ export async function getAdminInsights(
     storage.totalFiles += asNumber(row.file_count);
     storage.usedBytes += asNumber(row.total_bytes);
   }
-  storage.quotaBytes = asNumber(rows.get('tenantQuota')?.[0]?.storage_quota_bytes);
+  const quotaRow = rows.get('tenantQuota')?.[0];
+  storage.quotaBytes = asNumber(quotaRow?.storage_quota_bytes);
+  storage.quotaWarnThresholdPct =
+    asNumber(quotaRow?.quota_warn_threshold_pct) || 80;
+  storage.quotaCriticalThresholdPct =
+    asNumber(quotaRow?.quota_critical_threshold_pct) || 90;
   storage.remainingBytes = Math.max(
     0,
     storage.quotaBytes - storage.usedBytes

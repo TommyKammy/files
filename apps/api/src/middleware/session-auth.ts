@@ -8,6 +8,7 @@ import {
   resolveClientIp,
 } from '../services/ip-allowlist';
 import { loadSsoPolicy } from '../services/sso-policy';
+import { enforceTosAcceptanceForPath } from '../services/tos';
 import type { AuthUser, UserRole, UserType } from '../types/api';
 import type { OidcEnv, OidcHonoEnv } from '../types/oidc';
 
@@ -244,6 +245,15 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
         const ipBlocked = await enforceSessionIpAllowlist(c, devUser);
         if (ipBlocked) return ipBlocked;
 
+        // TOM-72: custom ToS acceptance gate for workspace data APIs. Admin,
+        // auth, bootstrap and public share/file-request paths are exempt.
+        const tosBlocked = await enforceTosAcceptanceForPath(
+          c.env.DB,
+          devUser,
+          c.req.path
+        );
+        if (tosBlocked) return tosBlocked;
+
         await next();
         return;
       }
@@ -344,6 +354,13 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
 
     const ipBlocked = await enforceSessionIpAllowlist(c, authenticatedUser);
     if (ipBlocked) return ipBlocked;
+
+    const tosBlocked = await enforceTosAcceptanceForPath(
+      c.env.DB,
+      authenticatedUser,
+      c.req.path
+    );
+    if (tosBlocked) return tosBlocked;
 
     await next();
   });

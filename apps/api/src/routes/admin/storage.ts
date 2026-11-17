@@ -12,9 +12,15 @@ export function registerStorageStatsRoutes(routes: Hono<OidcHonoEnv>) {
     const user = getAuthenticatedUser(c);
 
     const [tenantRow, statsRows] = await Promise.all([
-      c.env.DB.prepare('SELECT storage_quota_bytes FROM tenants WHERE id = ?')
+      c.env.DB.prepare(
+        'SELECT t.storage_quota_bytes, p.quota_warn_threshold_pct, p.quota_critical_threshold_pct FROM tenants t LEFT JOIN tenant_policies p ON p.tenant_id = t.id WHERE t.id = ?'
+      )
         .bind(user.tenantId)
-        .first<{ storage_quota_bytes: number }>(),
+        .first<{
+          storage_quota_bytes: number;
+          quota_warn_threshold_pct: number | null;
+          quota_critical_threshold_pct: number | null;
+        }>(),
       c.env.DB.prepare(
         'SELECT classification, file_count, total_bytes, updated_at FROM tenant_storage_stats WHERE tenant_id = ?'
       )
@@ -66,6 +72,9 @@ export function registerStorageStatsRoutes(routes: Hono<OidcHonoEnv>) {
       totalFiles,
       byClassification,
       d1EstimatedBytes,
+      quotaWarnThresholdPct: tenantRow?.quota_warn_threshold_pct ?? 80,
+      quotaCriticalThresholdPct:
+        tenantRow?.quota_critical_threshold_pct ?? 90,
     });
   });
 

@@ -73,7 +73,12 @@ export function SharedLinkLanding({ token }: { token: string }) {
               F
             </div>
             <div>
-              <div className="text-sm font-semibold text-slate-900">Files</div>
+              <div
+                data-testid="shared-link-branding-org"
+                className="break-words text-sm font-semibold text-slate-900"
+              >
+                {meta?.branding?.orgName?.trim() || 'Files'}
+              </div>
               <div className="text-[0.6875rem] text-slate-700">Secure Share Delivery</div>
             </div>
           </div>
@@ -454,6 +459,25 @@ export function SharedLinkLanding({ token }: { token: string }) {
           </div>
         )}
       </div>
+
+      {(meta?.branding?.contactInfo?.trim() ||
+        meta?.branding?.footerNote?.trim()) && meta && (
+        <footer className="space-y-1 border-t border-slate-200 pt-4 text-[0.6875rem] text-slate-500">
+          {meta.branding?.contactInfo?.trim() && (
+            <p className="whitespace-pre-wrap break-words">
+              お問い合わせ: {meta.branding.contactInfo.trim()}
+            </p>
+          )}
+          {meta.branding?.footerNote?.trim() && (
+            <p
+              data-testid="shared-link-branding-footer"
+              className="whitespace-pre-wrap break-words"
+            >
+              {meta.branding.footerNote.trim()}
+            </p>
+          )}
+        </footer>
+      )}
 
       {previewState && meta && (
         <SecurePreviewModal

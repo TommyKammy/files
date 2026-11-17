@@ -44,6 +44,15 @@ import {
   normalizeSsoAllowedDomainsInput,
   parseSsoAllowedDomainsJson,
 } from '../../services/sso-policy';
+import {
+  BRANDING_CONTACT_INFO_MAX_LENGTH,
+  BRANDING_FOOTER_NOTE_MAX_LENGTH,
+  BRANDING_ORG_NAME_MAX_LENGTH,
+  normalizeBrandingText,
+} from '../../services/branding';
+import {
+  isValidFileRequestMaxSizeBytes,
+} from '../../services/file-request-policy';
 import type { AiClassificationMode } from '../../types/classification';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -60,8 +69,14 @@ function projectPolicy(
   permissionInheritanceMode: PermissionInheritanceMode,
   invitePolicy: InvitePolicy
 ): Record<string, unknown> {
+  // Never project ciphertext (or any secret material) to API consumers. The
+  // dedicated /api/admin/siem endpoint exposes only `secretConfigured`.
+  const {
+    siem_webhook_secret_encrypted: _omitSiemSecret,
+    ...safePolicy
+  } = policy;
   return {
-    ...policy,
+    ...safePolicy,
     // camelCase projection for API consumers; the raw snake_case column stays
     // for D1/backwards-compatible readers.
     advancedRolesEnabled: policy.advanced_roles_enabled === 1,
@@ -95,6 +110,20 @@ function projectPolicy(
     requireSsoLogin: policy.require_sso_login === 1,
     ssoAllowedDomains: parseSsoAllowedDomainsJson(
       policy.sso_allowed_domains_json
+    ),
+    // P13-4 / TOM-72 file-request governance, branding and quota warnings.
+    allowFileRequests: policy.allow_file_requests !== 0,
+    fileRequestMaxSizeBytes: Number(
+      policy.file_request_max_size_bytes ?? 104857600
+    ),
+    fileRequestEnforceAllowedExtensions:
+      policy.file_request_enforce_allowed_extensions === 1,
+    brandingOrgName: policy.branding_org_name ?? null,
+    brandingContactInfo: policy.branding_contact_info ?? null,
+    brandingFooterNote: policy.branding_footer_note ?? null,
+    quotaWarnThresholdPct: Number(policy.quota_warn_threshold_pct ?? 80),
+    quotaCriticalThresholdPct: Number(
+      policy.quota_critical_threshold_pct ?? 90
     ),
   };
 }
@@ -177,6 +206,14 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       ipAllowlist?: unknown;
       requireSsoLogin?: unknown;
       ssoAllowedDomains?: unknown;
+      allowFileRequests?: unknown;
+      fileRequestMaxSizeBytes?: unknown;
+      fileRequestEnforceAllowedExtensions?: unknown;
+      brandingOrgName?: unknown;
+      brandingContactInfo?: unknown;
+      brandingFooterNote?: unknown;
+      quotaWarnThresholdPct?: unknown;
+      quotaCriticalThresholdPct?: unknown;
     } | null;
 
     if (!body || typeof body !== 'object') {
@@ -190,7 +227,9 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
               ip_allowlist_scope,
               ip_allowlist_json,
               require_sso_login,
-              sso_allowed_domains_json
+              sso_allowed_domains_json,
+              quota_warn_threshold_pct,
+              quota_critical_threshold_pct
          FROM tenant_policies WHERE tenant_id = ?`
     )
       .bind(user.tenantId)
@@ -202,6 +241,8 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
         ip_allowlist_json: string | null;
         require_sso_login: number | null;
         sso_allowed_domains_json: string | null;
+        quota_warn_threshold_pct: number | null;
+        quota_critical_threshold_pct: number | null;
       }>();
     let effectiveDomainAllowlist = parseDomainAllowlistJson(
       existingGuestPolicyRow?.external_domain_allowlist_json
@@ -614,6 +655,145 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       }
       updates.push('sso_allowed_domains_json = ?');
       binds.push(JSON.stringify(validation.domains));
+    }
+
+    // P13-4 / TOM-72 tenant-wide file-request governance, branding and quota
+    // warning thresholds. sec_admin keeps read-only access through GET.
+    const fileRequestGovernanceProvided =
+      body.allowFileRequests !== undefined ||
+      body.fileRequestMaxSizeBytes !== undefined ||
+      body.fileRequestEnforceAllowedExtensions !== undefined;
+    const brandingProvided =
+      body.brandingOrgName !== undefined ||
+      body.brandingContactInfo !== undefined ||
+      body.brandingFooterNote !== undefined;
+    const quotaProvided =
+      body.quotaWarnThresholdPct !== undefined ||
+      body.quotaCriticalThresholdPct !== undefined;
+    if (
+      (fileRequestGovernanceProvided || brandingProvided || quotaProvided) &&
+      user.role !== 'sys_admin'
+    ) {
+      return c.json(
+        {
+          error:
+            'Only sys_admin can change file-request, branding or quota policies',
+          code: 'SYS_ADMIN_REQUIRED',
+        },
+        403
+      );
+    }
+
+    if (body.allowFileRequests !== undefined) {
+      if (typeof body.allowFileRequests !== 'boolean') {
+        return c.json(
+          {
+            error: 'allowFileRequests must be a boolean',
+            code: 'INVALID_FILE_REQUEST_POLICY',
+          },
+          400
+        );
+      }
+      updates.push('allow_file_requests = ?');
+      binds.push(body.allowFileRequests ? 1 : 0);
+    }
+    if (body.fileRequestMaxSizeBytes !== undefined) {
+      if (!isValidFileRequestMaxSizeBytes(body.fileRequestMaxSizeBytes)) {
+        return c.json(
+          {
+            error: 'fileRequestMaxSizeBytes must be a positive integer',
+            code: 'INVALID_FILE_REQUEST_POLICY',
+          },
+          400
+        );
+      }
+      updates.push('file_request_max_size_bytes = ?');
+      binds.push(body.fileRequestMaxSizeBytes);
+    }
+    if (body.fileRequestEnforceAllowedExtensions !== undefined) {
+      if (typeof body.fileRequestEnforceAllowedExtensions !== 'boolean') {
+        return c.json(
+          {
+            error: 'fileRequestEnforceAllowedExtensions must be a boolean',
+            code: 'INVALID_FILE_REQUEST_POLICY',
+          },
+          400
+        );
+      }
+      updates.push('file_request_enforce_allowed_extensions = ?');
+      binds.push(body.fileRequestEnforceAllowedExtensions ? 1 : 0);
+    }
+
+    for (const [field, column, maxLength] of [
+      ['brandingOrgName', 'branding_org_name', BRANDING_ORG_NAME_MAX_LENGTH],
+      ['brandingContactInfo', 'branding_contact_info', BRANDING_CONTACT_INFO_MAX_LENGTH],
+      ['brandingFooterNote', 'branding_footer_note', BRANDING_FOOTER_NOTE_MAX_LENGTH],
+    ] as const) {
+      const value = body[field];
+      if (value === undefined) continue;
+      if (value !== null && typeof value !== 'string') {
+        return c.json(
+          {
+            error: `${field} must be a string or null`,
+            code: 'INVALID_BRANDING',
+          },
+          400
+        );
+      }
+      updates.push(`${column} = ?`);
+      binds.push(normalizeBrandingText(value, maxLength));
+    }
+
+    let effectiveQuotaWarn =
+      existingGuestPolicyRow?.quota_warn_threshold_pct ?? 80;
+    let effectiveQuotaCritical =
+      existingGuestPolicyRow?.quota_critical_threshold_pct ?? 90;
+    if (body.quotaWarnThresholdPct !== undefined) {
+      if (
+        typeof body.quotaWarnThresholdPct !== 'number' ||
+        !Number.isInteger(body.quotaWarnThresholdPct) ||
+        body.quotaWarnThresholdPct < 50 ||
+        body.quotaWarnThresholdPct > 99
+      ) {
+        return c.json(
+          {
+            error: 'quotaWarnThresholdPct must be integer 50..99',
+            code: 'INVALID_QUOTA_THRESHOLDS',
+          },
+          400
+        );
+      }
+      effectiveQuotaWarn = body.quotaWarnThresholdPct;
+      updates.push('quota_warn_threshold_pct = ?');
+      binds.push(body.quotaWarnThresholdPct);
+    }
+    if (body.quotaCriticalThresholdPct !== undefined) {
+      if (
+        typeof body.quotaCriticalThresholdPct !== 'number' ||
+        !Number.isInteger(body.quotaCriticalThresholdPct) ||
+        body.quotaCriticalThresholdPct < 51 ||
+        body.quotaCriticalThresholdPct > 100
+      ) {
+        return c.json(
+          {
+            error: 'quotaCriticalThresholdPct must be integer 51..100',
+            code: 'INVALID_QUOTA_THRESHOLDS',
+          },
+          400
+        );
+      }
+      effectiveQuotaCritical = body.quotaCriticalThresholdPct;
+      updates.push('quota_critical_threshold_pct = ?');
+      binds.push(body.quotaCriticalThresholdPct);
+    }
+    if (quotaProvided && effectiveQuotaWarn >= effectiveQuotaCritical) {
+      return c.json(
+        {
+          error: 'quotaWarnThresholdPct must be lower than quotaCriticalThresholdPct',
+          code: 'INVALID_QUOTA_THRESHOLDS',
+        },
+        400
+      );
     }
 
     if (updates.length === 0) {

@@ -11,8 +11,10 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
+import { TosAcceptanceModal } from '@/components/TosAcceptanceModal';
 import { canAccess, ROLE_META } from '@/lib/capabilities';
 import { listSharedItems } from '@/lib/files-api';
+import { useTosAcceptance } from '@/lib/use-tos-acceptance';
 import {
   guestSessionIssueFromError,
   type GuestSessionIssue,
@@ -36,19 +38,27 @@ export function WorkspaceSharedItemsView({
   const [items, setItems] = useState<SharedItemEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [sessionIssue, setSessionIssue] = useState<GuestSessionIssue | null>(
     null
   );
+  const tosGate = useTosAcceptance({ apiErrorCode: errorCode });
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
+    setErrorCode(null);
     setSessionIssue(null);
     try {
       const res = await listSharedItems(200, signal);
       setItems(res.items);
     } catch (err) {
       if ((err as Error)?.name === 'AbortError') return;
+      setErrorCode(
+        typeof (err as { code?: unknown })?.code === 'string'
+          ? ((err as { code: string }).code)
+          : null
+      );
       setSessionIssue(
         isGuest
           ? guestSessionIssueFromError(err, { userType: 'guest' })
@@ -83,20 +93,30 @@ export function WorkspaceSharedItemsView({
   }
 
   return (
-    <section aria-labelledby="shared-items-heading" className="space-y-4">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1
-            id="shared-items-heading"
-            className="flex items-center gap-2 text-[1rem] font-semibold tracking-[-0.01em] text-[#111214]"
-          >
-            <Share2 className="h-4 w-4 text-[#5e6ad2]" />
-            共有アイテム
-          </h1>
-          <p className="mt-1 text-[0.6875rem] leading-relaxed text-[#6b6f76]">
-            あなたまたは所属グループに直接共有されたフォルダとファイルです。継承のみのアイテムは含まれません。
-          </p>
-          {isGuest && (
+    <>
+      {tosGate.blocked && (
+        <TosAcceptanceModal
+          tos={tosGate.status}
+          branding={tosGate.branding}
+          accepting={tosGate.accepting}
+          error={tosGate.error}
+          onAccept={() => void tosGate.accept()}
+        />
+      )}
+      <section aria-labelledby="shared-items-heading" className="space-y-4">
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1
+              id="shared-items-heading"
+              className="flex items-center gap-2 text-[1rem] font-semibold tracking-[-0.01em] text-[#111214]"
+            >
+              <Share2 className="h-4 w-4 text-[#5e6ad2]" />
+              共有アイテム
+            </h1>
+            <p className="mt-1 text-[0.6875rem] leading-relaxed text-[#6b6f76]">
+              あなたまたは所属グループに直接共有されたフォルダとファイルです。継承のみのアイテムは含まれません。
+            </p>
+            {isGuest && (
             <div
               data-testid="guest-shared-guidance"
               className="mt-2 min-w-0 space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[0.6875rem] leading-relaxed text-amber-900"
@@ -258,6 +278,7 @@ export function WorkspaceSharedItemsView({
           </tbody>
         </table>
       </div>
-    </section>
+      </section>
+    </>
   );
 }

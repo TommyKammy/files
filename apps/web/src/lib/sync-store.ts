@@ -117,6 +117,7 @@ import type {
   SyncDeltaResponse,
   SyncInvalidationSignal,
   TenantPolicyRow,
+  TosStatus,
   UserType,
   WorkspaceConflictPolicy,
   WorkspaceToastItem,
@@ -144,6 +145,7 @@ export interface SyncStoreSnapshot {
   authStatus: SyncAuthStatus;
   user: AuthUser | null;
   policy: TenantPolicyRow | null;
+  tosStatus: TosStatus | null;
   syncSeq: number;
   purgedBeforeSeq: number;
   bootstrapDone: boolean;
@@ -304,6 +306,7 @@ export class WorkspaceSyncStore {
   private authStatus: SyncAuthStatus = 'unknown';
   private user: AuthUser | null = null;
   private policy: TenantPolicyRow | null = null;
+  private tosStatus: TosStatus | null = null;
   private syncSeq = 0;
   private purgedBeforeSeq = 0;
   private rootFolderIds: string[] = [];
@@ -382,6 +385,7 @@ export class WorkspaceSyncStore {
       authStatus: this.authStatus,
       user: this.user,
       policy: this.policy,
+      tosStatus: this.tosStatus,
       syncSeq: this.syncSeq,
       purgedBeforeSeq: this.purgedBeforeSeq,
       bootstrapDone: this.bootstrapDone,
@@ -686,6 +690,12 @@ export class WorkspaceSyncStore {
       },
       set policy(value) {
         self.policy = value;
+      },
+      get tosStatus() {
+        return self.tosStatus;
+      },
+      set tosStatus(value) {
+        self.tosStatus = value;
       },
       get purgedBeforeSeq() {
         return self.purgedBeforeSeq;

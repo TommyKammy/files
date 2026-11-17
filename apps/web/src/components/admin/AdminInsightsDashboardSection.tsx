@@ -12,6 +12,11 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { StorageStatsSection } from '@/components/admin/StorageStatsSection';
+import { AdminQuotaWarningBanner } from '@/components/admin/AdminQuotaWarningBanner';
+import {
+  DEFAULT_QUOTA_CRITICAL_THRESHOLD_PCT,
+  DEFAULT_QUOTA_WARN_THRESHOLD_PCT,
+} from '@/lib/admin-compliance';
 import {
   ADMIN_INSIGHTS_CHART_HEIGHT,
   ADMIN_INSIGHTS_CHART_WIDTH,
@@ -134,6 +139,25 @@ export function AdminInsightsDashboardSection({
   onDaysChange: (days: AdminInsightsRangeDays) => void;
 }) {
   const effectiveStats = stats ?? insights?.storage ?? null;
+  const effectiveUsedPct =
+    effectiveStats && effectiveStats.quotaBytes > 0
+      ? Math.min(
+          100,
+          Math.round(
+            (effectiveStats.usedBytes / effectiveStats.quotaBytes) * 100
+          )
+        )
+      : usedPct;
+  const quotaThresholds = {
+    warn:
+      stats?.quotaWarnThresholdPct ??
+      insights?.storage.quotaWarnThresholdPct ??
+      DEFAULT_QUOTA_WARN_THRESHOLD_PCT,
+    critical:
+      stats?.quotaCriticalThresholdPct ??
+      insights?.storage.quotaCriticalThresholdPct ??
+      DEFAULT_QUOTA_CRITICAL_THRESHOLD_PCT,
+  };
   const kpiCards = insights ? buildKpiCards(insights) : [];
   const blockedCategories = insights
     ? groupAdminInsightsBlockedActions(insights.security.blockedByAction)
@@ -206,8 +230,15 @@ export function AdminInsightsDashboardSection({
         </div>
       </div>
 
+      {effectiveStats && effectiveUsedPct > 0 && (
+        <AdminQuotaWarningBanner
+          usedPct={effectiveUsedPct}
+          thresholds={quotaThresholds}
+        />
+      )}
+
       {effectiveStats && (
-        <StorageStatsSection stats={effectiveStats} usedPct={usedPct} />
+        <StorageStatsSection stats={effectiveStats} usedPct={effectiveUsedPct} />
       )}
 
       {loading && !insights && (

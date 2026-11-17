@@ -10,7 +10,11 @@ import Link from 'next/link';
 import { AccessControlSettingsSection } from '@/components/admin/AccessControlSettingsSection';
 import { AdminAuthControlSection } from '@/components/admin/AdminAuthControlSection';
 import { AdminContentManagerSection } from '@/components/admin/AdminContentManagerSection';
+import { AdminComplianceSettingsSection } from '@/components/admin/AdminComplianceSettingsSection';
+import { AdminFileRequestsSection } from '@/components/admin/AdminFileRequestsSection';
 import { AdminInsightsDashboardSection } from '@/components/admin/AdminInsightsDashboardSection';
+import { AdminQuotaWarningBanner } from '@/components/admin/AdminQuotaWarningBanner';
+import { AdminSiemSettingsSection } from '@/components/admin/AdminSiemSettingsSection';
 import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
 import { AdminGuestsSection } from '@/components/admin/AdminGuestsSection';
 import { AdminGroupsSection } from '@/components/admin/AdminGroupsSection';
@@ -31,6 +35,7 @@ import {
   getAdminConsoleNavItem,
   type AdminConsoleSection,
 } from '@/lib/admin-console-nav';
+import { readQuotaThresholds } from '@/lib/admin-compliance';
 import { useGovernanceDashboard } from '@/lib/use-governance-dashboard';
 import { LocalDevQuickLoginPanel, SignInCard } from '@/components/SignInCard';
 
@@ -207,6 +212,11 @@ export function HybridGovernanceDashboard({
     stats && stats.quotaBytes > 0
       ? Math.min(100, Math.round((stats.usedBytes / stats.quotaBytes) * 100))
       : 0;
+  const policyThresholds = readQuotaThresholds(policy);
+  const quotaThresholds = {
+    warn: stats?.quotaWarnThresholdPct ?? policyThresholds.warn,
+    critical: stats?.quotaCriticalThresholdPct ?? policyThresholds.critical,
+  };
 
   return (
     <div className="flex min-h-screen bg-[#efeff1] text-slate-900">
@@ -248,6 +258,13 @@ export function HybridGovernanceDashboard({
               </button>
             )}
           </header>
+
+          {section !== 'insights' && stats && stats.quotaBytes > 0 && (
+            <AdminQuotaWarningBanner
+              usedPct={usedPct}
+              thresholds={quotaThresholds}
+            />
+          )}
 
           {error && (
             <div
@@ -312,6 +329,8 @@ export function HybridGovernanceDashboard({
 
               {showSection('content') && <AdminContentManagerSection />}
 
+              {showSection('content') && <AdminFileRequestsSection />}
+
               {showSection('settings') && (
                 <AccessControlSettingsSection
                   policy={policy}
@@ -356,6 +375,18 @@ export function HybridGovernanceDashboard({
                   policy={policy}
                   onPolicyUpdated={setPolicy}
                 />
+              )}
+
+              {showSection('settings') && (
+                <AdminComplianceSettingsSection
+                  policy={policy}
+                  canManage={user.role === 'sys_admin'}
+                  onPolicyUpdated={setPolicy}
+                />
+              )}
+
+              {showSection('settings') && (
+                <AdminSiemSettingsSection canManage={user.role === 'sys_admin'} />
               )}
 
               {showSection('settings') && (

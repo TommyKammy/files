@@ -4,6 +4,7 @@ import type {
   DevAuthAccountsResponse,
   SyncDeltaResponse,
   SyncWsTicketResponse,
+  TosStatusResponse,
   UserRole,
 } from '@/types/files';
 import {
@@ -17,6 +18,21 @@ export function fetchCurrentUser(): Promise<{ user: AuthUser }> {
 
 export function fetchSyncBootstrap(signal?: AbortSignal): Promise<BootstrapResponse> {
   return apiFetch<BootstrapResponse>('/api/sync/bootstrap', { signal });
+}
+
+/** GET /api/auth/tos — tenant policy + caller acceptance state. */
+export function fetchTosStatus(signal?: AbortSignal): Promise<TosStatusResponse> {
+  return apiFetch<TosStatusResponse>('/api/auth/tos', { signal });
+}
+
+/** POST /api/auth/tos/accept — idempotently accept the current version. */
+export function acceptTosVersion(version: number): Promise<
+  TosStatusResponse & { ok: boolean }
+> {
+  return apiFetch('/api/auth/tos/accept', {
+    method: 'POST',
+    body: JSON.stringify({ version }),
+  });
 }
 
 export function fetchSyncDelta(

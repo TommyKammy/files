@@ -46,6 +46,7 @@ import {
   ADMIN_AUDIT_PRESETS,
   buildAdminAuditPresetHref,
   getAdminSectionFetchPlan,
+  getAdminSectionOwnedApiPrefixes,
   parseAdminAuditPreset,
   type AdminConsoleSection,
 } from '@/lib/admin-console-nav';
@@ -910,6 +911,8 @@ export function useGovernanceDashboard({
   return {
     syncStore,
     snapshot,
+    section,
+    sectionOwnedApiPrefixes: getAdminSectionOwnedApiPrefixes(section),
     user,
     authChecked,
     isPrivilegedAdmin,

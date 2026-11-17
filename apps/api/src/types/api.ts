@@ -57,6 +57,8 @@ export interface Env {
   MAIL_WEBHOOK_URL?: string;
   MAIL_API_KEY?: string;
   MAIL_FROM?: string;
+  /** AES-GCM key used to seal tenant SIEM webhook secrets at rest. */
+  SIEM_WEBHOOK_SECRET_KEY?: string;
 }
 
 export interface AuthUser {

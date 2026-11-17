@@ -4,6 +4,7 @@ import { requireMemberUser, requireSecOrSysAdmin } from '../services/authorizati
 import type { OidcHonoEnv } from '../types/oidc';
 import { registerAiSuggestionRoutes } from './admin/ai-suggestions';
 import { registerAdminContentRoutes } from './admin/content';
+import { registerAdminFileRequestRoutes } from './admin/file-requests';
 import { registerAdminGroupRoutes } from './admin/groups';
 import { registerAdminGuestRoutes } from './admin/guests';
 import { registerAdminInsightsRoutes } from './admin/insights';
@@ -15,8 +16,10 @@ import { registerAdminReportRoutes } from './admin/reports';
 import { registerAdminScimTokenRoutes } from './admin/scim-tokens';
 import { registerAdminSessionRoutes } from './admin/sessions';
 import { registerAdminSharedLinkRoutes } from './admin/shared-links';
+import { registerAdminSiemRoutes } from './admin/siem';
 import { registerAdminSsoRoutes } from './admin/sso';
 import { registerStorageStatsRoutes } from './admin/storage';
+import { registerAdminTosRoutes } from './admin/tos';
 import { registerAdminTrashRoutes } from './admin/trash';
 import { registerAdminUserRoutes } from './admin/users';
 
@@ -34,6 +37,9 @@ registerAiSuggestionRoutes(adminGovernanceRoutes);
 registerAdminContentRoutes(adminGovernanceRoutes);
 registerAdminSharedLinkRoutes(adminGovernanceRoutes);
 registerAdminPolicyRoutes(adminGovernanceRoutes);
+registerAdminTosRoutes(adminGovernanceRoutes);
+registerAdminSiemRoutes(adminGovernanceRoutes);
+registerAdminFileRequestRoutes(adminGovernanceRoutes);
 registerAdminSsoRoutes(adminGovernanceRoutes);
 registerAdminGuestRoutes(adminGovernanceRoutes);
 registerAdminUserRoutes(adminGovernanceRoutes);

@@ -4,6 +4,7 @@ import {
   verifyRequestOriginForCsrf,
 } from '../../middleware/session-auth';
 import { generateRandomToken, sha256Hex, timingSafeEqual } from '../../services/crypto-utils';
+import { loadTenantBranding } from '../../services/branding';
 import {
   generateSixDigitOtp,
   getGuestPolicy,
@@ -414,15 +415,17 @@ export function registerGuestAuthRoutes(routes: Hono<OidcHonoEnv>) {
     const eligibility = guest
       ? await validateGuestEligibility(c.env.DB, guest)
       : { ok: false, code: 'GUEST_ACCOUNT_INACTIVE', error: 'Guest account not found' };
+    const branding = await loadTenantBranding(c.env.DB, invitation.tenant_id);
 
     return c.json({
       invitation: {
         ...projectInviteMeta(invitation),
-        tenantName: tenant?.name ?? invitation.tenant_id,
+        tenantName: branding.orgName ?? tenant?.name ?? invitation.tenant_id,
         canAccept:
           invitation.status === 'pending' &&
           eligibility.ok === true,
         reason: eligibility.ok ? null : eligibility.code,
+        branding,
       },
     });
   });

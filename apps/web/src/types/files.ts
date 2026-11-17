@@ -475,6 +475,7 @@ export interface BootstrapResponse {
   pinnedFolders: FolderSummary[];
   currentSeq: number;
   purgedBeforeSeq: number;
+  tosStatus?: TosStatus | null;
 }
 
 export type SyncEntityType =
@@ -735,6 +736,7 @@ export interface PublicShareMeta {
     classification: ClassificationLabel;
   } | null;
   folderFiles: PublicShareFileMeta[];
+  branding?: TenantBranding;
 }
 
 export interface PublicShareUrlResponse {
@@ -774,6 +776,7 @@ export interface PublicFileRequestMeta {
   allowedExtensions: string[] | null;
   expiresAt: string | null;
   turnstileEnabled: boolean;
+  branding?: TenantBranding;
 }
 
 export interface StorageStatsResponse {
@@ -786,6 +789,8 @@ export interface StorageStatsResponse {
     { fileCount: number; totalBytes: number }
   >;
   d1EstimatedBytes: number | null;
+  quotaWarnThresholdPct?: number;
+  quotaCriticalThresholdPct?: number;
 }
 
 export type AdminInsightsRangeDays = 7 | 30;
@@ -1033,6 +1038,74 @@ export type AdminIpAllowlistScope =
   | 'internal_users'
   | 'all_access';
 
+export type TosTargetAudience = 'all_users' | 'guests_only' | 'members_only';
+
+export interface TenantBranding {
+  orgName: string | null;
+  contactInfo: string | null;
+  footerNote: string | null;
+}
+
+/** GET /api/auth/tos and `/api/sync/bootstrap` TOS projection. */
+export interface TosStatus {
+  enabled: boolean;
+  applicable: boolean;
+  targetAudience: TosTargetAudience;
+  version: number;
+  title: string;
+  bodyMarkdown: string;
+  requiresAcceptance: boolean;
+  accepted: boolean;
+  acceptedVersion: number | null;
+  acceptedAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TosStatusResponse {
+  tos: TosStatus;
+  branding: TenantBranding;
+}
+
+export interface AdminTosPolicy {
+  enabled: boolean;
+  version: number;
+  targetAudience: TosTargetAudience;
+  title: string;
+  bodyMarkdown: string;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface AdminSiemSettings {
+  enabled: boolean;
+  url: string | null;
+  secretConfigured: boolean;
+  events: string[];
+  updatedAt: string | null;
+}
+
+export interface UpdateAdminTosPayload {
+  enabled?: boolean;
+  targetAudience?: TosTargetAudience;
+  title?: string;
+  bodyMarkdown?: string;
+  bumpVersion?: boolean;
+}
+
+export interface UpdateAdminSiemPayload {
+  enabled?: boolean;
+  url?: string | null;
+  secret?: string;
+  clearSecret?: boolean;
+  events?: string[];
+}
+
+export interface AdminFileRequestRow extends FileRequestSummary {
+  folderName: string | null;
+  ownerName: string | null;
+  ownerEmail: string | null;
+}
+
 export interface TenantPolicyRow {
   tenant_id: string;
   enforce_company_only_links: number;
@@ -1080,6 +1153,22 @@ export interface TenantPolicyRow {
   requireSsoLogin?: boolean;
   sso_allowed_domains_json?: string;
   ssoAllowedDomains?: string[];
+  allow_file_requests?: number;
+  allowFileRequests?: boolean;
+  file_request_max_size_bytes?: number;
+  fileRequestMaxSizeBytes?: number;
+  file_request_enforce_allowed_extensions?: number;
+  fileRequestEnforceAllowedExtensions?: boolean;
+  branding_org_name?: string | null;
+  brandingOrgName?: string | null;
+  branding_contact_info?: string | null;
+  brandingContactInfo?: string | null;
+  branding_footer_note?: string | null;
+  brandingFooterNote?: string | null;
+  quota_warn_threshold_pct?: number;
+  quotaWarnThresholdPct?: number;
+  quota_critical_threshold_pct?: number;
+  quotaCriticalThresholdPct?: number;
   updated_by: string | null;
   updated_at: string;
 }
@@ -1111,6 +1200,14 @@ export interface UpdateAdminPoliciesPayload {
   ipAllowlist?: string[];
   requireSsoLogin?: boolean;
   ssoAllowedDomains?: string[];
+  allowFileRequests?: boolean;
+  fileRequestMaxSizeBytes?: number;
+  fileRequestEnforceAllowedExtensions?: boolean;
+  brandingOrgName?: string | null;
+  brandingContactInfo?: string | null;
+  brandingFooterNote?: string | null;
+  quotaWarnThresholdPct?: number;
+  quotaCriticalThresholdPct?: number;
 }
 
 export interface TenantPolicyResponse {
@@ -1953,6 +2050,7 @@ export interface GuestInviteMeta {
   acceptedAt: string | null;
   canAccept: boolean;
   reason: string | null;
+  branding?: TenantBranding;
 }
 
 export interface GuestAcceptResponse {

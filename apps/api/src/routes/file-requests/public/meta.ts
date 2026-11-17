@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { OidcHonoEnv } from '../../../types/oidc';
+import { loadTenantBranding } from '../../../services/branding';
 import { FileRequestRuntimeEnv, parseAllowedExtensionsJson } from '../shared';
 import {
   loadActiveFileRequest,
@@ -14,6 +15,7 @@ export function registerPublicFileRequestMetaRoute(routes: Hono<OidcHonoEnv>) {
     }
     const fr = loaded.fileRequest;
     const runtimeEnv = c.env as FileRequestRuntimeEnv;
+    const branding = await loadTenantBranding(c.env.DB, fr.tenant_id);
 
     return c.json({
       title: fr.title,
@@ -23,6 +25,7 @@ export function registerPublicFileRequestMetaRoute(routes: Hono<OidcHonoEnv>) {
       allowedExtensions: parseAllowedExtensionsJson(fr.allowed_extensions),
       expiresAt: fr.expires_at,
       turnstileEnabled: Boolean(runtimeEnv.TURNSTILE_SECRET_KEY),
+      branding,
     });
   });
 

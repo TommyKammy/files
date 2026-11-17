@@ -62,7 +62,7 @@ export const ADMIN_CONSOLE_NAV_ITEMS: readonly AdminConsoleNavItem[] = [
     label: 'コンテンツ',
     heading: 'コンテンツ',
     summary:
-      '全社横断コンテンツ検索・AI 分類提案のレビュー・ルートフォルダ管理・テナントゴミ箱を一元管理します。',
+      '全社横断コンテンツ検索・AI 分類提案のレビュー・ルートフォルダ管理・テナントゴミ箱・全社ファイルリクエストの緊急停止を一元管理します。',
     roles: ['sys_admin', 'sec_admin'],
   },
   {
@@ -80,7 +80,7 @@ export const ADMIN_CONSOLE_NAV_ITEMS: readonly AdminConsoleNavItem[] = [
     label: 'ガバナンスと設定',
     heading: 'ガバナンスと設定',
     summary:
-      'アクセス制御・IP 許可リスト・OIDC SSO・共有リンク/ゲストポリシーを一括して管理します。',
+      'アクセス制御・IP 許可リスト・OIDC SSO・共有リンク/ゲストポリシー・カスタム利用規約・SIEM Webhook・ブランディングを一括して管理します。',
     roles: ['sys_admin', 'sec_admin'],
   },
   {
@@ -228,6 +228,67 @@ export function getAdminSectionFetchPlan(
   section: AdminConsoleSection
 ): AdminSectionFetchPlan {
   return ADMIN_SECTION_FETCH_PLANS[section] ?? ADMIN_SECTION_FETCH_PLANS.all;
+}
+
+/**
+ * TOM-72 route ownership contract.
+ *
+ * `/admin/settings` exclusively owns ToS, SIEM, branding and tenant-wide
+ * file-request policies. `/admin/content` exclusively owns the cross-tenant
+ * file-request inventory and emergency stop. Keeping this explicit prevents a
+ * future dashboard refactor from silently fetching a route's APIs from another
+ * section.
+ */
+export const ADMIN_SECTION_OWNED_API_PREFIXES: Record<
+  AdminConsoleSection,
+  readonly string[]
+> = {
+  all: ['/api/admin'],
+  insights: ['/api/admin/insights'],
+  content: [
+    '/api/admin/ai-suggestions',
+    '/api/admin/content',
+    '/api/admin/root-folders',
+    '/api/admin/trash',
+    '/api/admin/file-requests',
+  ],
+  users: [
+    '/api/admin/users',
+    '/api/admin/groups',
+    '/api/admin/scim-tokens',
+    '/api/admin/guests',
+  ],
+  settings: [
+    '/api/admin/policies',
+    '/api/admin/shared-links',
+    '/api/admin/tos',
+    '/api/admin/siem',
+    '/api/admin/sessions',
+    '/api/admin/guests',
+    '/api/admin/sso',
+  ],
+  reports: [
+    '/api/audit-logs',
+    '/api/admin/permissions',
+    '/api/admin/reports',
+  ],
+};
+
+export function getAdminSectionOwnedApiPrefixes(
+  section: AdminConsoleSection
+): readonly string[] {
+  return ADMIN_SECTION_OWNED_API_PREFIXES[section] ?? [];
+}
+
+/** True when a pathname is owned by the given focused section (or `all`). */
+export function isAdminApiOwnedBySection(
+  section: AdminConsoleSection,
+  pathname: string
+): boolean {
+  if (section === 'all') return pathname.startsWith('/api/admin');
+  return getAdminSectionOwnedApiPrefixes(section).some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
 }
 
 export function adminSectionHasDashboardFetch(

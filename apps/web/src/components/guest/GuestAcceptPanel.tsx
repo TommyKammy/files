@@ -178,6 +178,31 @@ export function GuestAcceptPanel() {
         </dd>
       </dl>
 
+      {(meta.branding?.orgName?.trim() ||
+        meta.branding?.contactInfo?.trim() ||
+        meta.branding?.footerNote?.trim()) && (
+        <div
+          data-testid="guest-branding"
+          className="space-y-1 rounded-xl border border-[#e7e7ea] bg-white px-3 py-2 text-[0.6875rem] text-[#55565a]"
+        >
+          {meta.branding?.orgName?.trim() && (
+            <p className="break-words font-medium text-[#111214]">
+              {meta.branding.orgName.trim()}
+            </p>
+          )}
+          {meta.branding?.contactInfo?.trim() && (
+            <p className="whitespace-pre-wrap break-words">
+              お問い合わせ: {meta.branding.contactInfo.trim()}
+            </p>
+          )}
+          {meta.branding?.footerNote?.trim() && (
+            <p className="whitespace-pre-wrap break-words">
+              {meta.branding.footerNote.trim()}
+            </p>
+          )}
+        </div>
+      )}
+
       {stage === 'accept' && (
         <form onSubmit={handleAccept} className="space-y-3" noValidate>
           <p className="flex items-start gap-2 rounded-xl bg-blue-50 px-3 py-2 text-[0.6875rem] text-blue-900">

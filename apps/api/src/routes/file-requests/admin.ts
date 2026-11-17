@@ -8,6 +8,10 @@ import {
 } from '../../services/authorization';
 import { can } from '../../services/capabilities';
 import { generateRandomToken, sha256Hex } from '../../services/crypto-utils';
+import {
+  loadFileRequestPolicy,
+  resolveRequestMaxSizeBytes,
+} from '../../services/file-request-policy';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
   DANGEROUS_EXTENSIONS,
@@ -77,6 +81,18 @@ fileRequestsRoutes.post('/', async (c) => {
     return c.json({ error: 'title must be a non-empty string (<= 160 chars)' }, 400);
   }
 
+  // TOM-72 tenant-wide governance applies to every creator, including admins.
+  const fileRequestPolicy = await loadFileRequestPolicy(c.env.DB, user.tenantId);
+  if (!fileRequestPolicy.allowFileRequests) {
+    return c.json(
+      {
+        error: 'File requests are disabled for this tenant by policy',
+        code: 'FILE_REQUESTS_DISABLED_BY_POLICY',
+      },
+      403
+    );
+  }
+
   const folderId = body.folderId.trim();
   const folderAccess = await resolveTargetAccess(c.env.DB, user, 'folder', folderId);
   if (!folderAccess || folderAccess.deletedAt !== null) {
@@ -89,7 +105,10 @@ fileRequestsRoutes.post('/', async (c) => {
     );
   }
 
-  let maxFileSizeBytes = DEFAULT_MAX_FILE_SIZE_BYTES;
+  let maxFileSizeBytes = resolveRequestMaxSizeBytes(
+    undefined,
+    fileRequestPolicy.maxFileSizeBytes
+  );
   if (body.maxFileSizeBytes !== undefined && body.maxFileSizeBytes !== null) {
     if (
       typeof body.maxFileSizeBytes !== 'number' ||
@@ -99,6 +118,16 @@ fileRequestsRoutes.post('/', async (c) => {
     ) {
       return c.json(
         { error: `maxFileSizeBytes must be between 1 and ${DEFAULT_MAX_FILE_SIZE_BYTES}` },
+        400
+      );
+    }
+    if (body.maxFileSizeBytes > fileRequestPolicy.maxFileSizeBytes) {
+      return c.json(
+        {
+          error: `maxFileSizeBytes exceeds the tenant-wide limit of ${fileRequestPolicy.maxFileSizeBytes} bytes`,
+          code: 'FILE_REQUEST_SIZE_EXCEEDS_POLICY',
+          policyMaxFileSizeBytes: fileRequestPolicy.maxFileSizeBytes,
+        },
         400
       );
     }
@@ -133,6 +162,23 @@ fileRequestsRoutes.post('/', async (c) => {
     if (normalized.length > 0) {
       allowedExtensionsJson = JSON.stringify(normalized);
     }
+    if (normalized.length === 0 && fileRequestPolicy.enforceAllowedExtensions) {
+      return c.json(
+        {
+          error: 'allowedExtensions must contain at least one extension under the tenant policy',
+          code: 'FILE_REQUEST_EXTENSIONS_REQUIRED',
+        },
+        400
+      );
+    }
+  } else if (fileRequestPolicy.enforceAllowedExtensions) {
+    return c.json(
+      {
+        error: 'allowedExtensions is required under the tenant policy',
+        code: 'FILE_REQUEST_EXTENSIONS_REQUIRED',
+      },
+      400
+    );
   }
 
   let expiresAt: string | null = null;

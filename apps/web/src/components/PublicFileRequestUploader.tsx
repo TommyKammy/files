@@ -36,7 +36,12 @@ export function PublicFileRequestUploader({ token }: { token: string }) {
               F
             </div>
             <div>
-              <div className="text-sm font-semibold text-slate-900">Files</div>
+              <div
+                data-testid="file-request-branding-org"
+                className="break-words text-sm font-semibold text-slate-900"
+              >
+                {meta?.branding?.orgName?.trim() || 'Files'}
+              </div>
               <div className="text-[0.6875rem] text-slate-500">
                 Blind Dropbox — Secure File Submission
               </div>
@@ -236,6 +241,25 @@ export function PublicFileRequestUploader({ token }: { token: string }) {
           </div>
         )}
       </div>
+
+      {(meta?.branding?.contactInfo?.trim() ||
+        meta?.branding?.footerNote?.trim()) && meta && (
+        <footer className="space-y-1 text-center text-[0.6875rem] text-slate-500">
+          {meta.branding?.contactInfo?.trim() && (
+            <p className="whitespace-pre-wrap break-words">
+              お問い合わせ: {meta.branding.contactInfo.trim()}
+            </p>
+          )}
+          {meta.branding?.footerNote?.trim() && (
+            <p
+              data-testid="file-request-branding-footer"
+              className="whitespace-pre-wrap break-words"
+            >
+              {meta.branding.footerNote.trim()}
+            </p>
+          )}
+        </footer>
+      )}
     </main>
   );
 }

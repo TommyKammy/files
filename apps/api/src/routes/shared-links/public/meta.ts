@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { resolveTargetAccess } from '../../../services/authorization';
+import { loadTenantBranding } from '../../../services/branding';
 import {
   DEFAULT_SHARE_LINK_POLICY,
   getShareLinkPolicyFlags,
@@ -136,6 +137,7 @@ export function registerPublicShareMetaRoutes(routes: Hono<OidcHonoEnv>) {
       hasConfidentialAncestor(c.env.DB, link.tenant_id, targetFolderId),
       user ? resolveTargetAccess(c.env.DB, user, link.target_type, link.target_id) : null,
     ]);
+    const branding = await loadTenantBranding(c.env.DB, link.tenant_id);
     const isConfidential =
       targetClassification === 'confidential' || ancestorConfidential;
     const effective = resolveEffectiveShareCapabilities({
@@ -169,6 +171,7 @@ export function registerPublicShareMetaRoutes(routes: Hono<OidcHonoEnv>) {
       file: fileMeta,
       folder: folderMeta,
       folderFiles,
+      branding,
     });
   });
 }

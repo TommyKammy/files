@@ -35,6 +35,7 @@ import {
 } from '../services/invite-policy';
 import { projectViewerShareLinkCapability } from '../services/shared-link-permissions';
 import { listAuthorizedSyncDeltas } from '../services/sync-changes';
+import { loadTosStatus } from '../services/tos';
 import type { OidcHonoEnv } from '../types/oidc';
 
 const BOOTSTRAP_ROOT_LIMIT = 100;
@@ -116,6 +117,13 @@ syncRoutes.get('/bootstrap', async (c) => {
 
   const rawPolicy =
     (policyRes.results[0] as Record<string, unknown> | undefined) ?? null;
+  const {
+    siem_webhook_enabled: _omitSiemEnabled,
+    siem_webhook_url: _omitSiemUrl,
+    siem_webhook_secret_encrypted: _omitSiemSecret,
+    siem_events_json: _omitSiemEvents,
+    ...safeRawPolicy
+  } = rawPolicy ?? {};
   const folderStructureMode = rawPolicy
     ? rawPolicy.folder_structure_mode === 'closed'
       ? 'closed'
@@ -131,7 +139,7 @@ syncRoutes.get('/bootstrap', async (c) => {
     : await getTenantInvitePolicy(c.env.DB, user.tenantId);
   const policy = rawPolicy
     ? {
-        ...rawPolicy,
+        ...safeRawPolicy,
         advancedRolesEnabled: rawPolicy.advanced_roles_enabled === 1,
         allowSharedLinkEdit: rawPolicy.allow_shared_link_edit === 1,
         allowPublicEditLinks: rawPolicy.allow_public_edit_links === 1,
@@ -139,6 +147,19 @@ syncRoutes.get('/bootstrap', async (c) => {
         folderStructureMode,
         permissionInheritanceMode,
         invitePolicy,
+        allowFileRequests: rawPolicy.allow_file_requests !== 0,
+        fileRequestMaxSizeBytes: Number(
+          rawPolicy.file_request_max_size_bytes ?? 104857600
+        ),
+        fileRequestEnforceAllowedExtensions:
+          rawPolicy.file_request_enforce_allowed_extensions === 1,
+        brandingOrgName: rawPolicy.branding_org_name ?? null,
+        brandingContactInfo: rawPolicy.branding_contact_info ?? null,
+        brandingFooterNote: rawPolicy.branding_footer_note ?? null,
+        quotaWarnThresholdPct: Number(rawPolicy.quota_warn_threshold_pct ?? 80),
+        quotaCriticalThresholdPct: Number(
+          rawPolicy.quota_critical_threshold_pct ?? 90
+        ),
       }
     : null;
 
@@ -195,6 +216,12 @@ syncRoutes.get('/bootstrap', async (c) => {
   const maxRow = maxSeqRes.results[0] as { max_seq?: number | null } | undefined;
   const purgedBeforeSeq = horizonRow?.purged_before_seq ?? 0;
   const currentSeq = Math.max(purgedBeforeSeq, maxRow?.max_seq ?? 0);
+  const tosStatus = await loadTosStatus(
+    c.env.DB,
+    user.tenantId,
+    user.id,
+    user.userType
+  );
 
   return c.json({
     user,
@@ -202,6 +229,7 @@ syncRoutes.get('/bootstrap', async (c) => {
     folderStructureMode,
     permissionInheritanceMode,
     invitePolicy,
+    tosStatus,
     rootFolders,
     pinnedFolders,
     currentSeq,

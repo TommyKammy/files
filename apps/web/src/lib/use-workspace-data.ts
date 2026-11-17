@@ -23,6 +23,7 @@ export function useWorkspaceData({
 
   const [directoryLoadingMore, setDirectoryLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const trash = useWorkspaceTrash();
 
   const nextCursor = isTrashView ? trash.nextCursor : directory.nextCursor;
@@ -54,6 +55,7 @@ export function useWorkspaceData({
     async (options?: { force?: boolean }) => {
       if (snapshot.authStatus !== 'authenticated' || !user) return;
       setError(null);
+      setErrorCode(null);
 
       try {
         if (isTrashView) {
@@ -64,6 +66,7 @@ export function useWorkspaceData({
           });
         }
       } catch (err) {
+        setErrorCode(err instanceof ApiClientError ? err.code ?? null : null);
         setError(
           err instanceof ApiClientError
             ? err.message
@@ -97,6 +100,7 @@ export function useWorkspaceData({
     try {
       await syncStore.loadMoreDirectory(folderId);
     } catch (err) {
+      setErrorCode(err instanceof ApiClientError ? err.code ?? null : null);
       setError(
         err instanceof ApiClientError
           ? err.message
@@ -117,6 +121,7 @@ export function useWorkspaceData({
     trashError: trash.error,
     error,
     setError,
+    errorCode,
     loadingMore,
     isInitialLoading,
     nextCursor,
