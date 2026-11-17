@@ -1,5 +1,6 @@
 import { purgeExpiredSyncChanges } from '../services/sync-changes';
 import { purgeExpiredWopiDrafts } from '../services/wopi-drafts';
+import { purgeExpiredActiveFileLocks } from '../services/active-file-lock-index';
 import type { Env } from '../types/api';
 import {
   cleanupGuestArtifacts,
@@ -19,6 +20,7 @@ export interface MaintenanceSummary {
   syncChangesPurged: number;
   wopiDraftsPurged: number;
   wopiSessionsExpired: number;
+  activeFileLocksPurged: number;
   guestsExpiredSuspended: number;
   guestSessionsRevoked: number;
   invitationsExpired: number;
@@ -85,6 +87,10 @@ export async function runDailyMaintenance(
 
   const { draftsPurged: wopiDraftsPurged, sessionsExpired: wopiSessionsExpired } =
     await purgeExpiredWopiDrafts(env, nowMs);
+  const activeFileLocksPurged = await purgeExpiredActiveFileLocks(
+    env.DB,
+    nowIso
+  );
   const syncChangesPurged = await purgeExpiredSyncChanges(env.DB, nowMs);
 
   return {
@@ -96,6 +102,7 @@ export async function runDailyMaintenance(
     syncChangesPurged,
     wopiDraftsPurged,
     wopiSessionsExpired,
+    activeFileLocksPurged,
     guestsExpiredSuspended,
     guestSessionsRevoked,
     invitationsExpired,

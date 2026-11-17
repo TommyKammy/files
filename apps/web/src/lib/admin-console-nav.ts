@@ -60,7 +60,7 @@ export const ADMIN_CONSOLE_NAV_ITEMS: readonly AdminConsoleNavItem[] = [
     label: 'コンテンツ',
     heading: 'コンテンツ',
     summary:
-      'AI 分類提案のレビュー・ルートフォルダ管理・テナントゴミ箱を一元管理します。',
+      '全社横断コンテンツ検索・AI 分類提案のレビュー・ルートフォルダ管理・テナントゴミ箱を一元管理します。',
     roles: ['sys_admin', 'sec_admin'],
   },
   {

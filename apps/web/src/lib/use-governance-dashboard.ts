@@ -20,6 +20,7 @@ import {
   useWorkspaceSyncSnapshot,
 } from '@/lib/sync-store';
 import type {
+  AdminContentInspectPolicy,
   AdminSharedLinkRow,
   AiSuggestionItem,
   AuditLogEntry,
@@ -112,6 +113,13 @@ export function useGovernanceDashboard({
   const [invitePolicyNotice, setInvitePolicyNotice] = useState<string | null>(
     null
   );
+  const [inspectPolicySaving, setInspectPolicySaving] = useState(false);
+  const [inspectPolicyError, setInspectPolicyError] = useState<string | null>(
+    null
+  );
+  const [inspectPolicyNotice, setInspectPolicyNotice] = useState<
+    string | null
+  >(null);
 
   function setAdvancedRolesDirty(dirty: boolean) {
     advancedRolesDirtyRef.current = dirty;
@@ -646,6 +654,39 @@ export function useGovernanceDashboard({
     }
   }
 
+  async function handleAdminContentInspectPolicyUpdate(
+    nextPolicy: AdminContentInspectPolicy
+  ): Promise<boolean> {
+    if (inspectPolicySaving) return false;
+    setInspectPolicySaving(true);
+    setInspectPolicyError(null);
+    setInspectPolicyNotice(null);
+    try {
+      const res = await updateAdminPolicies({
+        adminContentInspectPolicy: nextPolicy,
+      });
+      setPolicy(res.policy);
+      void syncStore.bootstrap({ force: true });
+      setInspectPolicyNotice(
+        nextPolicy === 'watermark_confidential'
+          ? '管理者コンテンツ検査ポリシーを「透かし強制付きプレビュー許可」に更新しました。'
+          : nextPolicy === 'deny_confidential'
+            ? '管理者コンテンツ検査ポリシーを「confidential 検査禁止」に更新しました。'
+            : '管理者コンテンツ検査ポリシーを「全面禁止」に更新しました。'
+      );
+      return true;
+    } catch (err) {
+      setInspectPolicyError(
+        err instanceof ApiClientError
+          ? err.message
+          : '管理者コンテンツ検査ポリシーの更新に失敗しました'
+      );
+      return false;
+    } finally {
+      setInspectPolicySaving(false);
+    }
+  }
+
   function scrollToAuditLogs() {
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
@@ -804,6 +845,9 @@ export function useGovernanceDashboard({
     invitePolicySaving,
     invitePolicyError,
     invitePolicyNotice,
+    inspectPolicySaving,
+    inspectPolicyError,
+    inspectPolicyNotice,
     auditLogs,
     auditCursor,
     auditActionFilter,
@@ -835,6 +879,7 @@ export function useGovernanceDashboard({
     handleFolderStructureUpdate,
     handlePermissionInheritanceUpdate,
     handleInvitePolicyUpdate,
+    handleAdminContentInspectPolicyUpdate,
     handleShowRootFolderAudit,
     handleClearAuditPreset,
     handleLoadMoreLogs,

@@ -3,6 +3,7 @@ import { sessionAuthMiddleware } from '../middleware/session-auth';
 import { requireMemberUser, requireSecOrSysAdmin } from '../services/authorization';
 import type { OidcHonoEnv } from '../types/oidc';
 import { registerAiSuggestionRoutes } from './admin/ai-suggestions';
+import { registerAdminContentRoutes } from './admin/content';
 import { registerAdminGroupRoutes } from './admin/groups';
 import { registerAdminGuestRoutes } from './admin/guests';
 import { registerAdminPermissionRoutes } from './admin/permissions';
@@ -25,6 +26,7 @@ adminGovernanceRoutes.use(
 
 registerStorageStatsRoutes(adminGovernanceRoutes);
 registerAiSuggestionRoutes(adminGovernanceRoutes);
+registerAdminContentRoutes(adminGovernanceRoutes);
 registerAdminSharedLinkRoutes(adminGovernanceRoutes);
 registerAdminPolicyRoutes(adminGovernanceRoutes);
 registerAdminGuestRoutes(adminGovernanceRoutes);

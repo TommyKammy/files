@@ -2,7 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-describe('D1 schema & migrations (0001-0015)', () => {
+describe('D1 schema & migrations (0001-0016)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -465,5 +465,102 @@ describe('D1 schema & migrations (0001-0015)', () => {
          VALUES ('t1', 'u1', -1, 0)`
       ).run()
     ).rejects.toThrow();
+
+    // Migration 0016: admin content manager indexes, inspection policy and the
+    // FileLockHub search shadow table.
+    const [
+      contentIndexes,
+      policyCols0016,
+      inspectPolicyRow,
+      lockTable,
+      lockCols,
+      lockIndex,
+    ] = await Promise.all([
+      env.DB.prepare(
+        `SELECT name FROM sqlite_master
+          WHERE type = 'index'
+            AND name IN (
+              'idx_files_active_recent',
+              'idx_files_active_creator',
+              'idx_folders_active_recent',
+              'idx_shared_links_tenant_active'
+            )
+          ORDER BY name`
+      ).all<{ name: string }>(),
+      env.DB.prepare('PRAGMA table_info(tenant_policies)').all<{ name: string }>(),
+      env.DB.prepare(
+        "SELECT admin_content_inspect_policy FROM tenant_policies WHERE tenant_id = 't1'"
+      ).first<{ admin_content_inspect_policy: string }>(),
+      env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'active_file_locks'"
+      ).first<{ name: string }>(),
+      env.DB.prepare('PRAGMA table_info(active_file_locks)').all<{
+        name: string;
+        pk: number;
+      }>(),
+      env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_active_file_locks_tenant_exp'"
+      ).first<{ name: string }>(),
+    ]);
+    expect(contentIndexes.results.map((row) => row.name)).toEqual([
+      'idx_files_active_creator',
+      'idx_files_active_recent',
+      'idx_folders_active_recent',
+      'idx_shared_links_tenant_active',
+    ]);
+    expect(policyCols0016.results.map((column) => column.name)).toContain(
+      'admin_content_inspect_policy'
+    );
+    expect(inspectPolicyRow?.admin_content_inspect_policy).toBe(
+      'watermark_confidential'
+    );
+    expect(lockTable?.name).toBe('active_file_locks');
+    expect(lockCols.results.map((column) => column.name)).toEqual([
+      'file_id',
+      'tenant_id',
+      'mode',
+      'lock_id',
+      'owner_id',
+      'owner_name',
+      'owner_email',
+      'expires_at',
+      'updated_at',
+    ]);
+    expect(
+      lockCols.results
+        .filter((column) => column.pk > 0)
+        .map((column) => column.name)
+    ).toEqual(['file_id']);
+    expect(lockIndex?.name).toBe('idx_active_file_locks_tenant_exp');
+
+    await expect(
+      env.DB.prepare(
+        "UPDATE tenant_policies SET admin_content_inspect_policy = 'allow_all' WHERE tenant_id = 't1'"
+      ).run()
+    ).rejects.toThrow();
+
+    await env.DB.prepare(
+      `INSERT INTO active_file_locks (
+         file_id, tenant_id, mode, lock_id, owner_id, owner_name,
+         owner_email, expires_at, updated_at
+       ) VALUES ('f1', 't1', 'desktop_exclusive', 'schema-lock', 'u1', 'U1',
+                 'u1@example.com', '2099-01-01T00:00:00.000Z',
+                 '2026-11-17T00:00:00.000Z')`
+    ).run();
+    const shadowLock = await env.DB.prepare(
+      "SELECT mode, lock_id FROM active_file_locks WHERE file_id = 'f1'"
+    ).first<{ mode: string; lock_id: string }>();
+    expect(shadowLock).toEqual({
+      mode: 'desktop_exclusive',
+      lock_id: 'schema-lock',
+    });
+    await expect(
+      env.DB.prepare(
+        "UPDATE active_file_locks SET mode = 'invalid' WHERE file_id = 'f1'"
+      ).run()
+    ).rejects.toThrow();
+    await env.DB.prepare(
+      "DELETE FROM active_file_locks WHERE file_id = 'f1'"
+    ).run();
   });
 });

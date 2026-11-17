@@ -821,6 +821,166 @@ export interface AdminSharedLinkRow {
   created_at: string;
 }
 
+export type AdminContentInspectPolicy =
+  | 'disabled'
+  | 'deny_confidential'
+  | 'watermark_confidential';
+
+export type AdminContentTargetType = 'file' | 'folder';
+export type AdminContentSearchTargetType = 'all' | AdminContentTargetType;
+export type AdminContentClassificationFilter =
+  | ClassificationLabel
+  | 'all';
+
+export interface AdminContentSearchFilters {
+  targetType: AdminContentSearchTargetType;
+  query: string;
+  classification: AdminContentClassificationFilter;
+  createdBy: string;
+  extension: string;
+  lockedOnly: boolean;
+  hasSharedLink: boolean;
+}
+
+export interface AdminContentOwner {
+  id: string;
+  email: string | null;
+  displayName: string | null;
+}
+
+export interface AdminContentBreadcrumb {
+  id: string;
+  name: string;
+}
+
+export interface AdminContentSearchItem {
+  targetType: AdminContentTargetType;
+  id: string;
+  name: string;
+  folderId: string | null;
+  parentId: string | null;
+  pathLabel: string;
+  breadcrumbs: AdminContentBreadcrumb[];
+  owner: AdminContentOwner;
+  classification: ClassificationLabel;
+  extension: string | null;
+  sizeBytes: number | null;
+  currentVersionNum: number | null;
+  activeSharedLinkCount: number;
+  activeLock: FileLockInfo | null;
+  updatedAt: string;
+}
+
+export interface AdminContentSearchResponse {
+  items: AdminContentSearchItem[];
+  nextCursor: string | null;
+  limit: number;
+  filters: {
+    targetType: AdminContentSearchTargetType;
+    query: string;
+    createdBy: string | null;
+    rootFolderId: string | null;
+    classification: ClassificationLabel | null;
+    extension: string | null;
+    lockedOnly: boolean;
+    hasSharedLink: boolean;
+  };
+}
+
+export interface AdminContentPermissionItem {
+  id: string;
+  granteeType: 'user' | 'group';
+  granteeId: string;
+  granteeName: string | null;
+  granteeEmail: string | null;
+  role: ResourceRole;
+  grantedBy: string;
+  grantedByEmail: string | null;
+  createdAt: string;
+}
+
+export interface AdminContentSharedLinkItem {
+  id: string;
+  targetType: AdminContentTargetType;
+  targetId: string;
+  accessScope: ShareAccessScope;
+  permissionLevel: SharePermissionLevel;
+  canDownload: boolean;
+  requireWatermark: boolean;
+  hasPassword: boolean;
+  isLocked: boolean;
+  expiresAt: string | null;
+  maxDownloads: number | null;
+  downloadCount: number;
+  createdBy: string;
+  creatorEmail: string | null;
+  createdAt: string;
+}
+
+export interface AdminContentVersionItem {
+  id: string;
+  versionNum: number;
+  sizeBytes: number;
+  mimeType: string;
+  uploadStatus: string;
+  uploadedBy: string;
+  uploadedByEmail: string | null;
+  comment: string | null;
+  createdAt: string;
+}
+
+export interface AdminContentDetail {
+  targetType: AdminContentTargetType;
+  id: string;
+  name: string;
+  folderId: string | null;
+  parentId: string | null;
+  pathLabel: string;
+  breadcrumbs: AdminContentBreadcrumb[];
+  owner: AdminContentOwner;
+  classification: ClassificationLabel;
+  extension: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  currentVersionId: string | null;
+  currentVersionNum: number | null;
+  createdAt: string;
+  updatedAt: string;
+  activeLock: FileLockInfo | null;
+  permissions: AdminContentPermissionItem[];
+  sharedLinks: AdminContentSharedLinkItem[];
+  versions: {
+    total: number;
+    items: AdminContentVersionItem[];
+  };
+  inspectPolicy: AdminContentInspectPolicy;
+}
+
+export interface AdminContentForceUnlockResponse {
+  ok: boolean;
+  fileId: string;
+  released: boolean;
+  lock: FileLockInfo | null;
+  revokedWopiSessionCount: number;
+  syncSeq: number | null;
+}
+
+export interface AdminContentInspectResponse {
+  ok: boolean;
+  fileId: string;
+  fileName: string;
+  classification: ClassificationLabel;
+  policyApplied: AdminContentInspectPolicy;
+  watermarkRequired: boolean;
+  url: string;
+  expiresAt: string;
+  disposition: 'inline' | 'attachment';
+  watermarkText: string | null;
+  versionId?: string;
+  versionNum?: number;
+}
+
+
 export interface TenantPolicyRow {
   tenant_id: string;
   enforce_company_only_links: number;
@@ -856,6 +1016,8 @@ export interface TenantPolicyRow {
   allowGuestElevatedRoles?: boolean;
   external_domain_existing_guest_mode?: ExternalDomainExistingGuestMode;
   externalDomainExistingGuestMode?: ExternalDomainExistingGuestMode;
+  admin_content_inspect_policy?: AdminContentInspectPolicy;
+  adminContentInspectPolicy?: AdminContentInspectPolicy;
   updated_by: string | null;
   updated_at: string;
 }
@@ -881,6 +1043,7 @@ export interface UpdateAdminPoliciesPayload {
   guestSessionMaxHours?: number;
   allowGuestElevatedRoles?: boolean;
   externalDomainExistingGuestMode?: ExternalDomainExistingGuestMode;
+  adminContentInspectPolicy?: AdminContentInspectPolicy;
 }
 
 export interface TenantPolicyResponse {

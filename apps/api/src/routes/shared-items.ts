@@ -8,6 +8,10 @@ import {
 import { parseRoleList } from '../services/capabilities';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
 import { recordGuestAccess } from '../services/guest-access-audit';
+import {
+  folderPathLabel,
+  loadFolderBreadcrumbMap,
+} from '../services/folder-breadcrumbs';
 import type { ClassificationLabel } from '../types/api';
 import type { OidcHonoEnv } from '../types/oidc';
 
@@ -36,13 +40,6 @@ interface SharedFileRow {
   granted_at: string;
 }
 
-interface BreadcrumbRow {
-  folder_id: string;
-  id: string;
-  name: string;
-  depth: number;
-}
-
 export interface SharedItemEntry {
   itemType: 'folder' | 'file';
   id: string;
@@ -63,49 +60,7 @@ export interface SharedItemEntry {
   grantedAt: string;
 }
 
-const BREADCRUMB_CHUNK = 30;
 const MAX_SHARED_ITEMS = 200;
-
-async function loadBreadcrumbMap(
-  db: D1Database,
-  tenantId: string,
-  folderIds: readonly string[]
-): Promise<Map<string, Array<{ id: string; name: string }>>> {
-  const map = new Map<string, Array<{ id: string; name: string }>>();
-  const unique = [...new Set(folderIds.filter(Boolean))];
-  for (let i = 0; i < unique.length; i += BREADCRUMB_CHUNK) {
-    const chunk = unique.slice(i, i + BREADCRUMB_CHUNK);
-    const placeholders = chunk.map(() => '?').join(', ');
-    const rows = await db
-      .prepare(
-        `SELECT fc.descendant_id AS folder_id,
-                f.id,
-                f.name,
-                fc.depth
-           FROM folder_closures fc
-           JOIN folders f
-             ON f.tenant_id = fc.tenant_id
-            AND f.id = fc.ancestor_id
-            AND f.deleted_at IS NULL
-          WHERE fc.tenant_id = ?
-            AND fc.descendant_id IN (${placeholders})
-          ORDER BY fc.descendant_id ASC, fc.depth DESC`
-      )
-      .bind(tenantId, ...chunk)
-      .all<BreadcrumbRow>();
-    for (const row of rows.results) {
-      const list = map.get(row.folder_id) ?? [];
-      list.push({ id: row.id, name: row.name });
-      map.set(row.folder_id, list);
-    }
-  }
-  return map;
-}
-
-function pathLabelFor(breadcrumbs: Array<{ id: string; name: string }>): string {
-  if (breadcrumbs.length === 0) return 'マイファイル (ルート)';
-  return ['マイファイル', ...breadcrumbs.map((crumb) => crumb.name)].join(' / ');
-}
 
 export const sharedItemsRoutes = new Hono<OidcHonoEnv>();
 
@@ -180,7 +135,7 @@ sharedItemsRoutes.get('/', async (c) => {
       .map((row) => row.folder_id)
       .filter((id): id is string => Boolean(id)),
   ];
-  const breadcrumbMap = await loadBreadcrumbMap(c.env.DB, user.tenantId, folderIds);
+  const breadcrumbMap = await loadFolderBreadcrumbMap(c.env.DB, user.tenantId, folderIds);
 
   const items: SharedItemEntry[] = [];
   for (const row of folderRows.results) {
@@ -202,7 +157,7 @@ sharedItemsRoutes.get('/', async (c) => {
       capabilities: access.capabilities,
       directRoles: parseRoleList(row.role_list),
       breadcrumbs,
-      pathLabel: pathLabelFor(breadcrumbs),
+      pathLabel: folderPathLabel(breadcrumbs),
       createdBy: row.created_by,
       grantedAt: row.granted_at,
     });
@@ -229,7 +184,7 @@ sharedItemsRoutes.get('/', async (c) => {
       capabilities: access.capabilities,
       directRoles: parseRoleList(row.role_list),
       breadcrumbs,
-      pathLabel: pathLabelFor(breadcrumbs),
+      pathLabel: folderPathLabel(breadcrumbs),
       createdBy: row.created_by,
       grantedAt: row.granted_at,
     });

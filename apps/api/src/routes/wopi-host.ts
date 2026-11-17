@@ -15,6 +15,10 @@ import {
 } from '../services/wopi-token';
 import { emitTenantSyncSignal } from '../services/sync-notifier';
 import { getFileLockState } from '../services/file-lock';
+import {
+  applyActiveFileLockShadow,
+  clearActiveFileLockShadow,
+} from '../services/active-file-lock-index';
 import { tryGetExecutionContext } from '../services/sync-notifier';
 import type { OidcHonoEnv } from '../types/oidc';
 
@@ -340,6 +344,9 @@ wopiHostRoutes.post('/files/:fileId', async (c) => {
           })
         : await stub.refreshLock({ fileId, lockId, ttlSeconds });
     if (!result.ok) {
+      if (result.lock) {
+        await applyActiveFileLockShadow(c.env.DB, result.lock);
+      }
       return wopiError(
         409,
         'WOPI_LOCK_CONFLICT',
@@ -347,6 +354,7 @@ wopiHostRoutes.post('/files/:fileId', async (c) => {
         result.lock?.lockId ?? ''
       );
     }
+    await applyActiveFileLockShadow(c.env.DB, result.lock);
     return new Response(null, {
       status: 200,
       headers: { 'X-WOPI-Lock': result.lock.lockId },
@@ -356,6 +364,9 @@ wopiHostRoutes.post('/files/:fileId', async (c) => {
   if (override === 'UNLOCK') {
     const result = await stub.unlockFile({ fileId, lockId });
     if (!result.ok) {
+      if (result.lock) {
+        await applyActiveFileLockShadow(c.env.DB, result.lock);
+      }
       return wopiError(
         409,
         'WOPI_LOCK_CONFLICT',
@@ -363,6 +374,11 @@ wopiHostRoutes.post('/files/:fileId', async (c) => {
         result.lock?.lockId ?? ''
       );
     }
+    await clearActiveFileLockShadow(
+      c.env.DB,
+      fileId,
+      context.payload.tenantId
+    );
     if (result.released) {
       const finalized = await finalizeWopiDraft({
         env: c.env,
@@ -403,6 +419,9 @@ wopiHostRoutes.post('/files/:fileId', async (c) => {
       ttlSeconds,
     });
     if (!result.ok) {
+      if (result.lock) {
+        await applyActiveFileLockShadow(c.env.DB, result.lock);
+      }
       return wopiError(
         409,
         'WOPI_LOCK_CONFLICT',
@@ -410,6 +429,7 @@ wopiHostRoutes.post('/files/:fileId', async (c) => {
         result.lock?.lockId ?? ''
       );
     }
+    await applyActiveFileLockShadow(c.env.DB, result.lock);
     return new Response(null, {
       status: 200,
       headers: { 'X-WOPI-Lock': result.lock.lockId },

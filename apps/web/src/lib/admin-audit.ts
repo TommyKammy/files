@@ -33,6 +33,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.root_folder.bulk_archive': 'ルートフォルダの一括アーカイブ',
   'admin.root_folder.bulk_restore': 'ルートフォルダの一括復元',
   'admin.policy_updated': 'テナントポリシー更新',
+  'admin.content.force_unlock': '管理者による強制ロック解除',
+  'admin.content.inspect': '管理者コンテンツ検査',
   'guest.invite': '外部ゲスト招待',
   'guest.resend': '外部ゲスト招待の再送',
   'guest.accept': '外部ゲスト招待の承諾',

@@ -27,6 +27,10 @@ import {
   type ExternalDomainExistingGuestMode,
 } from '../../services/external-guests';
 import { applyExternalDomainGuestPolicy } from '../../services/admin-guests';
+import {
+  DEFAULT_ADMIN_CONTENT_INSPECT_POLICY,
+  isAdminContentInspectPolicy,
+} from '../../services/admin-content';
 import type { AiClassificationMode } from '../../types/classification';
 import type { OidcHonoEnv } from '../../types/oidc';
 import {
@@ -65,6 +69,11 @@ function projectPolicy(
     folderStructureMode,
     permissionInheritanceMode,
     invitePolicy,
+    adminContentInspectPolicy: isAdminContentInspectPolicy(
+      policy.admin_content_inspect_policy
+    )
+      ? policy.admin_content_inspect_policy
+      : DEFAULT_ADMIN_CONTENT_INSPECT_POLICY,
   };
 }
 
@@ -140,6 +149,7 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       guestSessionMaxHours?: unknown;
       allowGuestElevatedRoles?: unknown;
       externalDomainExistingGuestMode?: unknown;
+      adminContentInspectPolicy?: unknown;
     } | null;
 
     if (!body || typeof body !== 'object') {
@@ -237,6 +247,31 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       }
       updates.push('invite_policy = ?');
       binds.push(body.invitePolicy);
+    }
+
+    if (body.adminContentInspectPolicy !== undefined) {
+      if (user.role !== 'sys_admin') {
+        return c.json(
+          {
+            error:
+              'Only sys_admin can change the admin content inspection policy',
+            code: 'SYS_ADMIN_REQUIRED',
+          },
+          403
+        );
+      }
+      if (!isAdminContentInspectPolicy(body.adminContentInspectPolicy)) {
+        return c.json(
+          {
+            error:
+              "adminContentInspectPolicy must be 'disabled', 'deny_confidential' or 'watermark_confidential'",
+            code: 'INVALID_ADMIN_CONTENT_INSPECT_POLICY',
+          },
+          400
+        );
+      }
+      updates.push('admin_content_inspect_policy = ?');
+      binds.push(body.adminContentInspectPolicy);
     }
 
     if (body.enforceCompanyOnlyLinks !== undefined) {
@@ -461,6 +496,11 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
             : {}),
           ...(body.invitePolicy !== undefined
             ? { invitePolicy: body.invitePolicy }
+            : {}),
+          ...(body.adminContentInspectPolicy !== undefined
+            ? {
+                adminContentInspectPolicy: body.adminContentInspectPolicy,
+              }
             : {}),
           ...(body.externalDomainExistingGuestMode !== undefined
             ? {

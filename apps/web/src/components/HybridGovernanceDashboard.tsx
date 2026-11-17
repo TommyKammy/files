@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { AccessControlSettingsSection } from '@/components/admin/AccessControlSettingsSection';
+import { AdminContentManagerSection } from '@/components/admin/AdminContentManagerSection';
 import { AiSuggestionQueue } from '@/components/admin/AiSuggestionQueue';
 import { AdminGuestsSection } from '@/components/admin/AdminGuestsSection';
 import { AdminGroupsSection } from '@/components/admin/AdminGroupsSection';
@@ -70,6 +71,9 @@ export function HybridGovernanceDashboard({
     invitePolicySaving,
     invitePolicyError,
     invitePolicyNotice,
+    inspectPolicySaving,
+    inspectPolicyError,
+    inspectPolicyNotice,
     auditLogs,
     auditCursor,
     auditActionFilter,
@@ -97,6 +101,7 @@ export function HybridGovernanceDashboard({
     handleFolderStructureUpdate,
     handlePermissionInheritanceUpdate,
     handleInvitePolicyUpdate,
+    handleAdminContentInspectPolicyUpdate,
     handleShowRootFolderAudit,
     handleShowPermissionAudit,
     handleShowGuestAudit,
@@ -263,6 +268,8 @@ export function HybridGovernanceDashboard({
                 />
               )}
 
+              {showSection('content') && <AdminContentManagerSection />}
+
               {showSection('settings') && (
                 <AccessControlSettingsSection
                   policy={policy}
@@ -284,12 +291,19 @@ export function HybridGovernanceDashboard({
                   invitePolicyError={invitePolicyError}
                   invitePolicyNotice={invitePolicyNotice}
                   canManageInvitePolicy={user.role === 'sys_admin'}
+                  inspectPolicySaving={inspectPolicySaving}
+                  inspectPolicyError={inspectPolicyError}
+                  inspectPolicyNotice={inspectPolicyNotice}
+                  canManageInspectPolicy={user.role === 'sys_admin'}
                   onSave={handleAdvancedRolesUpdate}
                   onSaveFolderStructureMode={handleFolderStructureUpdate}
                   onSavePermissionInheritanceMode={
                     handlePermissionInheritanceUpdate
                   }
                   onSaveInvitePolicy={handleInvitePolicyUpdate}
+                  onSaveAdminContentInspectPolicy={
+                    handleAdminContentInspectPolicyUpdate
+                  }
                   onDirtyChange={setAdvancedRolesDirty}
                 />
               )}

@@ -7,6 +7,10 @@ import {
 import { can, type Capability } from '../services/capabilities';
 import type { FileRow } from '../services/file-upload-common';
 import { getFileLockState } from '../services/file-lock';
+import {
+  applyActiveFileLockShadow,
+  clearActiveFileLockShadow,
+} from '../services/active-file-lock-index';
 import type { OidcHonoEnv } from '../types/oidc';
 
 export const fileLockRoutes = new Hono<OidcHonoEnv>();
@@ -109,6 +113,11 @@ fileLockRoutes.post('/:id/lock', async (c) => {
   });
   if (!result.ok) {
     const wopiActive = result.lock?.mode === 'wopi_collab';
+    if (result.lock) {
+      // A conflicting lock can be older than the shadow index (for example a
+      // WOPI lock acquired during a deployment). Heal it while reporting 409.
+      await applyActiveFileLockShadow(c.env.DB, result.lock);
+    }
     return c.json(
       {
         error: wopiActive
@@ -129,6 +138,8 @@ fileLockRoutes.post('/:id/lock', async (c) => {
       409
     );
   }
+
+  await applyActiveFileLockShadow(c.env.DB, result.lock);
 
   return c.json(
     {
@@ -169,6 +180,9 @@ fileLockRoutes.delete('/:id/lock', async (c) => {
   );
   const result = await stub.unlockFile({ fileId, lockId });
   if (!result.ok) {
+    if (result.lock) {
+      await applyActiveFileLockShadow(c.env.DB, result.lock);
+    }
     return c.json(
       {
         error: 'Lock token does not match',
@@ -178,5 +192,6 @@ fileLockRoutes.delete('/:id/lock', async (c) => {
       409
     );
   }
+  await clearActiveFileLockShadow(c.env.DB, fileId, user.tenantId);
   return c.json({ ok: true, released: result.released });
 });

@@ -279,6 +279,27 @@ export class FileLockHub extends DurableObject<OidcEnv> {
     return { ok: true, released: true };
   }
 
+  /**
+   * Administrative override used by the tenant content manager. Unlike
+   * `unlockFile`, no caller-held token is required: the admin is explicitly
+   * breaking the current holder's lock after a justified audit entry.
+   */
+  async forceUnlock(input?: {
+    fileId?: string;
+    tenantId?: string;
+  }): Promise<{ released: boolean; lock: FileLockSnapshot | null }> {
+    const current = await this.releaseExpired(Date.now());
+    if (!current) {
+      return { released: false, lock: null };
+    }
+    if (input?.tenantId && current.tenantId !== input.tenantId) {
+      return { released: false, lock: current };
+    }
+    this.deleteLock();
+    await this.notifyChange(null, 'released', current);
+    return { released: true, lock: current };
+  }
+
   async unlockAndRelock(
     input: FileLockUnlockAndRelockInput
   ): Promise<FileLockResult> {

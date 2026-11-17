@@ -1,11 +1,19 @@
 import {
   buildPermissionAuditHref,
 } from '@/lib/admin-permission-audit';
+import {
+  buildAdminContentSearchQueryString,
+} from '@/lib/admin-content';
 import type {
   AdminBulkCoOwnerPayload,
   AdminBulkLifecyclePayload,
   AdminBulkResponse,
   AdminBulkTransferOwnerPayload,
+  AdminContentDetail,
+  AdminContentForceUnlockResponse,
+  AdminContentInspectResponse,
+  AdminContentSearchFilters,
+  AdminContentSearchResponse,
   AdminPermissionAuditQuery,
   AdminPermissionAuditResponse,
   AdminRootFolderListResponse,
@@ -326,3 +334,55 @@ export function purgeAdminTrashItems(
 
 /** POST /api/folders/:id/move — single-folder subtree move with optimistic concurrency */
 
+
+/* ------------------------------------------------------------------ */
+/* P12-1 / TOM-65 admin content manager                                */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/admin/content/search — tenant-wide ACL-independent search. */
+export function searchAdminContent(
+  filters: AdminContentSearchFilters,
+  cursor: string | null = null,
+  limit?: number
+): Promise<AdminContentSearchResponse> {
+  const qs = buildAdminContentSearchQueryString(filters, cursor, limit);
+  return apiFetch(`/api/admin/content/search?${qs}`);
+}
+
+/** GET /api/admin/content/:targetType/:targetId — inspector detail. */
+export function fetchAdminContentDetail(
+  targetType: 'file' | 'folder',
+  targetId: string
+): Promise<AdminContentDetail> {
+  return apiFetch(
+    `/api/admin/content/${targetType}/${encodeURIComponent(targetId)}`
+  );
+}
+
+/** POST /api/admin/content/files/:id/force-unlock — audited lock override. */
+export function forceUnlockAdminContentFile(
+  fileId: string,
+  reason: string
+): Promise<AdminContentForceUnlockResponse> {
+  return apiFetch(
+    `/api/admin/content/files/${encodeURIComponent(fileId)}/force-unlock`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }
+  );
+}
+
+/** POST /api/admin/content/files/:id/inspect-preview — audited preview URL. */
+export function inspectAdminContentFile(
+  fileId: string,
+  reason: string
+): Promise<AdminContentInspectResponse> {
+  return apiFetch(
+    `/api/admin/content/files/${encodeURIComponent(fileId)}/inspect-preview`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }
+  );
+}
