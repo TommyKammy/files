@@ -22,6 +22,9 @@ export const GUEST_AUDIT_ACTION_PREFIXES = [
 /** Prefix preset used by the internal member administration action. */
 export const USER_AUDIT_ACTION_PREFIXES = ['admin.user.'] as const;
 
+/** Prefix preset used by active-session governance. */
+export const SESSION_AUDIT_ACTION_PREFIXES = ['admin.session.'] as const;
+
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.root_folder.create': 'ルートフォルダ作成',
   'admin.root_folder.owner_transfer': '所有者移管',
@@ -50,6 +53,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin.user.suspend': '社内メンバー停止',
   'admin.user.resume': '社内メンバー再開',
   'admin.user.bulk_import': '社内メンバー一括登録',
+  'admin.session.revoke': 'セッション強制失効',
+  'admin.session.revoke_user': 'ユーザー全セッション強制失効',
+  'admin.session.revoke_all': 'テナント全セッション緊急失効',
   'admin.group.create': 'グループ作成',
   'admin.group.update': 'グループ更新',
   'admin.group.delete': 'グループ削除',
@@ -102,6 +108,12 @@ export function isGuestAuditAction(action: string): boolean {
 
 export function isUserAuditAction(action: string): boolean {
   return USER_AUDIT_ACTION_PREFIXES.some((prefix) =>
+    action.startsWith(prefix)
+  );
+}
+
+export function isSessionAuditAction(action: string): boolean {
+  return SESSION_AUDIT_ACTION_PREFIXES.some((prefix) =>
     action.startsWith(prefix)
   );
 }

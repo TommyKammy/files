@@ -31,6 +31,8 @@ export interface RealtimeContext {
   securityRevocationListeners: Set<
     (event: RealtimeSecurityRevocationEvent) => void
   >;
+  /** Persists an actionable sign-in reason before the scope is purged. */
+  reportSessionRevocation?: (event: RealtimeSecurityRevocationEvent) => void;
   directoriesByKey: Map<string, PersistedDirectoryRecord>;
   foldersById: Map<string, FolderSummary>;
   activeDirKey: string;
@@ -89,6 +91,19 @@ export async function handleRealtimeSignal(
 
   const revocation = normalizeSecurityRevocationEvent(signal);
   if (revocation?.kind === 'user.suspended') {
+    emitSecurityRevocation(revocation, ctx);
+    await ctx.purgeCurrentScope();
+    return;
+  }
+
+  if (
+    revocation?.kind === 'session.revoked' ||
+    revocation?.kind === 'tenant.sessions_revoked'
+  ) {
+    // Forced sign-out must survive every open workspace/admin surface: keep a
+    // human-readable reason, then synchronously wipe memory/IndexedDB scope so
+    // `<SignInCard>` replaces the cached UI without a reload or reconnect.
+    ctx.reportSessionRevocation?.(revocation);
     emitSecurityRevocation(revocation, ctx);
     await ctx.purgeCurrentScope();
     return;

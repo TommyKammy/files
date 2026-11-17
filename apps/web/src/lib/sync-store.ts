@@ -96,6 +96,7 @@ import type {
   RealtimeConnectionState,
   RealtimeSecurityRevocationEvent,
 } from '@/lib/sync-ws';
+import { adminSessionRevocationMessage } from '@/lib/admin-sessions';
 import {
   handleRealtimeSignal,
   startRealtime,
@@ -848,8 +849,30 @@ export class WorkspaceSyncStore {
     this.emit();
   }
 
+  /**
+   * Records why the workspace was forcibly signed out before the cache purge
+   * flips `authStatus` to unauthenticated, so the SignInCard can explain the
+   * administrative revocation instead of showing a generic prompt.
+   */
+  reportSessionRevocation(event: RealtimeSecurityRevocationEvent): void {
+    if (
+      event.kind !== 'session.revoked' &&
+      event.kind !== 'tenant.sessions_revoked'
+    ) {
+      return;
+    }
+    this.sessionError = {
+      status: 401,
+      code: 'SESSION_REVOKED_BY_ADMIN',
+      message: adminSessionRevocationMessage(event.kind),
+      userType: this.user?.userType ?? 'member',
+    };
+    this.emit();
+  }
+
   /** Complete security purge of memory + IndexedDB + scope hint on logout, 401, or user switch. */
-  async purgeCurrentScope(): Promise<void> {    this.stopRealtime();
+  async purgeCurrentScope(): Promise<void> {
+    this.stopRealtime();
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;
@@ -912,6 +935,7 @@ export class WorkspaceSyncStore {
       emit: () => this.emit(),
       realtimeSignalListeners: this.realtimeSignalListeners,
       securityRevocationListeners: this.securityRevocationListeners,
+      reportSessionRevocation: (event) => this.reportSessionRevocation(event),
       directoriesByKey: this.directoriesByKey,
       foldersById: this.foldersById,
       get activeDirKey() {

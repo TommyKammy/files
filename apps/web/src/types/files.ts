@@ -119,6 +119,8 @@ export interface AuthUser {
   userType: UserType;
   externalOrg?: string | null;
   expiresAt?: string | null;
+  /** Current D1 session id (never the token hash). */
+  sessionId?: string | null;
 }
 
 export interface DevAuthAccount {
@@ -1443,6 +1445,76 @@ export interface AdminMemberDetailResponse {
   groups: AdminMemberGroup[];
   activeSessionCount: number;
   recentAuditLogs: AdminMemberAuditLog[];
+}
+
+/* ------------------------------------------------------------------ */
+/* P12-2 / TOM-71 active sessions & forced sign-out                    */
+/* ------------------------------------------------------------------ */
+
+export type AdminSessionUserTypeFilter = 'all' | 'member' | 'guest';
+
+export interface AdminSessionRow {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userDisplayName: string;
+  userRole: UserRole;
+  userType: UserType;
+  userStatus: 'active' | 'suspended';
+  externalOrg: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  expiresAt: string;
+  isCurrent: boolean;
+}
+
+export interface AdminSessionSummary {
+  activeTotal: number;
+  memberSessions: number;
+  guestSessions: number;
+  distinctUsers: number;
+}
+
+export interface AdminSessionListResponse {
+  sessions: AdminSessionRow[];
+  summary: AdminSessionSummary;
+  nextCursor: string | null;
+  limit: number;
+}
+
+export interface AdminSessionListQuery {
+  userId?: string;
+  userType?: AdminSessionUserTypeFilter;
+  ip?: string;
+  q?: string;
+  limit?: number;
+  cursor?: string | null;
+}
+
+export interface AdminSessionRevokeResponse {
+  ok: boolean;
+  sessionId: string;
+  userId: string;
+  userEmail: string;
+  revokedAt: string;
+  alreadyRevoked: boolean;
+}
+
+export interface AdminUserSessionsRevokeResponse {
+  ok: boolean;
+  userId: string;
+  userEmail: string;
+  revokedCount: number;
+  keepCurrentSession: boolean;
+  revokedAt: string;
+}
+
+export interface AdminTenantSessionsRevokeResponse {
+  ok: boolean;
+  revokedCount: number;
+  keepCurrentSession: boolean;
+  revokedAt: string;
 }
 
 export interface AdminMemberMutationResponse {

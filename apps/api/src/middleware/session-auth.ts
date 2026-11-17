@@ -16,6 +16,7 @@ const VALID_USER_TYPES = new Set<UserType>(['member', 'guest']);
 const LOCAL_LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
 interface SessionRow {
+  session_id: string;
   session_expires_at: string;
   revoked_at: string | null;
   id: string;
@@ -197,6 +198,7 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
           userType,
           externalOrg: c.req.header('X-Dev-External-Org') ?? null,
           expiresAt,
+          sessionId: c.req.header('X-Dev-Session-Id') ?? null,
         });
         await next();
         return;
@@ -221,7 +223,8 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
 
     const tokenHash = await sha256Hex(token);
     const row = await c.env.DB.prepare(
-      `SELECT s.expires_at AS session_expires_at,
+      `SELECT s.id AS session_id,
+              s.expires_at AS session_expires_at,
               s.revoked_at,
               u.id, u.tenant_id, u.email, u.display_name, u.role, u.status,
               u.user_type, u.external_org, u.expires_at AS user_expires_at
@@ -254,7 +257,8 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
       // most recent matching session once more so a revoked/expired guest gets
       // a precise reason instead of a generic authentication error.
       const stale = await c.env.DB.prepare(
-        `SELECT s.expires_at AS session_expires_at,
+        `SELECT s.id AS session_id,
+                s.expires_at AS session_expires_at,
                 s.revoked_at,
                 u.id, u.tenant_id, u.email, u.display_name, u.role, u.status,
                 u.user_type, u.external_org, u.expires_at AS user_expires_at
@@ -290,6 +294,7 @@ export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
       userType: row.user_type,
       externalOrg: row.external_org,
       expiresAt: row.user_expires_at,
+      sessionId: row.session_id,
     } satisfies AuthUser);
 
     await next();

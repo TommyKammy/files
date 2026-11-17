@@ -4,6 +4,7 @@ import {
 import {
   buildAdminContentSearchQueryString,
 } from '@/lib/admin-content';
+import { buildAdminSessionQuery } from '@/lib/admin-sessions';
 import type {
   AdminBulkCoOwnerPayload,
   AdminBulkLifecyclePayload,
@@ -18,9 +19,14 @@ import type {
   AdminPermissionAuditResponse,
   AdminRootFolderListResponse,
   AdminRootFolderRecord,
+  AdminSessionListQuery,
+  AdminSessionListResponse,
+  AdminSessionRevokeResponse,
   AdminSharedLinkRow,
+  AdminTenantSessionsRevokeResponse,
   AdminTrashListResponse,
   AdminTrashRestoreResponse,
+  AdminUserSessionsRevokeResponse,
   AiClassificationMode,
   AiSuggestionItem,
   AuditLogEntry,
@@ -385,4 +391,54 @@ export function inspectAdminContentFile(
       body: JSON.stringify({ reason }),
     }
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* P12-2 / TOM-71 active sessions & forced sign-out                    */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/admin/sessions — live tenant sessions with keyset pagination. */
+export function fetchAdminSessions(
+  query: AdminSessionListQuery = {}
+): Promise<AdminSessionListResponse> {
+  return apiFetch(`/api/admin/sessions${buildAdminSessionQuery(query)}`);
+}
+
+/** POST /api/admin/sessions/:id/revoke — single-session forced sign-out. */
+export function revokeAdminSession(
+  sessionId: string,
+  reason?: string | null
+): Promise<AdminSessionRevokeResponse> {
+  return apiFetch(
+    `/api/admin/sessions/${encodeURIComponent(sessionId)}/revoke`,
+    {
+      method: 'POST',
+      body: JSON.stringify(reason ? { reason } : {}),
+    }
+  );
+}
+
+/** POST /api/admin/users/:id/revoke-sessions — user-scoped sign-out. */
+export function revokeAdminUserSessions(
+  userId: string,
+  payload: { reason?: string | null; keepCurrentSession?: boolean } = {}
+): Promise<AdminUserSessionsRevokeResponse> {
+  return apiFetch(
+    `/api/admin/users/${encodeURIComponent(userId)}/revoke-sessions`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+/** POST /api/admin/sessions/revoke-all — sys_admin emergency tenant sign-out. */
+export function revokeAllAdminSessions(payload: {
+  reason?: string | null;
+  keepCurrentSession?: boolean;
+} = {}): Promise<AdminTenantSessionsRevokeResponse> {
+  return apiFetch('/api/admin/sessions/revoke-all', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }

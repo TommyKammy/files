@@ -2,7 +2,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-describe('D1 schema & migrations (0001-0016)', () => {
+describe('D1 schema & migrations (0001-0017)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -562,5 +562,22 @@ describe('D1 schema & migrations (0001-0016)', () => {
     await env.DB.prepare(
       "DELETE FROM active_file_locks WHERE file_id = 'f1'"
     ).run();
+
+    // Migration 0017: active-session monitor index. The admin session list
+    // filters by tenant/revocation/expiry and pages by created_at DESC.
+    const sessionIndex = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_sessions_tenant_active'"
+    ).first<{ name: string }>();
+    expect(sessionIndex?.name).toBe('idx_sessions_tenant_active');
+    const sessionIndexCols = await env.DB.prepare(
+      'PRAGMA index_info(idx_sessions_tenant_active)'
+    ).all<{ name: string }>();
+    expect(sessionIndexCols.results.map((column) => column.name)).toEqual([
+      'tenant_id',
+      'revoked_at',
+      'expires_at',
+      'created_at',
+      'id',
+    ]);
   });
 });

@@ -16,6 +16,7 @@ import { AdminMembersSection } from '@/components/admin/AdminMembersSection';
 import { AdminPermissionAuditSection } from '@/components/admin/AdminPermissionAuditSection';
 import { AdminRootFoldersSection } from '@/components/admin/AdminRootFoldersSection';
 import { AdminScimTokensSection } from '@/components/admin/AdminScimTokensSection';
+import { AdminSessionsSection } from '@/components/admin/AdminSessionsSection';
 import { AdminTrashSection } from '@/components/admin/AdminTrashSection';
 import { AuditLogSection } from '@/components/admin/AuditLogSection';
 import { GuestPolicySection } from '@/components/admin/GuestPolicySection';
@@ -40,6 +41,7 @@ export function HybridGovernanceDashboard({
 }) {
   const {
     syncStore,
+    snapshot,
     user,
     authChecked,
     isPrivilegedAdmin,
@@ -126,6 +128,22 @@ export function HybridGovernanceDashboard({
   }
 
   if (!user) {
+    if (snapshot.sessionError?.code === 'SESSION_REVOKED_BY_ADMIN') {
+      return (
+        <SignInCard
+          title="セッションが管理者によって失効されました"
+          description={
+            snapshot.sessionError.message ||
+            '管理者が強制サインアウトを実行しました。安全のため再度サインインしてください。'
+          }
+          returnTo="/admin"
+          preferredRoles={['sys_admin', 'sec_admin']}
+          onSignedIn={(signedIn) => {
+            void syncStore.adoptAuthenticatedUser(signedIn);
+          }}
+        />
+      );
+    }
     return (
       <SignInCard
         title="ガバナンスセンターへサインイン"
@@ -306,6 +324,10 @@ export function HybridGovernanceDashboard({
                   }
                   onDirtyChange={setAdvancedRolesDirty}
                 />
+              )}
+
+              {showSection('settings') && (
+                <AdminSessionsSection user={user} />
               )}
 
               {showSection('settings') && (

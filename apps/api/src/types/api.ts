@@ -71,6 +71,11 @@ export interface AuthUser {
   externalOrg?: string | null;
   /** Guest account expiry (ISO). Members are `null`. */
   expiresAt?: string | null;
+  /**
+   * D1 `sessions.id` backing the request. `null` for dev-bypass requests
+   * without `X-Dev-Session-Id`; never exposes `token_hash`.
+   */
+  sessionId?: string | null;
 }
 
 export interface AppVariables {

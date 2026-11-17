@@ -7,7 +7,12 @@ import type {
 export type RealtimeConnectionState = 'disconnected' | 'connecting' | 'connected';
 
 export interface RealtimeSecurityRevocationEvent {
-  kind: 'user.suspended' | 'permission.revoke' | 'shared_link.revoke';
+  kind:
+    | 'user.suspended'
+    | 'permission.revoke'
+    | 'shared_link.revoke'
+    | 'session.revoked'
+    | 'tenant.sessions_revoked';
   scopeFolderIds: string[];
   seq: number | null;
 }
@@ -60,6 +65,18 @@ export function computeReconnectDelayMs(
 export function normalizeSecurityRevocationEvent(
   signal: SyncInvalidationSignal
 ): RealtimeSecurityRevocationEvent | null {
+  // Session events are more specific than the generic security-revoke type and
+  // must be classified before the legacy `sync.security_revoke` branch.
+  if (
+    signal.eventKind === 'session.revoked' ||
+    signal.eventKind === 'tenant.sessions_revoked'
+  ) {
+    return {
+      kind: signal.eventKind,
+      scopeFolderIds: signal.scopeFolderIds,
+      seq: signal.seq,
+    };
+  }
   if (signal.type === 'sync.security_revoke' || signal.eventKind === 'user.suspended') {
     return {
       kind: 'user.suspended',

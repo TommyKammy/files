@@ -263,7 +263,11 @@ export function WorkspaceFileBrowser() {
 
   useEffect(() => {
     return syncStore.subscribeSecurityRevocations((event) => {
-      if (event.kind === 'user.suspended') {
+      if (
+        event.kind === 'user.suspended' ||
+        event.kind === 'session.revoked' ||
+        event.kind === 'tenant.sessions_revoked'
+      ) {
         clipboardStore.purge();
         setInspectorOpen(false);
         setContextMenu(null);
@@ -276,7 +280,9 @@ export function WorkspaceFileBrowser() {
         setShortcutsHelpOpen(false);
         setSelectedKeys(new Set());
         setError(
-          'アカウント停止またはセッション失効のためワークスペースキャッシュを消去しました。'
+          event.kind === 'user.suspended'
+            ? 'アカウント停止またはセッション失効のためワークスペースキャッシュを消去しました。'
+            : '管理者による強制サインアウトのためワークスペースキャッシュを消去しました。'
         );
         return;
       }
@@ -1206,6 +1212,22 @@ export function WorkspaceFileBrowser() {
     : null;
 
   if (!user) {
+    const forcedSignOut = snapshot.sessionError;
+    if (forcedSignOut?.code === 'SESSION_REVOKED_BY_ADMIN') {
+      return (
+        <SignInCard
+          title="セッションが管理者によって失効されました"
+          description={
+            forcedSignOut.message ||
+            '管理者が強制サインアウトを実行しました。安全のため再度サインインしてください。'
+          }
+          returnTo="/workspace"
+          onSignedIn={(signedIn) => {
+            void syncStore.adoptAuthenticatedUser(signedIn);
+          }}
+        />
+      );
+    }
     if (sessionIssue) {
       return (
         <SignInCard

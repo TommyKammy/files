@@ -245,7 +245,8 @@ syncRoutes.post('/ws-ticket', async (c) => {
     user.id,
     user.tenantId,
     ticketHash,
-    WS_TICKET_TTL_SECONDS
+    WS_TICKET_TTL_SECONDS,
+    user.sessionId ?? null
   );
 
   const reqUrl = new URL(c.req.url);
@@ -289,7 +290,11 @@ syncRoutes.get('/ws', async (c) => {
     return c.json({ error: 'Invalid WebSocket origin' }, 403);
   }
 
-  let verifiedUser: { tenantId: string; userId: string } | null = null;
+  let verifiedUser: {
+    tenantId: string;
+    userId: string;
+    sessionId: string | null;
+  } | null = null;
   const rawTicket = c.req.query('ticket');
 
   if (rawTicket) {
@@ -309,7 +314,11 @@ syncRoutes.get('/ws', async (c) => {
               .bind(tenantId, consumed.userId)
               .first<{ status: 'active' | 'suspended' }>();
             if (!dbUser || dbUser.status === 'active') {
-              verifiedUser = { tenantId, userId: consumed.userId };
+              verifiedUser = {
+                tenantId,
+                userId: consumed.userId,
+                sessionId: consumed.sessionId,
+              };
             }
           }
         }
@@ -328,7 +337,11 @@ syncRoutes.get('/ws', async (c) => {
         .bind(tenantId, devUserId)
         .first<{ status: 'active' | 'suspended' }>();
       if (!dbUser || dbUser.status === 'active') {
-        verifiedUser = { tenantId, userId: devUserId };
+        verifiedUser = {
+          tenantId,
+          userId: devUserId,
+          sessionId: c.req.header('X-Dev-Session-Id') ?? null,
+        };
       }
     }
   }
@@ -337,13 +350,14 @@ syncRoutes.get('/ws', async (c) => {
     const sessionToken = readSessionTokenFromRequest(c);
     if (sessionToken) {
       const sessionRow = await c.env.DB.prepare(
-        `SELECT s.expires_at, u.id, u.tenant_id, u.status
+        `SELECT s.id AS session_id, s.expires_at, u.id, u.tenant_id, u.status
            FROM sessions s
            JOIN users u ON u.id = s.user_id
           WHERE s.token_hash = ? AND s.revoked_at IS NULL`
       )
         .bind(await sha256Hex(sessionToken))
         .first<{
+          session_id: string;
           expires_at: string;
           id: string;
           tenant_id: string;
@@ -355,7 +369,11 @@ syncRoutes.get('/ws', async (c) => {
         sessionRow.status === 'active' &&
         sessionRow.expires_at > new Date().toISOString()
       ) {
-        verifiedUser = { tenantId: sessionRow.tenant_id, userId: sessionRow.id };
+        verifiedUser = {
+          tenantId: sessionRow.tenant_id,
+          userId: sessionRow.id,
+          sessionId: sessionRow.session_id,
+        };
       }
     }
   }
@@ -368,6 +386,9 @@ syncRoutes.get('/ws', async (c) => {
   const connectUrl = new URL('https://sync-hub.internal/connect');
   connectUrl.searchParams.set('tenantId', verifiedUser.tenantId);
   connectUrl.searchParams.set('userId', verifiedUser.userId);
+  if (verifiedUser.sessionId) {
+    connectUrl.searchParams.set('sessionId', verifiedUser.sessionId);
+  }
 
   return stub.fetch(new Request(connectUrl.toString(), c.req.raw));
 });
