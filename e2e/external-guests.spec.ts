@@ -39,6 +39,7 @@ test.describe('外部ゲストアカウント基盤 (P10-1 / TOM-59)', () => {
       await expect(
         admin.page.getByTestId('admin-tabpanel-settings')
       ).toBeVisible();
+      await admin.page.getByTestId('enterprise-topic-guest-policy').click();
 
       const section = admin.page.getByTestId('guest-policy-section');
       await expect(section).toBeVisible();

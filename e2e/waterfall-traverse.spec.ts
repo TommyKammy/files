@@ -372,12 +372,10 @@ test.describe('ウォーターフォール継承 & 途中階層パス表示 (TOM
       await expect(
         admin.page.getByTestId('admin-tabpanel-settings')
       ).toBeVisible();
-      const accessSection = admin.page
-        .locator('section')
-        .filter({
-          has: admin.page.getByRole('heading', { name: 'アクセス制御' }),
-        })
-        .first();
+      await admin.page.getByTestId('enterprise-topic-folder-structure').click();
+      const accessSection = admin.page.getByTestId(
+        'enterprise-topic-card-folder-structure'
+      );
       await expect(
         accessSection.getByRole('heading', {
           name: '権限継承モード (Additive / Waterfall)',

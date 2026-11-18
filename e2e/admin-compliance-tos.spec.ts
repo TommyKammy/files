@@ -193,6 +193,7 @@ test.describe('カスタム ToS・ファイルリクエスト全社ガバナン�
       await expect(admin.page).toHaveURL(
         /\/admin\/settings\?tab=compliance$/
       );
+      await admin.page.getByTestId('enterprise-topic-branding').click();
       const section = admin.page.getByTestId('admin-governance-policy-section');
       await expect(section).toBeVisible();
       await section.getByTestId('admin-branding-org-name').fill(orgName);

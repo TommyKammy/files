@@ -61,13 +61,18 @@ export function AdminAuthControlSection({
   policy,
   initialSsoStatus,
   onPolicyUpdated,
+  topicFilter = 'all',
 }: {
   user: AuthUser;
   policy: TenantPolicyRow | null;
   initialSsoStatus?: AdminSsoStatusResponse | null;
   onPolicyUpdated?: (policy: TenantPolicyRow) => void;
+  /** 1-Screen-1-Topic projection for the Enterprise settings workbench. */
+  topicFilter?: 'ip-allowlist' | 'sso-oidc' | 'all';
 }) {
   const canManage = canManageAuthControls(user.role);
+  const showIpAllowlist = topicFilter === 'all' || topicFilter === 'ip-allowlist';
+  const showSso = topicFilter === 'all' || topicFilter === 'sso-oidc';
 
   const [status, setStatus] = useState<AdminSsoStatusResponse | null>(
     () => initialSsoStatus ?? null
@@ -385,6 +390,7 @@ export function AdminAuthControlSection({
       {/* ---------------------------------------------------------------- */}
       {/* IP allowlist                                                      */}
       {/* ---------------------------------------------------------------- */}
+      {showIpAllowlist && (
       <form
         onSubmit={handleIpSave}
         aria-labelledby="ip-allowlist-heading"
@@ -629,10 +635,12 @@ export function AdminAuthControlSection({
           )}
         </fieldset>
       </form>
+      )}
 
       {/* ---------------------------------------------------------------- */}
       {/* OIDC SSO status & policy                                         */}
       {/* ---------------------------------------------------------------- */}
+      {showSso && (
       <div
         data-testid="sso-status-section"
         className="space-y-4 rounded-lg border border-[#e7e7ea] bg-white p-5"
@@ -820,7 +828,9 @@ export function AdminAuthControlSection({
           </div>
         )}
       </div>
+      )}
 
+      {showSso && (
       <form
         onSubmit={handleSsoSave}
         aria-labelledby="sso-policy-heading"
@@ -1005,6 +1015,7 @@ export function AdminAuthControlSection({
           )}
         </fieldset>
       </form>
+      )}
     </section>
   );
 }

@@ -14,6 +14,11 @@ import {
   AdminSectionTabs,
   AdminTabPanel,
 } from '@/components/admin/AdminSectionTabs';
+import type {
+  EnterpriseSettingGroupId,
+  EnterpriseSettingStatusState,
+  EnterpriseSettingTopicId,
+} from '@/lib/admin-enterprise-settings';
 import { AdminConsoleShell } from '@/components/AdminConsoleShell';
 import { AppShellRail } from '@/components/AppShellRail';
 import {
@@ -120,6 +125,10 @@ const loadSharedLinksPolicy = () =>
   import('@/components/admin/SharedLinksPolicySection').then(
     (m) => m.SharedLinksPolicySection
   );
+const loadAdminEnterpriseSettingsWorkbench = () =>
+  import('@/components/admin/AdminEnterpriseSettingsWorkbench').then(
+    (m) => m.AdminEnterpriseSettingsWorkbench
+  );
 
 const AccessControlSettingsSection = dynamic(loadAccessControlSettings);
 const AdminAuthControlSection = dynamic(loadAdminAuthControl);
@@ -142,6 +151,9 @@ const AdminTrashSection = dynamic(loadAdminTrash);
 const AuditLogSection = dynamic(loadAuditLog);
 const GuestPolicySection = dynamic(loadGuestPolicy);
 const SharedLinksPolicySection = dynamic(loadSharedLinksPolicy);
+const AdminEnterpriseSettingsWorkbench = dynamic(
+  loadAdminEnterpriseSettingsWorkbench
+);
 
 // Map the pure `getAdminTabPreloadChunkIds` plan to the actual dynamic
 // import loaders. Only the active tab's chunks are preloaded, so `/admin`
@@ -192,10 +204,12 @@ export function HybridGovernanceDashboard({
   section = 'all',
   auditPreset = null,
   initialTab = null,
+  initialTopic = null,
 }: {
   section?: AdminConsoleSection;
   auditPreset?: string | string[] | null;
   initialTab?: string | string[] | null;
+  initialTopic?: string | string[] | null;
 }) {
   const {
     syncStore,
@@ -470,9 +484,17 @@ export function HybridGovernanceDashboard({
       />
     );
 
-  const accessControlPanel =
-    hasAdminCapability(user, 'admin.policies.edit') && (
+  const renderAccessControlPanel = (
+    topicFilter:
+      | 'roles-and-invite'
+      | 'folder-structure'
+      | 'content-inspection'
+      | 'all'
+  ) =>
+    (hasAdminCapability(user, 'admin.policies.read') ||
+      hasAdminCapability(user, 'admin.policies.edit')) && (
       <AccessControlSettingsSection
+        topicFilter={topicFilter}
         policy={policy}
         saving={advancedRolesSaving}
         error={advancedRolesError}
@@ -507,11 +529,15 @@ export function HybridGovernanceDashboard({
       />
     );
 
-  const authControlPanel =
-    hasAdminCapability(user, 'admin.policies.read') && (
+  const renderAuthControlPanel = (
+    topicFilter: 'ip-allowlist' | 'sso-oidc' | 'all'
+  ) =>
+    (hasAdminCapability(user, 'admin.policies.read') ||
+      hasAdminCapability(user, 'admin.policies.edit')) && (
       <AdminAuthControlSection
         user={user}
         policy={policy}
+        topicFilter={topicFilter}
         initialSsoStatus={
           settingsBundle ? settingsBundle.ssoStatus : undefined
         }
@@ -519,11 +545,17 @@ export function HybridGovernanceDashboard({
       />
     );
 
-  const compliancePanel =
-    hasAdminCapability(user, 'admin.policies.read') && (
+  const renderCompliancePanel = (
+    topicFilter: 'tos' | 'file-requests' | 'retention-quota-ai' | 'branding' | 'all'
+  ) =>
+    (hasAdminCapability(user, 'admin.policies.read') ||
+      hasAdminCapability(user, 'admin.policies.edit')) && (
       <AdminComplianceSettingsSection
         policy={policy}
         canManage={user.role === 'sys_admin'}
+        topicFilter={topicFilter}
+        tenantPolicy={policy}
+        onTenantPolicyChange={setPolicy}
         initialTos={
           settingsBundle ? (settingsBundle.tos?.tos ?? null) : undefined
         }
@@ -555,11 +587,14 @@ export function HybridGovernanceDashboard({
     );
 
   const sharedLinksPanel =
-    hasAdminCapability(user, 'admin.links.revoke') && (
+    (hasAdminCapability(user, 'admin.links.revoke') ||
+      hasAdminCapability(user, 'admin.policies.read') ||
+      hasAdminCapability(user, 'admin.policies.edit')) && (
       <SharedLinksPolicySection
         sharedLinks={sharedLinks}
         policy={policy}
         policySaving={policySaving}
+        showLegacyFields={false}
         onEmergencyRevoke={handleEmergencyRevoke}
         onPolicySubmit={handlePolicySubmit}
         onPolicyChange={setPolicy}
@@ -658,6 +693,97 @@ export function HybridGovernanceDashboard({
       />
     );
 
+  const enterpriseStatusState: EnterpriseSettingStatusState = {
+    policy,
+    sharedLinks,
+    guestInvitations: settingsBundle?.guestInvitations?.invitations ?? null,
+    sessions: settingsBundle?.sessions ?? null,
+    tos: settingsBundle ? (settingsBundle.tos?.tos ?? null) : undefined,
+    ssoStatus: settingsBundle?.ssoStatus ?? undefined,
+    siem: settingsBundle?.siem?.siem ?? null,
+  };
+
+  const renderEnterpriseTopic = (
+    topicId: EnterpriseSettingTopicId
+  ): React.ReactNode => {
+    switch (topicId) {
+      case 'shared-links':
+        return sharedLinksPanel;
+      case 'guest-policy':
+        return guestPolicyPanel;
+      case 'file-requests':
+        return renderCompliancePanel('file-requests');
+      case 'roles-and-invite':
+        return renderAccessControlPanel('roles-and-invite');
+      case 'folder-structure':
+        return renderAccessControlPanel('folder-structure');
+      case 'content-inspection':
+        return renderAccessControlPanel('content-inspection');
+      case 'ip-allowlist':
+        return renderAuthControlPanel('ip-allowlist');
+      case 'sso-oidc':
+        return renderAuthControlPanel('sso-oidc');
+      case 'sessions':
+        return sessionsPanel;
+      case 'tos':
+        return renderCompliancePanel('tos');
+      case 'retention-quota-ai':
+        return renderCompliancePanel('retention-quota-ai');
+      case 'branding':
+        return renderCompliancePanel('branding');
+      case 'integrations-catalog':
+        return integrationsPanel;
+      default:
+        return null;
+    }
+  };
+
+  const renderEnterpriseGroup = (
+    groupId: EnterpriseSettingGroupId
+  ): React.ReactNode => {
+    switch (groupId) {
+      case 'sharing':
+        return (
+          <div className="space-y-4">
+            {sharedLinksPanel}
+            {guestPolicyPanel}
+            {renderCompliancePanel('file-requests')}
+          </div>
+        );
+      case 'access':
+        return renderAccessControlPanel('all');
+      case 'security':
+        return (
+          <div className="space-y-4">
+            {renderAuthControlPanel('all')}
+            {sessionsPanel}
+          </div>
+        );
+      case 'compliance':
+        return renderCompliancePanel('all');
+      case 'integrations':
+        return integrationsPanel;
+      default:
+        return null;
+    }
+  };
+
+  const enterpriseSettingsWorkbench = (
+    <AdminEnterpriseSettingsWorkbench
+      user={user}
+      activeTabId={activeTab?.id ?? null}
+      initialTopic={initialTopic}
+      statusState={enterpriseStatusState}
+      onSelectTab={(tabId) => {
+        // `/admin?tab=settings` renders one integrated pane: switching a
+        // workbench group must not replace the outer tab.
+        if (section === 'settings') selectTab(tabId);
+      }}
+      renderTopic={renderEnterpriseTopic}
+      renderGroup={renderEnterpriseGroup}
+    />
+  );
+
   // Only the selected tab's panels are mounted. This keeps focused routes
   // from paying for every child section's independent fetches.
   const activeTabContent = (() => {
@@ -689,16 +815,7 @@ export function HybridGovernanceDashboard({
             </div>
           );
         case 'settings':
-          return (
-            <>
-              {accessControlPanel}
-              {authControlPanel}
-              {compliancePanel}
-              {sessionsPanel}
-              {sharedLinksPanel}
-              {guestPolicyPanel}
-            </>
-          );
+          return enterpriseSettingsWorkbench;
         case 'integrations':
           return integrationsPanel;
         case 'reports':
@@ -750,30 +867,9 @@ export function HybridGovernanceDashboard({
     }
 
     if (section === 'settings') {
-      switch (tabId) {
-        case 'sharing':
-          return (
-            <>
-              {sharedLinksPanel}
-              {guestPolicyPanel}
-            </>
-          );
-        case 'access':
-          return accessControlPanel;
-        case 'security':
-          return (
-            <>
-              {authControlPanel}
-              {sessionsPanel}
-            </>
-          );
-        case 'compliance':
-          return compliancePanel;
-        case 'integrations':
-          return integrationsPanel;
-        default:
-          return null;
-      }
+      // Every settings tab is projected through the 2-pane workbench so a
+      // single topic owns the viewport while the tree and search stay put.
+      return enterpriseSettingsWorkbench;
     }
 
     if (section === 'reports') {

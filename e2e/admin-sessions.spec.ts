@@ -163,6 +163,7 @@ test.describe('アクティブセッション監視 & 強制サインアウト (
       await admin.page.goto('/admin/settings');
       await admin.page.getByTestId('admin-tab-security').click();
       await expect(admin.page).toHaveURL(/\/admin\/settings\?tab=security$/);
+      await admin.page.getByTestId('enterprise-topic-sessions').click();
       const section = admin.page.getByTestId('admin-sessions-section');
       await expect(section).toBeVisible();
 

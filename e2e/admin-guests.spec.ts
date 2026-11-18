@@ -507,6 +507,7 @@ test.describe('ゲスト管理・監査・ドメインポリシー (P10-3 / TOM-
       await expect(
         admin.page.getByTestId('admin-tabpanel-settings')
       ).toBeVisible();
+      await admin.page.getByTestId('enterprise-topic-guest-policy').click();
       const policySection = admin.page.getByTestId('guest-policy-section');
       await expect(policySection).toBeVisible();
       await policySection

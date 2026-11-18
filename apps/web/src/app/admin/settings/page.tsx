@@ -8,9 +8,13 @@ export default async function AdminSettingsPage({
 }) {
   // Keep the CSP nonce and the rendered script tags in the same request.
   await connection();
-  const { tab } = await searchParams;
+  const { tab, topic } = await searchParams;
 
   return (
-    <HybridGovernanceDashboard section="settings" initialTab={tab ?? null} />
+    <HybridGovernanceDashboard
+      section="settings"
+      initialTab={tab ?? null}
+      initialTopic={topic ?? null}
+    />
   );
 }

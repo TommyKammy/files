@@ -154,13 +154,11 @@ test.describe('フォルダ構成モード & ルートフォルダ管理 (TOM-53
       await expect(
         admin.page.getByTestId('admin-tabpanel-settings')
       ).toBeVisible();
+      await admin.page.getByTestId('enterprise-topic-folder-structure').click();
 
-      const accessSection = admin.page
-        .locator('section')
-        .filter({
-          has: admin.page.getByRole('heading', { name: 'アクセス制御' }),
-        })
-        .first();
+      const accessSection = admin.page.getByTestId(
+        'enterprise-topic-card-folder-structure'
+      );
       await expect(accessSection).toBeVisible();
       await expect(
         accessSection.getByRole('heading', {
@@ -238,6 +236,7 @@ test.describe('フォルダ構成モード & ルートフォルダ管理 (TOM-53
       await expect(
         admin.page.getByTestId('admin-tabpanel-settings')
       ).toBeVisible();
+      await admin.page.getByTestId('enterprise-topic-folder-structure').click();
       await accessSection
         .locator('input[name="folderStructureMode"][value="closed"]')
         .check();
@@ -265,11 +264,7 @@ test.describe('フォルダ構成モード & ルートフォルダ管理 (TOM-53
       await admin.page.reload();
       await expect(
         admin.page
-          .locator('section')
-          .filter({
-            has: admin.page.getByRole('heading', { name: 'アクセス制御' }),
-          })
-          .first()
+          .getByTestId('enterprise-topic-card-folder-structure')
           .locator('input[name="folderStructureMode"][value="closed"]')
       ).toBeChecked();
       await admin.page.getByTestId('admin-tab-content').click();
@@ -383,12 +378,10 @@ test.describe('フォルダ構成モード & ルートフォルダ管理 (TOM-53
       await expect(
         sec.page.getByTestId('admin-tabpanel-settings')
       ).toBeVisible();
-      const accessSection = sec.page
-        .locator('section')
-        .filter({
-          has: sec.page.getByRole('heading', { name: 'アクセス制御' }),
-        })
-        .first();
+      await sec.page.getByTestId('enterprise-topic-folder-structure').click();
+      const accessSection = sec.page.getByTestId(
+        'enterprise-topic-card-folder-structure'
+      );
       await expect(
         accessSection.locator('input[name="folderStructureMode"][value="closed"]')
       ).toBeChecked();

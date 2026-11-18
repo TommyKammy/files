@@ -117,6 +117,7 @@ test.describe('IP 許可リスト & OIDC SSO 認証統制 (TOM-66)', () => {
       await admin.page.goto('/admin/settings');
       await admin.page.getByTestId('admin-tab-security').click();
       await expect(admin.page).toHaveURL(/\/admin\/settings\?tab=security$/);
+      await admin.page.getByTestId('enterprise-topic-sso-oidc').click();
       const statusSection = admin.page.getByTestId('sso-status-section');
       await expect(statusSection).toBeVisible();
       await expect(statusSection).toContainText('ENVIRONMENT');
@@ -163,7 +164,9 @@ test.describe('IP 許可リスト & OIDC SSO 認証統制 (TOM-66)', () => {
       // Existing D1 session cookies remain valid, so the admin can still
       // inspect and roll back the policy.
       await admin.page.reload();
-      await expect(admin.page).toHaveURL(/\/admin\/settings\?tab=security$/);
+      await expect(admin.page).toHaveURL(
+        /\/admin\/settings\?tab=security(&topic=sso-oidc)?$/
+      );
       await expect(
         admin.page.getByTestId('admin-tab-security')
       ).toHaveAttribute('aria-selected', 'true');

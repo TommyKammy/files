@@ -28,6 +28,7 @@ import {
 } from '@/lib/files-api';
 import type {
   AdminTosPolicy,
+  AiClassificationMode,
   TenantPolicyRow,
   TosTargetAudience,
 } from '@/types/files';
@@ -46,12 +47,53 @@ export function AdminComplianceSettingsSection({
   canManage,
   initialTos,
   onPolicyUpdated,
+  topicFilter = 'all',
+  tenantPolicy,
+  tenantPolicySaving,
+  onTenantPolicyChange,
+  onTenantPolicySubmit,
 }: {
   policy: TenantPolicyRow | null;
   canManage: boolean;
   initialTos?: AdminTosPolicy | null;
   onPolicyUpdated: (policy: TenantPolicyRow | null) => void;
+  /** 1-Screen-1-Topic projection for the Enterprise settings workbench. */
+  topicFilter?: 'tos' | 'file-requests' | 'retention-quota-ai' | 'branding' | 'all';
+  /**
+   * Optional parent-owned policy row. When supplied, the retention / AI
+   * fieldsets become editable and the parent can own persistence instead of
+   * the locally managed governance form.
+   */
+  tenantPolicy?: TenantPolicyRow | null;
+  tenantPolicySaving?: boolean;
+  onTenantPolicyChange?: (next: TenantPolicyRow) => void;
+  onTenantPolicySubmit?: (event: React.FormEvent) => void;
 }) {
+  const showTos = topicFilter === 'all' || topicFilter === 'tos';
+  const showGovernancePolicy = topicFilter !== 'tos';
+  const showFileRequests =
+    topicFilter === 'all' || topicFilter === 'file-requests';
+  const showBranding = topicFilter === 'all' || topicFilter === 'branding';
+  const showQuotaThresholds =
+    topicFilter === 'all' || topicFilter === 'retention-quota-ai';
+  const showRetention =
+    topicFilter === 'all' || topicFilter === 'retention-quota-ai';
+  const governanceTitle =
+    topicFilter === 'file-requests'
+      ? '全社ファイルリクエスト方針'
+      : topicFilter === 'branding'
+        ? 'カスタムブランディング'
+        : topicFilter === 'retention-quota-ai'
+          ? '保持期間・容量警告・AI 分類'
+          : 'ファイルリクエスト方針・ブランディング・クォータ警告';
+  const governanceSummary =
+    topicFilter === 'file-requests'
+      ? '全社の Blind Dropbox の許可・上限・拡張子強制を管理します。'
+      : topicFilter === 'branding'
+        ? '共有リンク・ファイルリクエスト・ゲスト招待画面に表示する組織情報を管理します。'
+        : topicFilter === 'retention-quota-ai'
+          ? 'ゴミ箱の保持日数・AI 自動分類モード・ストレージ容量の警告しきい値を管理します。'
+          : '全社の Blind Dropbox の許可・上限・拡張子強制、公開画面の組織情報、ストレージ警告しきい値を一括管理します。';
   const persistedFileRequests = readFileRequestPolicy(policy);
   const persistedBranding = readBranding(policy);
   const persistedThresholds = readQuotaThresholds(policy);
@@ -94,6 +136,13 @@ export function AdminComplianceSettingsSection({
   const [quotaCritical, setQuotaCritical] = useState(
     String(persistedThresholds.critical)
   );
+  const [trashRetentionDays, setTrashRetentionDays] = useState(
+    String(policy?.trash_retention_days ?? 30)
+  );
+  const [aiClassificationMode, setAiClassificationMode] =
+    useState<AiClassificationMode>(
+      policy?.ai_classification_mode ?? 'metadata_only'
+    );
   const [policySaving, setPolicySaving] = useState(false);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [policyNotice, setPolicyNotice] = useState<string | null>(null);
@@ -156,6 +205,10 @@ export function AdminComplianceSettingsSection({
     setBrandingFooterNote(nextBranding.footerNote ?? '');
     setQuotaWarn(String(nextThresholds.warn));
     setQuotaCritical(String(nextThresholds.critical));
+    setTrashRetentionDays(String(policy?.trash_retention_days ?? 30));
+    setAiClassificationMode(
+      policy?.ai_classification_mode ?? 'metadata_only'
+    );
   }, [policy]);
 
   async function handleSaveTos(event: React.FormEvent) {
@@ -206,8 +259,20 @@ export function AdminComplianceSettingsSection({
       setPolicyError('ファイルリクエスト上限サイズは 10 GiB 以下で指定してください。');
       return;
     }
-    const warn = Number(quotaWarn);
-    const critical = Number(quotaCritical);
+    const warn = tenantPolicy
+      ? Number(
+          tenantPolicy.quota_warn_threshold_pct ??
+            tenantPolicy.quotaWarnThresholdPct ??
+            persistedThresholds.warn
+        )
+      : Number(quotaWarn);
+    const critical = tenantPolicy
+      ? Number(
+          tenantPolicy.quota_critical_threshold_pct ??
+            tenantPolicy.quotaCriticalThresholdPct ??
+            persistedThresholds.critical
+        )
+      : Number(quotaCritical);
     const thresholdValidation = validateQuotaThresholds(warn, critical);
     if (!thresholdValidation.ok) {
       setPolicyError(thresholdValidation.error ?? 'クォータ閾値が不正です。');
@@ -225,6 +290,11 @@ export function AdminComplianceSettingsSection({
         brandingFooterNote: brandingFooterNote.trim() || null,
         quotaWarnThresholdPct: warn,
         quotaCriticalThresholdPct: critical,
+        trashRetentionDays:
+          tenantPolicy?.trash_retention_days ??
+          Number(trashRetentionDays),
+        aiClassificationMode:
+          tenantPolicy?.ai_classification_mode ?? aiClassificationMode,
       });
       onPolicyUpdated(response.policy);
       setPolicyNotice(
@@ -237,8 +307,73 @@ export function AdminComplianceSettingsSection({
     }
   }
 
+  const effectivePolicySaving = tenantPolicySaving ?? policySaving;
+  const retentionValue = String(
+    tenantPolicy?.trash_retention_days ?? trashRetentionDays
+  );
+  const aiModeValue =
+    tenantPolicy?.ai_classification_mode ?? aiClassificationMode;
+  const quotaWarnValue = String(
+    tenantPolicy?.quota_warn_threshold_pct ??
+      tenantPolicy?.quotaWarnThresholdPct ??
+      quotaWarn
+  );
+  const quotaCriticalValue = String(
+    tenantPolicy?.quota_critical_threshold_pct ??
+      tenantPolicy?.quotaCriticalThresholdPct ??
+      quotaCritical
+  );
+  const canEditTenantPolicy = Boolean(
+    tenantPolicy && onTenantPolicyChange
+  );
+
+  function updateRetentionDays(raw: string) {
+    if (canEditTenantPolicy && tenantPolicy && onTenantPolicyChange) {
+      onTenantPolicyChange({
+        ...tenantPolicy,
+        trash_retention_days: Number.parseInt(raw || '30', 10),
+      });
+      return;
+    }
+    setTrashRetentionDays(raw);
+  }
+
+  function updateAiMode(mode: AiClassificationMode) {
+    if (canEditTenantPolicy && tenantPolicy && onTenantPolicyChange) {
+      onTenantPolicyChange({
+        ...tenantPolicy,
+        ai_classification_mode: mode,
+      });
+      return;
+    }
+    setAiClassificationMode(mode);
+  }
+
+  function updateQuotaWarn(raw: string) {
+    if (canEditTenantPolicy && tenantPolicy && onTenantPolicyChange) {
+      onTenantPolicyChange({
+        ...tenantPolicy,
+        quota_warn_threshold_pct: Number.parseInt(raw || '80', 10),
+      });
+      return;
+    }
+    setQuotaWarn(raw);
+  }
+
+  function updateQuotaCritical(raw: string) {
+    if (canEditTenantPolicy && tenantPolicy && onTenantPolicyChange) {
+      onTenantPolicyChange({
+        ...tenantPolicy,
+        quota_critical_threshold_pct: Number.parseInt(raw || '90', 10),
+      });
+      return;
+    }
+    setQuotaCritical(raw);
+  }
+
   return (
     <div className="space-y-4">
+      {showTos && (
       <section
         aria-labelledby="admin-tos-heading"
         data-testid="admin-tos-section"
@@ -392,7 +527,9 @@ export function AdminComplianceSettingsSection({
           </form>
         )}
       </section>
+      )}
 
+      {showGovernancePolicy && (
       <section
         aria-labelledby="admin-governance-policy-heading"
         data-testid="admin-governance-policy-section"
@@ -404,15 +541,18 @@ export function AdminComplianceSettingsSection({
             className="flex items-center gap-2 text-sm font-semibold text-slate-900"
           >
             <ShieldCheck className="h-4 w-4 text-[#5e6ad2]" />
-            ファイルリクエスト方針・ブランディング・クォータ警告
+            {governanceTitle}
           </h2>
           <p className="mt-1 text-[0.6875rem] text-[#55565a]">
-            全社の Blind Dropbox の許可・上限・拡張子強制、公開画面の組織情報、
-            ストレージ警告しきい値を一括管理します。
+            {governanceSummary}
           </p>
         </div>
 
-        <form onSubmit={handleSavePolicy} className="mt-4 space-y-5">
+        <form
+          onSubmit={onTenantPolicySubmit ?? handleSavePolicy}
+          className="mt-4 space-y-5"
+        >
+          {showFileRequests && (
           <fieldset className="space-y-3 rounded-xl border border-[#ececef] p-4">
             <legend className="flex items-center gap-1.5 px-1 text-[0.75rem] font-semibold text-slate-800">
               <FileLock2 className="h-3.5 w-3.5 text-[#5e6ad2]" />
@@ -459,7 +599,9 @@ export function AdminComplianceSettingsSection({
               </label>
             </div>
           </fieldset>
+          )}
 
+          {showBranding && (
           <fieldset className="space-y-3 rounded-xl border border-[#ececef] p-4">
             <legend className="flex items-center gap-1.5 px-1 text-[0.75rem] font-semibold text-slate-800">
               <Building2 className="h-3.5 w-3.5 text-[#5e6ad2]" />
@@ -511,7 +653,9 @@ export function AdminComplianceSettingsSection({
               エスケープされたテキストとして表示されます。
             </p>
           </fieldset>
+          )}
 
+          {showQuotaThresholds && (
           <fieldset className="space-y-3 rounded-xl border border-[#ececef] p-4">
             <legend className="flex items-center gap-1.5 px-1 text-[0.75rem] font-semibold text-slate-800">
               <Gauge className="h-3.5 w-3.5 text-[#5e6ad2]" />
@@ -526,9 +670,9 @@ export function AdminComplianceSettingsSection({
                   min={50}
                   max={99}
                   required
-                  value={quotaWarn}
+                  value={quotaWarnValue}
                   disabled={!canManage}
-                  onChange={(event) => setQuotaWarn(event.target.value)}
+                  onChange={(event) => updateQuotaWarn(event.target.value)}
                   className="mt-1 h-8 w-full rounded-md border border-[#d7d7dc] px-2.5 text-[0.75rem]"
                 />
               </label>
@@ -540,9 +684,9 @@ export function AdminComplianceSettingsSection({
                   min={51}
                   max={100}
                   required
-                  value={quotaCritical}
+                  value={quotaCriticalValue}
                   disabled={!canManage}
-                  onChange={(event) => setQuotaCritical(event.target.value)}
+                  onChange={(event) => updateQuotaCritical(event.target.value)}
                   className="mt-1 h-8 w-full rounded-md border border-[#d7d7dc] px-2.5 text-[0.75rem]"
                 />
               </label>
@@ -551,6 +695,66 @@ export function AdminComplianceSettingsSection({
               警告 &lt; 緊急を満たす必要があります (既定 80% / 90%)。
             </p>
           </fieldset>
+          )}
+
+          {showRetention && (
+          <fieldset className="space-y-3 rounded-xl border border-[#ececef] p-4">
+            <legend className="flex items-center gap-1.5 px-1 text-[0.75rem] font-semibold text-slate-800">
+              <Scale className="h-3.5 w-3.5 text-[#5e6ad2]" />
+              データ保持と AI 自動分類
+            </legend>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block text-[0.75rem]">
+                <span className="font-medium text-slate-700">
+                  ゴミ箱の保持期間 (日)
+                </span>
+                <input
+                  id="trash_retention_days"
+                  name="trashRetentionDays"
+                  data-testid="admin-trash-retention-days"
+                  type="number"
+                  min={1}
+                  max={3650}
+                  required
+                  value={retentionValue}
+                  disabled={!canManage}
+                  onChange={(event) =>
+                    updateRetentionDays(event.target.value)
+                  }
+                  className="mt-1 h-8 w-full rounded-md border border-[#d7d7dc] px-2.5 text-[0.75rem]"
+                />
+              </label>
+              <label className="block text-[0.75rem]">
+                <span className="font-medium text-slate-700">
+                  AI 自動分類モード
+                </span>
+                <select
+                  id="ai_classification_mode"
+                  name="aiClassificationMode"
+                  data-testid="admin-ai-classification-mode"
+                  value={aiModeValue}
+                  disabled={!canManage}
+                  onChange={(event) =>
+                    updateAiMode(event.target.value as AiClassificationMode)
+                  }
+                  className="mt-1 h-8 w-full rounded-md border border-[#d7d7dc] bg-white px-2.5 text-[0.75rem]"
+                >
+                  <option value="content_excerpt">
+                    content_excerpt (本文先頭抽出)
+                  </option>
+                  <option value="metadata_only">
+                    metadata_only (メタデータのみ)
+                  </option>
+                  <option value="disabled">disabled (停止)</option>
+                </select>
+              </label>
+            </div>
+            <p className="text-[0.625rem] text-[#6b6f76]">
+              ゴミ箱の自動削除までの日数と、Workers AI
+              が機密区分を提案するときの参照範囲を管理します。
+            </p>
+          </fieldset>
+          )}
 
           {policyError && (
             <p
@@ -575,10 +779,10 @@ export function AdminComplianceSettingsSection({
           <button
             type="submit"
             data-testid="admin-governance-policy-save"
-            disabled={!canManage || policySaving}
+            disabled={!canManage || effectivePolicySaving}
             className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#5e6ad2] px-3 text-[0.75rem] font-medium text-white transition hover:bg-[#4f5ac2] disabled:opacity-50"
           >
-            {policySaving ? (
+            {effectivePolicySaving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Save className="h-3.5 w-3.5" />
@@ -587,6 +791,7 @@ export function AdminComplianceSettingsSection({
           </button>
         </form>
       </section>
+      )}
     </div>
   );
 }

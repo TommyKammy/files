@@ -143,23 +143,25 @@ test.describe('高度ロール UI / アップロード専用・プレビュー�
       admin.page.getByTestId('admin-tabpanel-settings')
     ).toBeVisible();
 
-    const section = admin.page
-      .locator('section')
-      .filter({ has: admin.page.getByRole('heading', { name: 'アクセス制御' }) })
-      .first();
-    await expect(section).toBeVisible();
+    // Folder structure and advanced roles are separate topics now.
+    await admin.page.getByTestId('enterprise-topic-folder-structure').click();
+    const folderSection = admin.page.getByTestId(
+      'enterprise-topic-card-folder-structure'
+    );
+    await expect(folderSection).toBeVisible();
     await expect(
-      section.getByRole('heading', {
+      folderSection.getByRole('heading', {
         name: 'フォルダ構成モード (Open / Closed)',
       })
     ).toBeVisible();
     await expect(
-      section.getByText(/既存のルートフォルダ・配下フォルダ・ファイル・権限は/).first()
+      folderSection.getByText(/既存のルートフォルダ・配下フォルダ・ファイル・権限は/).first()
     ).toBeVisible();
     await expect(
-      section.locator('input[name="folderStructureMode"][value="open"]')
+      folderSection.locator('input[name="folderStructureMode"][value="open"]')
     ).toBeChecked();
 
+    await admin.page.getByTestId('enterprise-topic-roles-and-invite').click();
     const toggle = admin.page.locator('#policy-advanced-roles-enabled');
     await expect(toggle).toBeVisible();
     await expect(toggle).toHaveAttribute('switch', '');

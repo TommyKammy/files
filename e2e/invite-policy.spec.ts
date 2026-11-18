@@ -52,6 +52,7 @@ test.describe('招待ポリシー / フォルダ単位の招待制限 (TOM-58)',
       await expect(
         admin.page.getByTestId('admin-tabpanel-settings')
       ).toBeVisible();
+      await admin.page.getByTestId('enterprise-topic-roles-and-invite').click();
 
       const section = admin.page.getByTestId('tenant-invite-policy-section');
       await expect(section).toBeVisible();

@@ -142,7 +142,7 @@ const SUBROUTE_TAB_CASES: readonly SubrouteTabCase[] = [
       {
         id: 'sharing',
         label: 'コンテンツと共有',
-        marker: (page) => page.getByTestId('guest-policy-section'),
+        marker: (page) => page.getByTestId('shared-links-monitor-details'),
       },
       {
         id: 'access',

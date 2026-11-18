@@ -342,35 +342,52 @@ export function GuestPolicySection({
         </span>
       </header>
 
-      <div
-        data-testid="guest-policy-comparison-guide"
-        className="mb-4 grid gap-3 rounded-xl border border-[#e7e7ea] bg-[#f9f9fa] p-3 text-[0.6875rem] text-[#3c3f46] md:grid-cols-2"
+      <details
+        data-testid="guest-role-guide-details"
+        className="mb-4 rounded-xl border border-[#e7e7ea] bg-[#f9f9fa]"
       >
-        <div>
-          <p className="mb-1 flex items-center gap-1.5 font-semibold text-[#111214]">
-            <ExternalLink className="h-3.5 w-3.5 text-[#5e6ad2]" />
-            共有リンク
-          </p>
-          <ul className="list-inside list-disc space-y-0.5">
-            <li>URL を知っている相手にファイル/フォルダを一時公開</li>
-            <li>社外にワークスペース権限は付与しない</li>
-            <li>パスワード・期限・ダウンロード可否で統制</li>
-            <li>提出用途はファイルリクエストを使用</li>
-          </ul>
+        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[0.75rem] font-semibold text-[#111214] [&::-webkit-details-marker]:hidden">
+          <span className="flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5 text-[#5e6ad2]" />
+            共有リンクと外部ゲストの役割比較ガイド
+          </span>
+          <span
+            aria-hidden="true"
+            className="text-[0.625rem] font-medium text-[#55565a]"
+          >
+            比較表を表示 / 折りたたむ
+          </span>
+        </summary>
+        <div
+          data-testid="guest-policy-comparison-guide"
+          className="grid gap-3 border-t border-[#e7e7ea] p-3 text-[0.6875rem] text-[#3c3f46] md:grid-cols-2"
+        >
+          <div>
+            <p className="mb-1 flex items-center gap-1.5 font-semibold text-[#111214]">
+              <ExternalLink className="h-3.5 w-3.5 text-[#5e6ad2]" />
+              共有リンク
+            </p>
+            <ul className="list-inside list-disc space-y-0.5">
+              <li>URL を知っている相手にファイル/フォルダを一時公開</li>
+              <li>社外にワークスペース権限は付与しない</li>
+              <li>パスワード・期限・ダウンロード可否で統制</li>
+              <li>提出用途はファイルリクエストを使用</li>
+            </ul>
+          </div>
+          <div>
+            <p className="mb-1 flex items-center gap-1.5 font-semibold text-[#111214]">
+              <UserPlus className="h-3.5 w-3.5 text-[#5e6ad2]" />
+              外部ゲストコラボレーター
+            </p>
+            <ul className="list-inside list-disc space-y-0.5">
+              <li>メール招待 + 6 桁 OTP で本人確認</li>
+              <li>指定フォルダにだけロールを付与</li>
+              <li>アカウント/セッションに有効期限を強制</li>
+              <li>管理画面・ルート作成・監査ログにはアクセス不可</li>
+            </ul>
+          </div>
         </div>
-        <div>
-          <p className="mb-1 flex items-center gap-1.5 font-semibold text-[#111214]">
-            <UserPlus className="h-3.5 w-3.5 text-[#5e6ad2]" />
-            外部ゲストコラボレーター
-          </p>
-          <ul className="list-inside list-disc space-y-0.5">
-            <li>メール招待 + 6 桁 OTP で本人確認</li>
-            <li>指定フォルダにだけロールを付与</li>
-            <li>アカウント/セッションに有効期限を強制</li>
-            <li>管理画面・ルート作成・監査ログにはアクセス不可</li>
-          </ul>
-        </div>
-      </div>
+      </details>
 
       <form onSubmit={handleSave} className="space-y-4" noValidate>
         <div className="grid gap-3 md:grid-cols-2">
@@ -657,130 +674,146 @@ export function GuestPolicySection({
       )}
 
       <div className="mt-5 border-t border-[#e7e7ea] pt-4">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h3 className="flex items-center gap-1.5 text-[0.8125rem] font-semibold text-[#111214]">
-            <Mail className="h-3.5 w-3.5 text-[#5e6ad2]" />
-            現在のゲスト招待
-          </h3>
-          <button
-            type="button"
-            onClick={() => void loadInvitations()}
-            disabled={!canManage || invitationsLoading}
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-[#e1e1e4] bg-white px-2 text-[0.6875rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] disabled:opacity-50"
-          >
-            {invitationsLoading && <Loader2 className="h-3 w-3 animate-spin" />}
-            再読み込み
-          </button>
-        </div>
-        {!canManage ? (
-          <p className="text-[0.6875rem] text-[#55565a]">
-            招待の作成・再送・取消は sys_admin のみ実行できます。
-          </p>
-        ) : invitations.length === 0 ? (
-          <p
-            data-testid="guest-invitation-empty"
-            className="rounded-xl border border-dashed border-[#d7d7dc] px-3 py-4 text-center text-[0.6875rem] text-[#55565a]"
-          >
-            ゲスト招待はまだありません。フォルダ権限画面または招待 API から作成できます。
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[40rem] border-collapse text-left text-[0.6875rem]">
-              <thead>
-                <tr className="border-b border-[#e7e7ea] text-[#55565a]">
-                  <th className="py-1.5 pr-3 font-medium">メール</th>
-                  <th className="py-1.5 pr-3 font-medium">共有対象</th>
-                  <th className="py-1.5 pr-3 font-medium">ロール</th>
-                  <th className="py-1.5 pr-3 font-medium">状態</th>
-                  <th className="py-1.5 pr-3 font-medium">有効期限</th>
-                  <th className="py-1.5 font-medium">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invitations.map((invitation) => (
-                  <tr
-                    key={invitation.id}
-                    data-testid="guest-invitation-row"
-                    className="border-b border-[#f2f2f4] align-middle"
-                  >
-                    <td className="py-1.5 pr-3 text-[#111214]">
-                      <span className="block font-medium">{invitation.email}</span>
-                      <span className="block text-[0.625rem] text-[#55565a]">
-                        {invitation.externalOrg ?? '外部組織未設定'}
-                      </span>
-                    </td>
-                    <td className="py-1.5 pr-3 text-[#3c3f46]">
-                      {invitation.targetName ??
-                        `${invitation.targetType}:${invitation.targetId.slice(0, 8)}`}
-                    </td>
-                    <td className="py-1.5 pr-3 font-mono text-[0.625rem] text-[#3c3f46]">
-                      {invitation.role}
-                    </td>
-                    <td className="py-1.5 pr-3">
-                      <span
-                        className={`inline-flex rounded-full px-1.5 py-0.5 text-[0.625rem] font-medium ${
-                          invitation.status === 'pending'
-                            ? 'bg-blue-50 text-blue-700'
-                            : invitation.status === 'accepted'
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : 'bg-slate-100 text-slate-600'
-                        }`}
+        <details
+          data-testid="guest-invitations-details"
+          open={invitations.length > 0}
+          className="rounded-xl border border-[#e7e7ea]"
+        >
+          <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center gap-1.5 text-[0.8125rem] font-semibold text-[#111214]">
+              <Mail className="h-3.5 w-3.5 text-[#5e6ad2]" />
+              現在のゲスト招待 ({invitations.length})
+            </span>
+            <span
+              aria-hidden="true"
+              className="text-[0.625rem] font-medium text-[#55565a]"
+            >
+              一覧を表示 / 折りたたむ
+            </span>
+          </summary>
+          <div className="flex justify-end px-3 pb-1">
+            <button
+              type="button"
+              onClick={() => void loadInvitations()}
+              disabled={!canManage || invitationsLoading}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-[#e1e1e4] bg-white px-2 text-[0.6875rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] disabled:opacity-50"
+            >
+              {invitationsLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+              再読み込み
+            </button>
+          </div>
+          <div className="px-3 pb-3">
+            {!canManage ? (
+              <p className="text-[0.6875rem] text-[#55565a]">
+                招待の作成・再送・取消は sys_admin のみ実行できます。
+              </p>
+            ) : invitations.length === 0 ? (
+              <p
+                data-testid="guest-invitation-empty"
+                className="rounded-xl border border-dashed border-[#d7d7dc] px-3 py-4 text-center text-[0.6875rem] text-[#55565a]"
+              >
+                ゲスト招待はまだありません。フォルダ権限画面または招待 API から作成できます。
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[40rem] border-collapse text-left text-[0.6875rem]">
+                  <thead>
+                    <tr className="border-b border-[#e7e7ea] text-[#55565a]">
+                      <th className="py-1.5 pr-3 font-medium">メール</th>
+                      <th className="py-1.5 pr-3 font-medium">共有対象</th>
+                      <th className="py-1.5 pr-3 font-medium">ロール</th>
+                      <th className="py-1.5 pr-3 font-medium">状態</th>
+                      <th className="py-1.5 pr-3 font-medium">有効期限</th>
+                      <th className="py-1.5 font-medium">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invitations.map((invitation) => (
+                      <tr
+                        key={invitation.id}
+                        data-testid="guest-invitation-row"
+                        className="border-b border-[#f2f2f4] align-middle"
                       >
-                        {guestInvitationStatusLabel(invitation.status)}
-                      </span>
-                    </td>
-                    <td className="py-1.5 pr-3 text-[#3c3f46]">
-                      {new Date(invitation.expiresAt).toLocaleString('ja-JP')}
-                    </td>
-                    <td className="py-1.5">
-                      <div className="flex gap-1.5">
-                        {invitation.status === 'pending' && (
-                          <button
-                            type="button"
-                            data-testid={`guest-invitation-resend-${invitation.id}`}
-                            onClick={() => void handleResend(invitation.id)}
-                            disabled={Boolean(busyInvitationId)}
-                            className="rounded border border-[#d7d7dc] bg-white px-1.5 py-0.5 text-[0.625rem] font-medium text-[#3c3f46] hover:bg-[#f2f2f4] disabled:opacity-50"
+                        <td className="py-1.5 pr-3 text-[#111214]">
+                          <span className="block font-medium">{invitation.email}</span>
+                          <span className="block text-[0.625rem] text-[#55565a]">
+                            {invitation.externalOrg ?? '外部組織未設定'}
+                          </span>
+                        </td>
+                        <td className="py-1.5 pr-3 text-[#3c3f46]">
+                          {invitation.targetName ??
+                            `${invitation.targetType}:${invitation.targetId.slice(0, 8)}`}
+                        </td>
+                        <td className="py-1.5 pr-3 font-mono text-[0.625rem] text-[#3c3f46]">
+                          {invitation.role}
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          <span
+                            className={`inline-flex rounded-full px-1.5 py-0.5 text-[0.625rem] font-medium ${
+                              invitation.status === 'pending'
+                                ? 'bg-blue-50 text-blue-700'
+                                : invitation.status === 'accepted'
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : 'bg-slate-100 text-slate-600'
+                            }`}
                           >
-                            再送
-                          </button>
-                        )}
-                        {(invitation.status === 'pending' ||
-                          invitation.status === 'accepted') && (
-                          <button
-                            type="button"
-                            data-testid={`guest-invitation-revoke-${invitation.id}`}
-                            onClick={() => void handleRevoke(invitation.id)}
-                            disabled={Boolean(busyInvitationId)}
-                            className="rounded border border-red-200 bg-white px-1.5 py-0.5 text-[0.625rem] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-                          >
-                            取消
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                            {guestInvitationStatusLabel(invitation.status)}
+                          </span>
+                        </td>
+                        <td className="py-1.5 pr-3 text-[#3c3f46]">
+                          {new Date(invitation.expiresAt).toLocaleString('ja-JP')}
+                        </td>
+                        <td className="py-1.5">
+                          <div className="flex gap-1.5">
+                            {invitation.status === 'pending' && (
+                              <button
+                                type="button"
+                                data-testid={`guest-invitation-resend-${invitation.id}`}
+                                onClick={() => void handleResend(invitation.id)}
+                                disabled={Boolean(busyInvitationId)}
+                                className="rounded border border-[#d7d7dc] bg-white px-1.5 py-0.5 text-[0.625rem] font-medium text-[#3c3f46] hover:bg-[#f2f2f4] disabled:opacity-50"
+                              >
+                                再送
+                              </button>
+                            )}
+                            {(invitation.status === 'pending' ||
+                              invitation.status === 'accepted') && (
+                              <button
+                                type="button"
+                                data-testid={`guest-invitation-revoke-${invitation.id}`}
+                                onClick={() => void handleRevoke(invitation.id)}
+                                disabled={Boolean(busyInvitationId)}
+                                className="rounded border border-red-200 bg-white px-1.5 py-0.5 text-[0.625rem] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                              >
+                                取消
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {invitationError && (
+              <div
+                role="alert"
+                className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[0.625rem] text-red-700"
+              >
+                {invitationError}
+              </div>
+            )}
+            {invitationNotice && (
+              <div
+                role="status"
+                className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[0.625rem] text-emerald-800"
+              >
+                {invitationNotice}
+              </div>
+            )}
           </div>
-        )}
-        {invitationError && (
-          <div
-            role="alert"
-            className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[0.625rem] text-red-700"
-          >
-            {invitationError}
-          </div>
-        )}
-        {invitationNotice && (
-          <div
-            role="status"
-            className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[0.625rem] text-emerald-800"
-          >
-            {invitationNotice}
-          </div>
-        )}
+        </details>
       </div>
     </section>
   );
