@@ -63,7 +63,9 @@ export function WorkspaceActionOverlays({
   user,
   syncStore,
   isTargetLocked = false,
+  isTargetFavorited = false,
   onToggleLock,
+  onToggleFavorite,
   onContextAction,
   onCloseContextMenu,
   onBackgroundAction,
@@ -92,7 +94,9 @@ export function WorkspaceActionOverlays({
   user: AuthUser | null;
   syncStore: WorkspaceSyncStore;
   isTargetLocked?: boolean;
+  isTargetFavorited?: boolean;
   onToggleLock?: (row: ContextRowTarget) => void;
+  onToggleFavorite?: (row: ContextRowTarget) => void;
   onContextAction: (
     action: ContextMenuActionId,
     row: ContextRowTarget,
@@ -142,8 +146,10 @@ export function WorkspaceActionOverlays({
             capabilities={capabilities}
             clipboardCount={clip?.items.length ?? 0}
             isTargetLocked={isTargetLocked}
+            isTargetFavorited={isTargetFavorited}
             returnFocus={contextMenu.trigger}
             onToggleLock={onToggleLock}
+            onToggleFavorite={onToggleFavorite}
             onAction={(action) =>
               onContextAction(
                 action,

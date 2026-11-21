@@ -25,7 +25,16 @@ import { WorkspaceMainHeader } from '@/components/WorkspaceMainHeader';
 import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
 import { WorkspacePermissionBanner } from '@/components/WorkspacePermissionBanner';
+import { WorkspaceFavoritesView } from '@/components/WorkspaceFavoritesView';
+import { WorkspaceRecentsView } from '@/components/WorkspaceRecentsView';
 import { WorkspaceSharedItemsView } from '@/components/WorkspaceSharedItemsView';
+import {
+  addFavorite,
+  buildFavoriteKey,
+  listFavorites,
+  removeFavorite,
+  touchRecentItem,
+} from '@/lib/files-api/favorites-recents';
 import { WorkspaceTrashFilters } from '@/components/WorkspaceTrashFilters';
 import { WorkspaceUtilityOverlays } from '@/components/WorkspaceUtilityOverlays';
 import {
@@ -183,6 +192,78 @@ export function WorkspaceFileBrowser() {
    */
   const isSharedView =
     viewParam === 'shared' || (isGuestUser && !folderId && !isTrashView);
+  const isRecentsView = !isGuestUser && viewParam === 'recents';
+  const isFavoritesView = !isGuestUser && viewParam === 'favorites';
+
+  const [favoriteKeys, setFavoriteKeys] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!user || isGuestUser) {
+      setFavoriteKeys(new Set());
+      return;
+    }
+    const controller = new AbortController();
+    void listFavorites(controller.signal)
+      .then((res) => {
+        setFavoriteKeys(
+          new Set(res.items.map((item) => buildFavoriteKey(item.itemType, item.id)))
+        );
+      })
+      .catch(() => {
+        // Non-blocking preload for context menu star state.
+      });
+    return () => controller.abort();
+  }, [user, isGuestUser]);
+
+  useEffect(() => {
+    if (
+      !user ||
+      !folderId ||
+      isTrashView ||
+      isSharedView ||
+      isRecentsView ||
+      isFavoritesView
+    ) {
+      return;
+    }
+    void touchRecentItem('folder', folderId, 'view').catch(() => {});
+  }, [user, folderId, isTrashView, isSharedView, isRecentsView, isFavoritesView]);
+
+  const handleToggleFavorite = useCallback(
+    async (row: WorkspaceTableRow) => {
+      const itemType = row.kind;
+      const itemId = row.kind === 'folder' ? row.folder.id : row.file.id;
+      const itemName = row.kind === 'folder' ? row.folder.name : row.file.name;
+      const key = buildFavoriteKey(itemType, itemId);
+      const currentlyFavorited = favoriteKeys.has(key);
+      try {
+        if (currentlyFavorited) {
+          await removeFavorite(itemType, itemId);
+          setFavoriteKeys((prev) => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
+          syncStore.pushToast({
+            kind: 'info',
+            message: `「${itemName}」をお気に入りから解除しました`,
+          });
+        } else {
+          await addFavorite(itemType, itemId);
+          setFavoriteKeys((prev) => new Set(prev).add(key));
+          syncStore.pushToast({
+            kind: 'info',
+            message: `「${itemName}」をお気に入りに追加しました`,
+          });
+        }
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'お気に入りの更新に失敗しました'
+        );
+      }
+    },
+    [favoriteKeys, syncStore, setError]
+  );
 
 
   const currentFolder = isTrashView ? null : directory.folder;
@@ -912,6 +993,7 @@ export function WorkspaceFileBrowser() {
         );
         return;
       }
+      void touchRecentItem('file', file.id, 'view').catch(() => {});
       window.open(
         `/workspace/file/${encodeURIComponent(file.id)}`,
         '_blank'
@@ -1316,6 +1398,59 @@ export function WorkspaceFileBrowser() {
           void syncStore.adoptAuthenticatedUser(signedIn);
         }}
       />
+    );
+  }
+
+  if (isRecentsView || isFavoritesView) {
+    return (
+      <div className="flex min-h-screen bg-[#efeff1] text-[#111214]">
+        <AppShellRail
+          user={user}
+          activeView={isRecentsView ? 'recents' : 'favorites'}
+          activeFolderId={null}
+          onSelectResult={handleSearchSelect}
+          onSelectFolder={(targetFolderId) =>
+            router.push(`/workspace?folderId=${encodeURIComponent(targetFolderId)}`)
+          }
+        />
+        <main
+          id="workspace-main"
+          tabIndex={-1}
+          className="mb-2 mr-2 mt-2 min-w-0 flex-1 space-y-4 rounded-2xl border border-[#e7e7ea] bg-[#f9f9fa] px-5 py-4 lg:px-7"
+        >
+          {isRecentsView ? (
+            <WorkspaceRecentsView
+              onOpenFolder={(targetFolderId) =>
+                router.push(
+                  `/workspace?folderId=${encodeURIComponent(targetFolderId)}`
+                )
+              }
+              onOpenFile={(fileId) => {
+                void touchRecentItem('file', fileId, 'view').catch(() => {});
+                window.open(
+                  `/workspace/file/${encodeURIComponent(fileId)}`,
+                  '_blank'
+                );
+              }}
+            />
+          ) : (
+            <WorkspaceFavoritesView
+              onOpenFolder={(targetFolderId) =>
+                router.push(
+                  `/workspace?folderId=${encodeURIComponent(targetFolderId)}`
+                )
+              }
+              onOpenFile={(fileId) => {
+                void touchRecentItem('file', fileId, 'view').catch(() => {});
+                window.open(
+                  `/workspace/file/${encodeURIComponent(fileId)}`,
+                  '_blank'
+                );
+              }}
+            />
+          )}
+        </main>
+      </div>
     );
   }
 
@@ -1895,10 +2030,25 @@ export function WorkspaceFileBrowser() {
         user={user}
         syncStore={syncStore}
         isTargetLocked={Boolean(contextMenuFileLock)}
+        isTargetFavorited={
+          contextMenu?.row
+            ? favoriteKeys.has(
+                buildFavoriteKey(
+                  contextMenu.row.kind,
+                  contextMenu.row.kind === 'folder'
+                    ? contextMenu.row.folder.id
+                    : contextMenu.row.file.id
+                )
+              )
+            : false
+        }
         onToggleLock={(row) => {
           if (row.kind === 'file') {
             void toggleContextMenuFileLock();
           }
+        }}
+        onToggleFavorite={(row) => {
+          void handleToggleFavorite(row);
         }}
         onContextAction={handleContextMenuAction}
         onCloseContextMenu={() => setContextMenu(null)}

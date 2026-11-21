@@ -17,6 +17,7 @@ import {
   Pin,
   Scissors,
   Shield,
+  Star,
   Tag,
   Trash2,
   Unlock,
@@ -50,6 +51,7 @@ export type ContextMenuActionId =
   | 'inspector'
   | 'versionHistory'
   | 'toggleLock'
+  | 'toggleFavorite'
   | 'trash';
 
 export function WorkspaceContextMenu({
@@ -59,8 +61,10 @@ export function WorkspaceContextMenu({
   capabilities,
   clipboardCount,
   isTargetLocked = false,
+  isTargetFavorited = false,
   returnFocus = null,
   onToggleLock,
+  onToggleFavorite,
   onAction,
   onClose,
 }: {
@@ -70,8 +74,10 @@ export function WorkspaceContextMenu({
   capabilities: ContextMenuCapabilities;
   clipboardCount: number;
   isTargetLocked?: boolean;
+  isTargetFavorited?: boolean;
   returnFocus?: HTMLElement | null;
   onToggleLock?: (row: ContextRowTarget) => void;
+  onToggleFavorite?: (row: ContextRowTarget) => void;
   onAction: (action: ContextMenuActionId) => void;
   onClose: () => void;
 }) {
@@ -252,6 +258,18 @@ export function WorkspaceContextMenu({
           enabled: capabilities.canPin,
         });
       }
+      if (onToggleFavorite) {
+        organizeChildren.push({
+          id: 'toggleFavorite',
+          label: isTargetFavorited ? 'お気に入りから解除' : 'お気に入りに追加',
+          icon: (
+            <Star
+              className={`h-3.5 w-3.5 ${isTargetFavorited ? 'fill-[#f59e0b] text-[#f59e0b]' : ''}`}
+            />
+          ),
+          enabled: true,
+        });
+      }
       list.push({
         id: 'moveCopy',
         label: '整理',
@@ -321,6 +339,8 @@ export function WorkspaceContextMenu({
     clipboardCount,
     isPinnedFolder,
     isTargetLocked,
+    isTargetFavorited,
+    onToggleFavorite,
   ]);
 
   return (
@@ -346,6 +366,14 @@ export function WorkspaceContextMenu({
             onToggleLock(primaryRow);
           } else {
             onAction('inspector');
+          }
+          return;
+        }
+        if (action === 'toggleFavorite') {
+          if (onToggleFavorite && primaryRow) {
+            onToggleFavorite(primaryRow);
+          } else {
+            onAction('toggleFavorite');
           }
           return;
         }

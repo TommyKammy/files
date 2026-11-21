@@ -1,6 +1,6 @@
 'use client';
 
-import { FolderOpen, LogOut, Search, Share2, ShieldAlert, Trash2 } from 'lucide-react';
+import { Clock, FolderOpen, LogOut, Search, Share2, ShieldAlert, Star, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -32,7 +32,7 @@ export function AppShellRail({
   workspaceActions,
 }: {
   user: AuthUser | null;
-  activeView?: 'workspace' | 'trash' | 'admin' | 'shared' | 'search';
+  activeView?: 'workspace' | 'trash' | 'admin' | 'shared' | 'search' | 'recents' | 'favorites';
   activeFolderId?: string | null;
   onSelectResult?: (item: SearchResultItem) => void;
   onSelectFolder?: (folderId: string) => void;
@@ -170,6 +170,30 @@ export function AppShellRail({
                 </Link>
 
                 <Link
+                  href="/workspace?view=recents"
+                  className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
+                    resolvedView === 'recents'
+                      ? 'bg-[#e2e2e6] text-[#111214]'
+                      : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
+                  }`}
+                >
+                  <Clock className="h-4 w-4 text-[#676b72]" />
+                  <span>最近使用した項目</span>
+                </Link>
+
+                <Link
+                  href="/workspace?view=favorites"
+                  className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
+                    resolvedView === 'favorites'
+                      ? 'bg-[#e2e2e6] text-[#111214]'
+                      : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
+                  }`}
+                >
+                  <Star className="h-4 w-4 text-[#676b72]" />
+                  <span>お気に入り</span>
+                </Link>
+
+                <Link
                   href="/workspace/search"
                   className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
                     resolvedView === 'search'
@@ -261,7 +285,11 @@ export function AppShellRail({
         <CommandPalette
           open={searchOpen}
           user={user}
-          activeView={resolvedView}
+          activeView={
+            resolvedView === 'recents' || resolvedView === 'favorites'
+              ? 'workspace'
+              : resolvedView
+          }
           workspaceActions={workspaceActions}
           onSelectResult={onSelectResult}
           onSelectFolder={onSelectFolder}
