@@ -1,6 +1,7 @@
 import { buildAuditLogStmt } from '../../services/audit';
 import { buildClassificationChangeStatements } from '../../services/classification-updater';
 import { extractClassificationContext } from '../../services/excerpt-extractor';
+import { evaluateDlpRulesForFile } from '../../services/dlp-scanner';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { extractLastSyncSeq, notifyTenantSyncHub } from '../../services/sync-notifier';
 import { classifyWithLlm, LlmQuotaExceededError } from '../../services/llm-classifier';
@@ -48,6 +49,21 @@ export async function handleClassifyFile(
   const ctx = await extractClassificationContext(env.DB, env.BUCKET, msg);
   if (!ctx || ctx.mode === 'disabled') {
     return 'ack';
+  }
+
+  // DLP rules (non-blocking): failures must never break classification.
+  try {
+    const dlp = await evaluateDlpRulesForFile(env.DB, msg.tenantId, {
+      fileId: msg.fileId,
+      fileName: ctx.fileName,
+      excerpt: ctx.excerpt,
+      actorId: null,
+    });
+    if (dlp.escalated) {
+      return 'ack';
+    }
+  } catch {
+    // swallow
   }
 
   const nowIso = new Date().toISOString();

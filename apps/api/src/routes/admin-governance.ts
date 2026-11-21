@@ -10,6 +10,7 @@ import type { OidcHonoEnv } from '../types/oidc';
 import { registerAiSuggestionRoutes } from './admin/ai-suggestions';
 import { registerAdminContentRoutes } from './admin/content';
 import { registerAdminDelegationRoutes } from './admin/delegations';
+import { registerAdminDlpAlertRoutes } from './admin/dlp-alerts';
 import { registerAdminFileRequestRoutes } from './admin/file-requests';
 import { registerAdminGroupRoutes } from './admin/groups';
 import { registerAdminGuestRoutes } from './admin/guests';
@@ -188,6 +189,26 @@ guards.use(
   '/policies/inheritance-conflicts',
   requireAdminCapabilityForMethods('admin.policies.read', ['GET'])
 );
+guards.use(
+  '/dlp-rules',
+  requireAdminCapabilityForMethods('admin.policies.read', ['GET'])
+);
+guards.use(
+  '/dlp-rules/*',
+  requireAdminCapabilityForMethods('admin.policies.edit', ['POST', 'PATCH', 'DELETE'])
+);
+guards.use(
+  '/dlp-rules',
+  requireAdminCapabilityForMethods('admin.policies.edit', ['POST'])
+);
+guards.use(
+  '/security-alerts',
+  requireAdminCapabilityForMethods('admin.insights.read', ['GET'])
+);
+guards.use(
+  '/security-alerts/*',
+  requireAdminCapabilityForMethods('admin.policies.edit', ['PATCH'])
+);
 guards.use('/tos', requireAdminCapabilityForMethods('admin.policies.read', ['GET']));
 guards.use('/tos', requireAdminCapabilityForMethods('admin.policies.edit', ['PUT']));
 guards.use('/siem', requireAdminCapabilityForMethods('admin.policies.read', ['GET']));
@@ -285,6 +306,7 @@ registerAdminContentRoutes(adminGovernanceRoutes);
 registerAdminSharedLinkRoutes(adminGovernanceRoutes);
 registerAdminPolicyRoutes(adminGovernanceRoutes);
 registerAdminTosRoutes(adminGovernanceRoutes);
+registerAdminDlpAlertRoutes(adminGovernanceRoutes);
 registerAdminSiemRoutes(adminGovernanceRoutes);
 registerAdminFileRequestRoutes(adminGovernanceRoutes);
 registerAdminSsoRoutes(adminGovernanceRoutes);

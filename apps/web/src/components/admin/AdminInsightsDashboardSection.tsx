@@ -11,6 +11,7 @@ import {
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
+import { AdminDlpAlertsSection } from '@/components/admin/AdminDlpAlertsSection';
 import { StorageStatsSection } from '@/components/admin/StorageStatsSection';
 import { AdminQuotaWarningBanner } from '@/components/admin/AdminQuotaWarningBanner';
 import {
@@ -240,6 +241,8 @@ export function AdminInsightsDashboardSection({
       {effectiveStats && (
         <StorageStatsSection stats={effectiveStats} usedPct={effectiveUsedPct} />
       )}
+
+      <AdminDlpAlertsSection />
 
       {loading && !insights && (
         <div
