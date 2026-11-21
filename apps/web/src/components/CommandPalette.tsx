@@ -27,7 +27,7 @@ export function CommandPalette({
 }: {
   open: boolean;
   user: AuthUser | null;
-  activeView: 'workspace' | 'trash' | 'admin' | 'shared';
+  activeView: 'workspace' | 'trash' | 'admin' | 'shared' | 'search';
   workspaceActions?: WorkspacePaletteActions;
   onSelectResult?: (item: SearchResultItem) => void;
   onSelectFolder?: (folderId: string) => void;
@@ -44,6 +44,7 @@ export function CommandPalette({
     entries,
     handleInputKeyDown,
     handleExecuteEntry,
+    handleOpenFullSearch,
   } = useCommandPalette({
     open,
     user,
@@ -195,7 +196,11 @@ export function CommandPalette({
               );
             }
 
-            if (entry.kind === 'local-folder') {
+            if (entry.kind === 'local-folder' || entry.kind === 'remote-folder') {
+              const isLocal = entry.kind === 'local-folder';
+              const subtitle = isLocal
+                ? `${entry.pathHint} • フォルダ`
+                : `${entry.folder.parentName ?? 'Root'} • フォルダ`;
               return (
                 <button
                   key={entry.key}
@@ -216,12 +221,18 @@ export function CommandPalette({
                         <span className="truncate text-[0.8125rem] font-medium text-[#111214]">
                           {entry.folder.name}
                         </span>
-                        <span className="rounded bg-[#eef7f1] px-1 py-0.5 text-[0.625rem] font-medium text-[#2f7a52]">
-                          キャッシュ即応
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[0.625rem] font-medium ${
+                            isLocal
+                              ? 'bg-[#eef7f1] text-[#2f7a52]'
+                              : 'bg-[#f4f4f5] text-[#55565a]'
+                          }`}
+                        >
+                          {isLocal ? 'キャッシュ即応' : 'フォルダ'}
                         </span>
                       </div>
                       <div className="truncate text-[0.6875rem] text-[#3c3f46]">
-                        {entry.pathHint} • フォルダ
+                        {subtitle}
                       </div>
                     </div>
                   </div>
@@ -282,7 +293,14 @@ export function CommandPalette({
 
       <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-4 py-2 text-[0.6875rem] text-slate-500">
         <span>↑/↓ で移動 • Enter で実行 • Esc で閉じる</span>
-        <span className="font-mono">0ms ローカル + FTS5</span>
+        <button
+          type="button"
+          onClick={handleOpenFullSearch}
+          className="inline-flex items-center gap-1 rounded px-2 py-0.5 font-medium text-[#4f5ac2] transition hover:bg-[#eef0fb]"
+        >
+          <span>すべての検索結果を表示（詳細検索）</span>
+          <ChevronRight className="h-3 w-3" />
+        </button>
       </div>
     </ModalShell>
   );

@@ -140,9 +140,9 @@ describe('⌘K FTS5 Cross-Workspace Search & RBAC Filtering (TOM-12)', () => {
     const bodyLabel = (await resOnlyLabel.json()) as { results: Array<{ id: string }> };
     expect(bodyLabel.results.map((r) => r.id)).toEqual(['sr-a-2']);
 
-    // 4. User B searches "secret" -> sees max 20 (LIMIT 20 cap) from Executive Vault
+    // 4. User B searches "secret" with limit=20 -> sees 20 from Executive Vault
     const resB = await app.fetch(
-      new Request('http://127.0.0.1:8787/api/search?q=secret', {
+      new Request('http://127.0.0.1:8787/api/search?q=secret&limit=20', {
         headers: authHeaders('sr-user-b'),
       }),
       testEnv

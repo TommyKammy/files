@@ -32,7 +32,7 @@ export function AppShellRail({
   workspaceActions,
 }: {
   user: AuthUser | null;
-  activeView?: 'workspace' | 'trash' | 'admin' | 'shared';
+  activeView?: 'workspace' | 'trash' | 'admin' | 'shared' | 'search';
   activeFolderId?: string | null;
   onSelectResult?: (item: SearchResultItem) => void;
   onSelectFolder?: (folderId: string) => void;
@@ -50,7 +50,9 @@ export function AppShellRail({
   const resolvedView =
     activeView === 'admin' || pathname.startsWith('/admin')
       ? 'admin'
-      : (activeView ?? 'workspace');
+      : activeView === 'search' || pathname.startsWith('/workspace/search')
+        ? 'search'
+        : (activeView ?? 'workspace');
   const isGuest = user?.userType === 'guest';
   // TOM-73: sys_admin / sec_admin plus members holding an active Co-Admin
   // delegation see the governance entry point. Guests never do.
@@ -165,6 +167,18 @@ export function AppShellRail({
                 >
                   <Share2 className="h-4 w-4 text-[#676b72]" />
                   <span>共有アイテム</span>
+                </Link>
+
+                <Link
+                  href="/workspace/search"
+                  className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
+                    resolvedView === 'search'
+                      ? 'bg-[#e2e2e6] text-[#111214]'
+                      : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
+                  }`}
+                >
+                  <Search className="h-4 w-4 text-[#676b72]" />
+                  <span>詳細検索</span>
                 </Link>
 
                 <Link

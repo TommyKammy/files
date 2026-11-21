@@ -1,4 +1,5 @@
 import type { FolderSummary, SearchResultItem } from '@/types/files';
+import type { SearchFolderResultItem } from '@/lib/files-api/search';
 import { parseSearchQuery } from './search';
 
 export type PaletteCommandId =
@@ -38,6 +39,11 @@ export type PaletteEntry =
       key: string;
       folder: FolderSummary;
       pathHint: string;
+    }
+  | {
+      kind: 'remote-folder';
+      key: string;
+      folder: SearchFolderResultItem;
     }
   | {
       kind: 'file';
@@ -257,6 +263,7 @@ export function mergePaletteEntries(options: {
   commands: readonly PaletteCommand[];
   localFolders: ReadonlyArray<{ folder: FolderSummary; pathHint: string }>;
   localFiles: readonly SearchResultItem[];
+  remoteFolders?: readonly SearchFolderResultItem[];
   remoteResults: readonly SearchResultItem[];
   maxRecentLocal?: number;
 }): PaletteEntry[] {
@@ -276,6 +283,7 @@ export function mergePaletteEntries(options: {
   const trimmed = options.query.trim();
   const entries: PaletteEntry[] = [];
   const seenFileIds = new Set<string>();
+  const seenFolderIds = new Set<string>();
 
   if (!trimmed) {
     // Empty palette: show actions/navigation commands first, then recent cached folders/files in 0ms.
@@ -312,13 +320,25 @@ export function mergePaletteEntries(options: {
     return entries;
   }
 
-  // Query mode: instant 0ms local folder/file matches first, then FTS5 deduped hits, then matching commands.
+  // Query mode: instant 0ms local folder/file matches first, then server folders + FTS5 deduped hits, then matching commands.
   for (const item of options.localFolders) {
+    if (seenFolderIds.has(item.folder.id)) continue;
+    seenFolderIds.add(item.folder.id);
     entries.push({
       kind: 'local-folder',
       key: `local-folder:${item.folder.id}`,
       folder: item.folder,
       pathHint: item.pathHint,
+    });
+  }
+
+  for (const remoteFolder of options.remoteFolders ?? []) {
+    if (seenFolderIds.has(remoteFolder.id)) continue;
+    seenFolderIds.add(remoteFolder.id);
+    entries.push({
+      kind: 'remote-folder',
+      key: `remote-folder:${remoteFolder.id}`,
+      folder: remoteFolder,
     });
   }
 

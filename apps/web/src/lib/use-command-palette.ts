@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { logoutSession, searchWorkspaceFiles } from '@/lib/files-api';
+import {
+  logoutSession,
+  searchWorkspace,
+  type SearchFolderResultItem,
+} from '@/lib/files-api';
 import {
   buildPaletteCommands,
   isImeComposingEvent,
@@ -29,7 +33,7 @@ export function useCommandPalette({
 }: {
   open: boolean;
   user: AuthUser | null;
-  activeView: 'workspace' | 'trash' | 'admin' | 'shared';
+  activeView: 'workspace' | 'trash' | 'admin' | 'shared' | 'search';
   workspaceActions?: WorkspacePaletteActions;
   onSelectResult?: (item: SearchResultItem) => void;
   onSelectFolder?: (folderId: string) => void;
@@ -40,6 +44,7 @@ export function useCommandPalette({
   const snapshot = useWorkspaceSyncSnapshot();
   const [query, setQuery] = useState('');
   const [remoteResults, setRemoteResults] = useState<SearchResultItem[]>([]);
+  const [remoteFolders, setRemoteFolders] = useState<SearchFolderResultItem[]>([]);
   const [searching, setSearching] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -67,6 +72,7 @@ export function useCommandPalette({
     const trimmed = query.trim();
     if (!trimmed || trimmed.startsWith('>')) {
       setRemoteResults([]);
+      setRemoteFolders([]);
       setSearching(false);
       return;
     }
@@ -74,12 +80,18 @@ export function useCommandPalette({
     let cancelled = false;
     setSearching(true);
     const timer = window.setTimeout(() => {
-      searchWorkspaceFiles(trimmed, 20)
+      searchWorkspace({ q: trimmed, limit: 20 })
         .then((res) => {
-          if (!cancelled) setRemoteResults(res.results);
+          if (!cancelled) {
+            setRemoteResults(res.results);
+            setRemoteFolders(res.folders ?? []);
+          }
         })
         .catch(() => {
-          if (!cancelled) setRemoteResults([]);
+          if (!cancelled) {
+            setRemoteResults([]);
+            setRemoteFolders([]);
+          }
         })
         .finally(() => {
           if (!cancelled) setSearching(false);
@@ -130,9 +142,10 @@ export function useCommandPalette({
       commands,
       localFolders: localHits.folders,
       localFiles: localHits.files,
+      remoteFolders,
       remoteResults,
     });
-  }, [open, query, commands, localHits, remoteResults]);
+  }, [open, query, commands, localHits, remoteFolders, remoteResults]);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -229,7 +242,7 @@ export function useCommandPalette({
       handleExecuteCommand(entry.command);
       return;
     }
-    if (entry.kind === 'local-folder') {
+    if (entry.kind === 'local-folder' || entry.kind === 'remote-folder') {
       onClose();
       if (onSelectFolder) {
         onSelectFolder(entry.folder.id);
@@ -275,6 +288,17 @@ export function useCommandPalette({
     }
   }
 
+  const trimmedSearch = query.trim();
+  const fullSearchHref =
+    trimmedSearch && !trimmedSearch.startsWith('>')
+      ? `/workspace/search?q=${encodeURIComponent(trimmedSearch)}`
+      : '/workspace/search';
+
+  function handleOpenFullSearch() {
+    onClose();
+    router.push(fullSearchHref);
+  }
+
   return {
     inputRef,
     listRef,
@@ -283,8 +307,10 @@ export function useCommandPalette({
     searching,
     activeIndex,
     entries,
+    fullSearchHref,
     setActiveIndex,
     handleInputKeyDown,
     handleExecuteEntry,
+    handleOpenFullSearch,
   };
 }
