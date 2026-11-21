@@ -78,7 +78,7 @@ test.describe('Phase 1-3 Box parity features E2E', () => {
     // 2. Favorites & Collections view
     await admin.page.goto('/workspace?view=favorites');
     await expect(
-      admin.page.getByRole('heading', { name: 'お気に入り・コレクション' })
+      admin.page.getByRole('heading', { name: 'お気に入り & コレクション' })
     ).toBeVisible();
     await expect(admin.page.getByText(fileName)).toBeVisible();
 
@@ -297,17 +297,19 @@ test.describe('Phase 1-3 Box parity features E2E', () => {
     const tplKey = `tpl_${shortToken().toLowerCase()}`;
     const tplName = `E2Eテンプレート-${shortToken()}`;
     await admin.page
-      .getByRole('button', { name: /新規テンプレート|テンプレートを作成/ })
+      .getByRole('button', { name: 'テンプレート作成' })
       .click();
     await admin.page.locator('#meta-tpl-key').fill(tplKey);
     await admin.page.locator('#meta-tpl-display-name').fill(tplName);
+    await admin.page.getByPlaceholder('contract_no').first().fill('doc_ref');
+    await admin.page.getByPlaceholder('契約番号').first().fill('文書番号');
     await admin.page
       .getByRole('button', { name: /テンプレートを作成|保存/ })
       .click();
     await expect(admin.page.getByText(tplName)).toBeVisible();
 
     // 2. Visual Branding settings
-    await admin.page.goto('/admin/settings?tab=branding');
+    await admin.page.goto('/admin/settings?tab=compliance');
     const orgInput = admin.page.getByTestId('admin-branding-org-name');
     await expect(orgInput).toBeVisible();
     const accentInput = admin.page.getByTestId('admin-branding-accent-color');

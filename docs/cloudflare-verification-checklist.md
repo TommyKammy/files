@@ -6,7 +6,7 @@ Cloudflare Workers (`files-api` + OpenNext `files-web`) へ Staging / Production
 
 ## 1. D1 マイグレーション (`0001`–`0032`)
 
-`apps/api/migrations/` に `0001_initial.sql` 〜 `0032_visual_branding.sql` が揃っていることを確認し、リモート D1 へ適用します。
+`apps/api/migrations/` に `0001_initial_schema.sql` 〜 `0032_visual_branding.sql` が揃っていることを確認し、リモート D1 へ適用します。
 
 ```bash
 # 1. マイグレーション一覧と適用状況の確認 (Staging)
@@ -111,4 +111,4 @@ pnpm --filter @files/web run deploy:staging
 | 公開共有リンク & サブフォルダ | フォルダ共有リンク `/s/:token` をシークレットウィンドウで開く | Branding 表示、サブフォルダ遷移、一括 ZIP ダウンロード成功 |
 | 公開ファイルリクエスト + Turnstile | `/fr/:token` を開き Turnstile 通過後にファイル提出 | `200 OK`、未認証/不正トークン時は `403 TURNSTILE_FAILED` |
 | メール通知 Webhook | コメント `@mention` またはタスク割当を実行 | `MAIL_WEBHOOK_URL` へ通知ペイロードが送信される |
-| Admin Console | `/admin/content?tab=metadata-templates` と `/admin/settings?tab=branding` | テンプレート作成とロゴ/アクセントカラー保存が反映される |
+| Admin Console | `/admin/content?tab=metadata-templates` と `/admin/settings?tab=compliance` | テンプレート作成とロゴ/アクセントカラー保存が反映される |
