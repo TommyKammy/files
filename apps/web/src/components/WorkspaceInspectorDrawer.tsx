@@ -25,6 +25,7 @@ import {
   InspectorActivityPanel,
   InspectorCommentsPanel,
 } from '@/components/InspectorCommentsActivityPanels';
+import { InspectorTagsMetadataSection } from '@/components/InspectorTagsMetadataSection';
 import { InspectorTasksPanel } from '@/components/InspectorTasksPanel';
 import { canAccess } from '@/lib/capabilities';
 import type { InspectorTab } from '@/lib/files-api/comments-activity';
@@ -143,6 +144,9 @@ export function WorkspaceInspectorDrawer({
     isPrivilegedAdmin || canAccess(targetAccess, 'item.download');
   const canEditContent =
     isPrivilegedAdmin || canAccess(targetAccess, 'item.edit_content');
+  const canEditTagsMetadata =
+    isPrivilegedAdmin ||
+    canAccess(targetAccess, isFolder ? 'folder.rename' : 'item.edit_content');
   const canCreateTask =
     isPrivilegedAdmin ||
     canAccess(targetAccess, isFolder ? 'folder.create' : 'item.edit_content');
@@ -406,6 +410,12 @@ export function WorkspaceInspectorDrawer({
           </div>
         </dl>
       </section>
+
+      <InspectorTagsMetadataSection
+        itemType={itemType}
+        itemId={item.id}
+        canEdit={canEditTagsMetadata}
+      />
 
       <section className="space-y-1.5 pt-1 text-xs">
         <h3 className="text-[0.6875rem] font-semibold uppercase tracking-wide text-slate-500">
