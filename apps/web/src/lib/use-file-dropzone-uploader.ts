@@ -19,6 +19,8 @@ export interface UploadQueueItem {
   localId: string;
   fileName: string;
   relativePath?: string;
+  folderPath?: string;
+  folderResolved: boolean;
   file: File;
   targetFolderId: string;
   sizeBytes: number;
@@ -166,6 +168,8 @@ export function useFileDropzoneUploader({
             localId: crypto.randomUUID(),
             fileName: entry.file.name,
             relativePath: entry.relativePath,
+            folderPath: entry.folderPath,
+            folderResolved: entry.folderPath === '',
             file: entry.file,
             targetFolderId: folderId,
             sizeBytes: entry.file.size,
@@ -198,6 +202,8 @@ export function useFileDropzoneUploader({
           localId,
           fileName: entry.file.name,
           relativePath: entry.relativePath,
+          folderPath: entry.folderPath,
+          folderResolved: true,
           file: entry.file,
           targetFolderId,
           sizeBytes: entry.file.size,
@@ -225,9 +231,17 @@ export function useFileDropzoneUploader({
   const enqueueDataTransfer = useCallback(
     (dataTransfer: DataTransfer | null) => {
       if (!dataTransfer || disabled) return;
-      // Extract FileSystemEntry handles synchronously before DataTransfer clears.
+      // Extract FileSystemEntry handles and fallback files synchronously before DataTransfer clears.
+      const fallbackFiles = Array.from(dataTransfer.files ?? []);
       const treePromise = extractUploadEntriesFromDataTransfer(dataTransfer);
-      void treePromise.then((tree) => processExtractedTree(tree));
+      void treePromise
+        .then((tree) => processExtractedTree(tree))
+        .catch(() => {
+          if (fallbackFiles.length === 0) return;
+          const fallbackTree = extractUploadEntriesFromFileList(fallbackFiles);
+          return processExtractedTree(fallbackTree);
+        })
+        .catch(() => undefined);
     },
     [disabled, processExtractedTree]
   );
@@ -267,6 +281,65 @@ export function useFileDropzoneUploader({
           : q
       )
     );
+
+    if (!item.folderResolved && item.folderPath) {
+      const folderPath = item.folderPath;
+      void ensureFolderTree({
+        rootFolderId: item.targetFolderId,
+        folderPaths: [folderPath],
+      })
+        .then((folderIdByPath) => {
+          if (controller.signal.aborted) {
+            setQueue((prev) =>
+              prev.map((q) =>
+                q.localId === item.localId
+                  ? {
+                      ...q,
+                      status: 'cancelled',
+                      errorMessage: 'キャンセルされました',
+                    }
+                  : q
+              )
+            );
+            return;
+          }
+          const resolvedFolderId =
+            folderIdByPath.get(folderPath) ?? item.targetFolderId;
+          setQueue((prev) =>
+            prev.map((q) =>
+              q.localId === item.localId
+                ? {
+                    ...q,
+                    targetFolderId: resolvedFolderId,
+                    folderResolved: true,
+                  }
+                : q
+            )
+          );
+          runUploadTask(item.localId, item.file, resolvedFolderId, controller);
+        })
+        .catch((err) => {
+          const message =
+            err instanceof ApiClientError
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : 'フォルダの作成に失敗しました';
+          setQueue((prev) =>
+            prev.map((q) =>
+              q.localId === item.localId
+                ? {
+                    ...q,
+                    status: 'error',
+                    errorMessage: `フォルダ作成エラー: ${message}`,
+                  }
+                : q
+            )
+          );
+        });
+      return;
+    }
+
     runUploadTask(item.localId, item.file, item.targetFolderId, controller);
   }
 
