@@ -6,12 +6,21 @@ import {
   MULTIPART_THRESHOLD_BYTES,
   uploadWorkspaceFile,
 } from '@/lib/files-api';
+import {
+  ensureFolderTree,
+  extractUploadEntriesFromDataTransfer,
+  extractUploadEntriesFromFileList,
+  type ExtractedUploadTree,
+} from '@/lib/folder-upload-tree';
 import { getWorkspaceSyncStore } from '@/lib/sync-store';
 import type { FileItem, UploadTaskProgress } from '@/types/files';
 
-interface UploadQueueItem {
+export interface UploadQueueItem {
   localId: string;
   fileName: string;
+  relativePath?: string;
+  file: File;
+  targetFolderId: string;
   sizeBytes: number;
   mode: 'single' | 'multipart';
   status: 'uploading' | 'done' | 'cancelled' | 'error';
@@ -21,6 +30,8 @@ interface UploadQueueItem {
   errorMessage?: string;
   controller: AbortController;
 }
+
+const MAX_QUEUE_ITEMS = 50;
 
 export function useFileDropzoneUploader({
   folderId,
@@ -52,96 +63,173 @@ export function useFileDropzoneUploader({
   );
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
-  const enqueueFiles = useCallback(
-    (fileList: FileList | File[] | null) => {
-      if (!fileList || fileList.length === 0 || disabled) return;
-
+  const runUploadTask = useCallback(
+    (
+      localId: string,
+      file: File,
+      targetFolderId: string,
+      controller: AbortController
+    ) => {
       const syncStore = getWorkspaceSyncStore();
-      const files = Array.from(fileList);
-      for (const file of files) {
+      const optimisticId = `pending:${localId}`;
+
+      syncStore.startOptimisticUpload(targetFolderId, optimisticId, {
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
+      });
+
+      uploadWorkspaceFile({
+        folderId: targetFolderId,
+        file,
+        conflictPolicy,
+        signal: controller.signal,
+        onProgress: (progress: UploadTaskProgress) => {
+          syncStore.updateOptimisticUploadProgress(
+            optimisticId,
+            progress.percent
+          );
+          setQueue((prev) =>
+            prev.map((q) =>
+              q.localId === localId
+                ? {
+                    ...q,
+                    percent: progress.percent,
+                    completedParts: progress.completedParts,
+                    totalParts: progress.totalParts,
+                  }
+                : q
+            )
+          );
+        },
+      })
+        .then((res) => {
+          syncStore.completeOptimisticUpload(optimisticId, res.file);
+          setQueue((prev) =>
+            prev.map((q) =>
+              q.localId === localId
+                ? { ...q, status: 'done', percent: 100 }
+                : q
+            )
+          );
+          onUploaded?.(res.file);
+        })
+        .catch((err) => {
+          syncStore.failOrCancelOptimisticUpload(optimisticId);
+          const isAbort =
+            err instanceof DOMException && err.name === 'AbortError';
+          setQueue((prev) =>
+            prev.map((q) =>
+              q.localId === localId
+                ? {
+                    ...q,
+                    status: isAbort ? 'cancelled' : 'error',
+                    errorMessage: isAbort
+                      ? 'キャンセルされました'
+                      : err instanceof ApiClientError
+                        ? err.message
+                        : err instanceof Error
+                          ? err.message
+                          : 'アップロードに失敗しました',
+                  }
+                : q
+            )
+          );
+        });
+    },
+    [conflictPolicy, onUploaded]
+  );
+
+  const processExtractedTree = useCallback(
+    async (tree: ExtractedUploadTree) => {
+      if (tree.files.length === 0 && tree.folderPaths.length === 0) {
+        return;
+      }
+
+      let folderIdByPath = new Map<string, string>([['', folderId]]);
+      if (tree.folderPaths.length > 0) {
+        try {
+          folderIdByPath = await ensureFolderTree({
+            rootFolderId: folderId,
+            folderPaths: tree.folderPaths,
+          });
+        } catch (err) {
+          const message =
+            err instanceof ApiClientError
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : 'フォルダの作成に失敗しました';
+          const failedItems: UploadQueueItem[] = tree.files.map((entry) => ({
+            localId: crypto.randomUUID(),
+            fileName: entry.file.name,
+            relativePath: entry.relativePath,
+            file: entry.file,
+            targetFolderId: folderId,
+            sizeBytes: entry.file.size,
+            mode:
+              entry.file.size >= MULTIPART_THRESHOLD_BYTES
+                ? 'multipart'
+                : 'single',
+            status: 'error',
+            percent: 0,
+            errorMessage: `フォルダ作成エラー: ${message}`,
+            controller: new AbortController(),
+          }));
+          if (failedItems.length > 0) {
+            setQueue((prev) =>
+              [...failedItems.reverse(), ...prev].slice(0, MAX_QUEUE_ITEMS)
+            );
+          }
+          return;
+        }
+      }
+
+      for (const entry of tree.files) {
         const localId = crypto.randomUUID();
-        const optimisticId = `pending:${localId}`;
         const controller = new AbortController();
+        const targetFolderId = folderIdByPath.get(entry.folderPath) ?? folderId;
         const mode: 'single' | 'multipart' =
-          file.size >= MULTIPART_THRESHOLD_BYTES ? 'multipart' : 'single';
+          entry.file.size >= MULTIPART_THRESHOLD_BYTES ? 'multipart' : 'single';
 
         const newItem: UploadQueueItem = {
           localId,
-          fileName: file.name,
-          sizeBytes: file.size,
+          fileName: entry.file.name,
+          relativePath: entry.relativePath,
+          file: entry.file,
+          targetFolderId,
+          sizeBytes: entry.file.size,
           mode,
           status: 'uploading',
           percent: 0,
           controller,
         };
-        setQueue((prev) => [newItem, ...prev.slice(0, 14)]);
-        syncStore.startOptimisticUpload(folderId, optimisticId, {
-          name: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          sizeBytes: file.size,
-        });
-
-        uploadWorkspaceFile({
-          folderId,
-          file,
-          conflictPolicy,
-          signal: controller.signal,
-          onProgress: (progress: UploadTaskProgress) => {
-            syncStore.updateOptimisticUploadProgress(
-              optimisticId,
-              progress.percent
-            );
-            setQueue((prev) =>
-              prev.map((q) =>
-                q.localId === localId
-                  ? {
-                      ...q,
-                      percent: progress.percent,
-                      completedParts: progress.completedParts,
-                      totalParts: progress.totalParts,
-                    }
-                  : q
-              )
-            );
-          },
-        })
-          .then((res) => {
-            syncStore.completeOptimisticUpload(optimisticId, res.file);
-            setQueue((prev) =>
-              prev.map((q) =>
-                q.localId === localId
-                  ? { ...q, status: 'done', percent: 100 }
-                  : q
-              )
-            );
-            onUploaded?.(res.file);
-          })
-          .catch((err) => {
-            syncStore.failOrCancelOptimisticUpload(optimisticId);
-            const isAbort =
-              err instanceof DOMException && err.name === 'AbortError';
-            setQueue((prev) =>
-              prev.map((q) =>
-                q.localId === localId
-                  ? {
-                      ...q,
-                      status: isAbort ? 'cancelled' : 'error',
-                      errorMessage: isAbort
-                        ? 'キャンセルされました'
-                        : err instanceof ApiClientError
-                          ? err.message
-                          : err instanceof Error
-                            ? err.message
-                            : 'アップロードに失敗しました',
-                    }
-                  : q
-              )
-            );
-          });
+        setQueue((prev) => [newItem, ...prev.slice(0, MAX_QUEUE_ITEMS - 1)]);
+        runUploadTask(localId, entry.file, targetFolderId, controller);
       }
     },
-    [disabled, folderId, conflictPolicy, onUploaded]
+    [folderId, runUploadTask]
+  );
+
+  const enqueueFiles = useCallback(
+    (fileList: FileList | File[] | null) => {
+      if (!fileList || fileList.length === 0 || disabled) return;
+      const tree = extractUploadEntriesFromFileList(fileList);
+      void processExtractedTree(tree);
+    },
+    [disabled, processExtractedTree]
+  );
+
+  const enqueueDataTransfer = useCallback(
+    (dataTransfer: DataTransfer | null) => {
+      if (!dataTransfer || disabled) return;
+      // Extract FileSystemEntry handles synchronously before DataTransfer clears.
+      const treePromise = extractUploadEntriesFromDataTransfer(dataTransfer);
+      void treePromise.then((tree) => processExtractedTree(tree));
+    },
+    [disabled, processExtractedTree]
   );
 
   useEffect(() => {
@@ -159,6 +247,29 @@ export function useFileDropzoneUploader({
     }
   }
 
+  function handleRetry(item: UploadQueueItem) {
+    if (disabled || (item.status !== 'error' && item.status !== 'cancelled')) {
+      return;
+    }
+    const controller = new AbortController();
+    setQueue((prev) =>
+      prev.map((q) =>
+        q.localId === item.localId
+          ? {
+              ...q,
+              status: 'uploading',
+              percent: 0,
+              completedParts: undefined,
+              totalParts: undefined,
+              errorMessage: undefined,
+              controller,
+            }
+          : q
+      )
+    );
+    runUploadTask(item.localId, item.file, item.targetFolderId, controller);
+  }
+
   return {
     dragging,
     setDragging,
@@ -166,7 +277,10 @@ export function useFileDropzoneUploader({
     setConflictPolicy,
     queue,
     fileInputRef,
+    folderInputRef,
     enqueueFiles,
+    enqueueDataTransfer,
     handleCancel,
+    handleRetry,
   };
 }

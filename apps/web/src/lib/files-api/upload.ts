@@ -101,11 +101,83 @@ export function putBlobWithProgress(options: {
   });
 }
 
+export const MULTIPART_PART_MAX_ATTEMPTS = 3;
+export const MULTIPART_PART_RETRY_BASE_DELAY_MS = 500;
+
+export interface PartUploadRetryOptions {
+  maxAttempts?: number;
+  baseDelayMs?: number;
+  sleepFn?: (ms: number, signal?: AbortSignal) => Promise<void>;
+}
+
+export function isRetryablePartUploadError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return false;
+  }
+  if (err instanceof Error && err.name === 'AbortError') {
+    return false;
+  }
+  if (err instanceof ApiClientError) {
+    return err.status === 429 || err.status >= 500;
+  }
+  return err instanceof Error;
+}
+
+export function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException('Upload aborted', 'AbortError'));
+  }
+  if (ms <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('Upload aborted', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+export async function uploadPartWithRetry<T>(
+  attemptFn: (attempt: number) => Promise<T>,
+  options?: PartUploadRetryOptions & { signal?: AbortSignal; onRetry?: (attempt: number, err: unknown) => void }
+): Promise<T> {
+  const maxAttempts = Math.max(1, options?.maxAttempts ?? MULTIPART_PART_MAX_ATTEMPTS);
+  const baseDelayMs = options?.baseDelayMs ?? MULTIPART_PART_RETRY_BASE_DELAY_MS;
+  const sleepFn = options?.sleepFn ?? sleepWithSignal;
+  const signal = options?.signal;
+
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (signal?.aborted) {
+      throw new DOMException('Upload aborted', 'AbortError');
+    }
+    try {
+      return await attemptFn(attempt);
+    } catch (err) {
+      lastError = err;
+      if (attempt >= maxAttempts || !isRetryablePartUploadError(err)) {
+        throw err;
+      }
+      options?.onRetry?.(attempt, err);
+      const delayMs = baseDelayMs * 2 ** (attempt - 1);
+      await sleepFn(delayMs, signal);
+    }
+  }
+  throw lastError;
+}
+
 export async function abortMultipartUpload(
   fileId: string,
-  versionId: string
+  versionId: string,
+  apiFetchFn: typeof apiFetch = apiFetch
 ): Promise<void> {
-  await apiFetch('/api/files/multipart/abort', {
+  await apiFetchFn('/api/files/multipart/abort', {
     method: 'POST',
     body: JSON.stringify({ fileId, versionId }),
   });
@@ -118,12 +190,27 @@ export async function uploadWorkspaceFile(options: {
   conflictPolicy?: 'fail' | 'new_version';
   signal?: AbortSignal;
   onProgress?: (progress: UploadTaskProgress) => void;
+  retryOptions?: PartUploadRetryOptions;
+  deps?: {
+    apiFetchFn?: typeof apiFetch;
+    putBlobFn?: typeof putBlobWithProgress;
+  };
 }): Promise<{ file: FileItem; aiClassificationQueued: boolean }> {
-  const { folderId, file, conflictPolicy = 'fail', signal, onProgress } = options;
+  const {
+    folderId,
+    file,
+    conflictPolicy = 'fail',
+    signal,
+    onProgress,
+    retryOptions,
+    deps,
+  } = options;
+  const apiFetchFn = deps?.apiFetchFn ?? apiFetch;
+  const putBlobFn = deps?.putBlobFn ?? putBlobWithProgress;
   const mimeType = file.type || 'application/octet-stream';
 
   if (file.size < MULTIPART_THRESHOLD_BYTES) {
-    const init = await apiFetch<{
+    const init = await apiFetchFn<{
       fileId: string;
       versionId: string;
       uploadUrl: string;
@@ -149,7 +236,7 @@ export async function uploadWorkspaceFile(options: {
       versionId: init.versionId,
     });
 
-    await putBlobWithProgress({
+    await putBlobFn({
       url: init.uploadUrl,
       body: file,
       headers: init.requiredHeaders,
@@ -167,7 +254,7 @@ export async function uploadWorkspaceFile(options: {
       },
     });
 
-    return apiFetch('/api/files/upload-complete', {
+    return apiFetchFn('/api/files/upload-complete', {
       method: 'POST',
       body: JSON.stringify({ fileId: init.fileId, versionId: init.versionId }),
       signal,
@@ -175,7 +262,7 @@ export async function uploadWorkspaceFile(options: {
   }
 
   // >= 100 MiB: S3 Multipart with dynamic part URLs & 4-parallel file.slice()
-  const init = await apiFetch<{
+  const init = await apiFetchFn<{
     fileId: string;
     versionId: string;
     partSizeBytes: number;
@@ -221,7 +308,7 @@ export async function uploadWorkspaceFile(options: {
           if (!urlMap.has(p)) missing.push(p);
         }
         if (missing.length > 0) {
-          const batch = await apiFetch<{ parts: Array<{ partNumber: number; url: string }> }>(
+          const batch = await apiFetchFn<{ parts: Array<{ partNumber: number; url: string }> }>(
             '/api/files/multipart/part-urls',
             {
               method: 'POST',
@@ -268,27 +355,36 @@ export async function uploadWorkspaceFile(options: {
         const sliceBlob = file.slice(start, end);
         const partUrl = await getPartUrl(currentPart);
 
-        const { etag } = await putBlobWithProgress({
-          url: partUrl,
-          body: sliceBlob,
-          withCredentials: partUrl.startsWith('/'),
-          signal,
-          onProgress: (loaded) => {
-            partBytesLoaded[currentPart - 1] = loaded;
-            const totalLoaded = partBytesLoaded.reduce((acc, v) => acc + v, 0);
-            onProgress?.({
-              mode: 'multipart',
-              loadedBytes: totalLoaded,
-              totalBytes: file.size,
-              percent:
-                file.size > 0 ? Math.min(99, Math.round((totalLoaded / file.size) * 100)) : 100,
-              completedParts: completedCount,
-              totalParts: init.totalParts,
-              fileId: init.fileId,
-              versionId: init.versionId,
+        const { etag } = await uploadPartWithRetry(
+          () => {
+            partBytesLoaded[currentPart - 1] = 0;
+            return putBlobFn({
+              url: partUrl,
+              body: sliceBlob,
+              withCredentials: partUrl.startsWith('/'),
+              signal,
+              onProgress: (loaded) => {
+                partBytesLoaded[currentPart - 1] = loaded;
+                const totalLoaded = partBytesLoaded.reduce((acc, v) => acc + v, 0);
+                onProgress?.({
+                  mode: 'multipart',
+                  loadedBytes: totalLoaded,
+                  totalBytes: file.size,
+                  percent:
+                    file.size > 0 ? Math.min(99, Math.round((totalLoaded / file.size) * 100)) : 100,
+                  completedParts: completedCount,
+                  totalParts: init.totalParts,
+                  fileId: init.fileId,
+                  versionId: init.versionId,
+                });
+              },
             });
           },
-        });
+          {
+            ...retryOptions,
+            signal,
+          }
+        );
 
         completedCount += 1;
         completedParts.push({ partNumber: currentPart, etag });
@@ -310,7 +406,7 @@ export async function uploadWorkspaceFile(options: {
     await Promise.all(workers);
     completedParts.sort((a, b) => a.partNumber - b.partNumber);
 
-    const finalized = await apiFetch<{ file: FileItem; aiClassificationQueued: boolean }>(
+    const finalized = await apiFetchFn<{ file: FileItem; aiClassificationQueued: boolean }>(
       '/api/files/multipart/complete',
       {
         method: 'POST',
@@ -337,7 +433,7 @@ export async function uploadWorkspaceFile(options: {
     return finalized;
   } catch (err) {
     // Cleanup incomplete multipart state in R2 & D1 on cancel or failure
-    await abortMultipartUpload(init.fileId, init.versionId).catch(() => undefined);
+    await abortMultipartUpload(init.fileId, init.versionId, apiFetchFn).catch(() => undefined);
     throw err;
   }
 }

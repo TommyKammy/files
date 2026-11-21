@@ -3,7 +3,9 @@
 import {
   AlertCircle,
   CheckCircle2,
+  FolderUp,
   Loader2,
+  RotateCcw,
   UploadCloud,
   X,
 } from 'lucide-react';
@@ -33,8 +35,11 @@ export function FileDropzoneUploader({
     setConflictPolicy,
     queue,
     fileInputRef,
+    folderInputRef,
     enqueueFiles,
+    enqueueDataTransfer,
     handleCancel,
+    handleRetry,
   } = useFileDropzoneUploader({
     folderId,
     disabled,
@@ -76,7 +81,7 @@ export function FileDropzoneUploader({
           }
           e.preventDefault();
           setDragging(false);
-          enqueueFiles(e.dataTransfer.files);
+          enqueueDataTransfer(e.dataTransfer);
         }}
         className={`flex flex-col gap-2 rounded-lg border border-dashed bg-[#fbfbfc] px-3 py-2.5 transition sm:flex-row sm:items-center sm:justify-between ${
           disabled
@@ -139,6 +144,17 @@ export function FileDropzoneUploader({
               e.target.value = '';
             }}
           />
+          <input
+            ref={folderInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            {...({ webkitdirectory: '' } as Record<string, string>)}
+            onChange={(e) => {
+              enqueueFiles(e.target.files);
+              e.target.value = '';
+            }}
+          />
           <button
             type="button"
             disabled={disabled}
@@ -146,6 +162,15 @@ export function FileDropzoneUploader({
             className="h-7 rounded-md bg-[#5e6ad2] px-2.5 text-[0.75rem] font-medium text-white transition hover:bg-[#4f5ac2] disabled:opacity-50"
           >
             ファイルを選択
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => folderInputRef.current?.click()}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-[#d7d7dc] bg-white px-2.5 text-[0.75rem] font-medium text-[#111214] transition hover:bg-[#f4f4f5] disabled:opacity-50"
+          >
+            <FolderUp className="h-3.5 w-3.5 text-[#5e6ad2]" />
+            フォルダを選択
           </button>
         </div>
       </div>
@@ -159,8 +184,11 @@ export function FileDropzoneUploader({
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate font-medium text-[#111214]">
-                    {item.fileName}
+                  <span
+                    className="truncate font-medium text-[#111214]"
+                    title={item.relativePath || item.fileName}
+                  >
+                    {item.relativePath || item.fileName}
                   </span>
                   <span className="rounded bg-[#f4f4f5] px-1.5 py-0.5 font-mono text-[0.625rem] text-[#55565a]">
                     {item.mode === 'multipart' ? '4x Multipart' : 'Single PUT'}
@@ -199,6 +227,17 @@ export function FileDropzoneUploader({
                 )}
                 {item.status === 'done' && (
                   <CheckCircle2 className="h-4 w-4 text-[#2f9e5f]" />
+                )}
+                {(item.status === 'error' || item.status === 'cancelled') && (
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => handleRetry(item)}
+                    className="inline-flex h-6 items-center gap-1 rounded border border-[#d7d7dc] bg-white px-2 text-[0.6875rem] font-medium text-[#111214] transition hover:bg-[#f4f4f5] disabled:opacity-50"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    再試行
+                  </button>
                 )}
                 <button
                   type="button"
