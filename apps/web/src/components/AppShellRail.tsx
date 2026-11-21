@@ -1,11 +1,12 @@
 'use client';
 
-import { Clock, FolderOpen, LogOut, Search, Share2, ShieldAlert, Star, Trash2 } from 'lucide-react';
+import { CheckSquare, Clock, FolderOpen, LogOut, Search, Share2, ShieldAlert, Star, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { AppShellFolderTree } from '@/components/AppShellFolderTree';
 import { CommandPalette } from '@/components/CommandPalette';
+import { NotificationBellPopover } from '@/components/NotificationBellPopover';
 import {
   getDropTargetClassName,
   useWorkspaceDrag,
@@ -32,7 +33,7 @@ export function AppShellRail({
   workspaceActions,
 }: {
   user: AuthUser | null;
-  activeView?: 'workspace' | 'trash' | 'admin' | 'shared' | 'search' | 'recents' | 'favorites';
+  activeView?: 'workspace' | 'trash' | 'admin' | 'shared' | 'search' | 'recents' | 'favorites' | 'tasks';
   activeFolderId?: string | null;
   onSelectResult?: (item: SearchResultItem) => void;
   onSelectFolder?: (folderId: string) => void;
@@ -80,18 +81,21 @@ export function AppShellRail({
     <>
       <aside className="sticky top-0 flex h-screen w-[245px] shrink-0 self-start flex-col justify-between bg-[#efeff1] text-[#111214]">
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center gap-2 px-3 pb-2 pt-4">
-            <div className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-[#5e6ad2] text-[0.6875rem] font-semibold text-white">
-              F
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-[0.8125rem] font-semibold tracking-[-0.01em] text-[#111214]">
-                Files
+          <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-4">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-[#5e6ad2] text-[0.6875rem] font-semibold text-white">
+                F
               </div>
-              <div className="truncate text-[0.6875rem] text-[#3c3f46]">
-                Enterprise Governance
+              <div className="min-w-0">
+                <div className="truncate text-[0.8125rem] font-semibold tracking-[-0.01em] text-[#111214]">
+                  Files
+                </div>
+                <div className="truncate text-[0.6875rem] text-[#3c3f46]">
+                  Enterprise Governance
+                </div>
               </div>
             </div>
+            <NotificationBellPopover enabled={Boolean(user)} />
           </div>
 
           <div className="px-3 pb-2">
@@ -194,6 +198,18 @@ export function AppShellRail({
                 </Link>
 
                 <Link
+                  href="/workspace?view=tasks"
+                  className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
+                    resolvedView === 'tasks'
+                      ? 'bg-[#e2e2e6] text-[#111214]'
+                      : 'text-[#111214] hover:bg-[#e6e6e8] hover:text-[#111214]'
+                  }`}
+                >
+                  <CheckSquare className="h-4 w-4 text-[#676b72]" />
+                  <span>タスク</span>
+                </Link>
+
+                <Link
                   href="/workspace/search"
                   className={`flex h-7 items-center gap-2 rounded-md px-2 text-[0.8125rem] font-medium transition ${
                     resolvedView === 'search'
@@ -286,7 +302,9 @@ export function AppShellRail({
           open={searchOpen}
           user={user}
           activeView={
-            resolvedView === 'recents' || resolvedView === 'favorites'
+            resolvedView === 'recents' ||
+            resolvedView === 'favorites' ||
+            resolvedView === 'tasks'
               ? 'workspace'
               : resolvedView
           }

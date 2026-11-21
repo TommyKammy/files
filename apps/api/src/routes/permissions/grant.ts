@@ -22,6 +22,7 @@ import {
 } from '../../services/external-guests';
 import { buildSyncChangeStmt } from '../../services/sync-changes';
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../../services/sync-notifier';
+import { createUserNotification } from '../../services/notifications';
 import {
   findInheritedAncestorGrant,
   getPermissionInheritanceMode,
@@ -369,6 +370,20 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
       scopeFolderIds: [syncFolderId],
       targetUserId: granteeType === 'user' ? granteeId : null,
     });
+
+    if (granteeType === 'user') {
+      await createUserNotification(c.env.DB, {
+        tenantId: user.tenantId,
+        userId: granteeId,
+        type: 'share_granted',
+        title: `${user.displayName ?? user.email} さんが共有権限を付与しました`,
+        body: `ロール: ${requestedRole}`,
+        targetType,
+        targetId,
+        actorId: user.id,
+        nowIso,
+      });
+    }
 
     return c.json(
       {

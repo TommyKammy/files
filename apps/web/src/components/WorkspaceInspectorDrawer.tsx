@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  CheckSquare,
   Download,
   Eye,
   FileText,
@@ -24,6 +25,7 @@ import {
   InspectorActivityPanel,
   InspectorCommentsPanel,
 } from '@/components/InspectorCommentsActivityPanels';
+import { InspectorTasksPanel } from '@/components/InspectorTasksPanel';
 import { canAccess } from '@/lib/capabilities';
 import type { InspectorTab } from '@/lib/files-api/comments-activity';
 import { formatBytes, formatDateTime } from '@/lib/formatters';
@@ -141,6 +143,9 @@ export function WorkspaceInspectorDrawer({
     isPrivilegedAdmin || canAccess(targetAccess, 'item.download');
   const canEditContent =
     isPrivilegedAdmin || canAccess(targetAccess, 'item.edit_content');
+  const canCreateTask =
+    isPrivilegedAdmin ||
+    canAccess(targetAccess, isFolder ? 'folder.create' : 'item.edit_content');
   const {
     lock: activeLock,
     busy: lockBusy,
@@ -199,13 +204,14 @@ export function WorkspaceInspectorDrawer({
       <div
         role="tablist"
         aria-label="インスペクタタブ"
-        className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 text-xs"
+        className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 text-xs"
       >
         {(
           [
             { id: 'details', label: '詳細', icon: Info },
             { id: 'comments', label: 'コメント', icon: MessageSquare },
             { id: 'activity', label: 'アクティビティ', icon: Activity },
+            { id: 'tasks', label: 'タスク', icon: CheckSquare },
           ] as const
         ).map((tab) => {
           const Icon = tab.icon;
@@ -242,6 +248,16 @@ export function WorkspaceInspectorDrawer({
 
       {activeTab === 'activity' && (
         <InspectorActivityPanel itemType={itemType} itemId={item.id} />
+      )}
+
+      {activeTab === 'tasks' && (
+        <InspectorTasksPanel
+          itemType={itemType}
+          itemId={item.id}
+          currentUserId={currentUserId}
+          isPrivilegedAdmin={isPrivilegedAdmin}
+          canCreateTask={canCreateTask}
+        />
       )}
 
       {activeTab === 'details' && (

@@ -6,6 +6,7 @@ import {
   getAuthenticatedUser,
   resolveTargetAccess,
 } from '../services/authorization';
+import { createUserNotification } from '../services/notifications';
 import type { OidcHonoEnv } from '../types/oidc';
 
 type ItemType = 'file' | 'folder';
@@ -75,6 +76,8 @@ const ACTION_LABELS: Record<string, string> = {
   'permission.revoke': 'アクセス権を削除',
   'share_link.create': '共有リンクを作成',
   'share_link.revoke': '共有リンクを無効化',
+  'task.create': 'タスクを作成',
+  'task.update': 'タスクを更新',
 };
 
 const SENSITIVE_KEY_PATTERN =
@@ -378,6 +381,25 @@ itemCommentsRoutes.post('/:itemType/:itemId/comments', async (c) => {
       nowIso,
     }),
   ]);
+
+  if (mentionedUserIds.length > 0) {
+    const actorLabel = user.displayName ?? user.email;
+    await Promise.all(
+      mentionedUserIds.map((mentionedUserId) =>
+        createUserNotification(c.env.DB, {
+          tenantId: user.tenantId,
+          userId: mentionedUserId,
+          type: 'mention',
+          title: `${actorLabel} さんがあなたをメンションしました`,
+          body: body.slice(0, 140),
+          targetType: rawType,
+          targetId: itemId,
+          actorId: user.id,
+          nowIso,
+        })
+      )
+    );
+  }
 
   return c.json(
     {

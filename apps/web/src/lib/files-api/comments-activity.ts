@@ -1,7 +1,7 @@
 import { apiFetch } from './core';
 
 export type ItemTargetType = 'file' | 'folder';
-export type InspectorTab = 'details' | 'comments' | 'activity';
+export type InspectorTab = 'details' | 'comments' | 'activity' | 'tasks';
 
 export const MAX_COMMENT_LENGTH = 2000;
 

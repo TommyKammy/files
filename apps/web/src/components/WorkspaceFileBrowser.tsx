@@ -26,8 +26,10 @@ import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
 import { WorkspacePermissionBanner } from '@/components/WorkspacePermissionBanner';
 import { WorkspaceFavoritesView } from '@/components/WorkspaceFavoritesView';
+import { WorkspaceMyTasksView } from '@/components/WorkspaceMyTasksView';
 import { WorkspaceRecentsView } from '@/components/WorkspaceRecentsView';
 import { WorkspaceSharedItemsView } from '@/components/WorkspaceSharedItemsView';
+import type { InspectorTab } from '@/lib/files-api/comments-activity';
 import {
   addFavorite,
   buildFavoriteKey,
@@ -203,6 +205,9 @@ export function WorkspaceFileBrowser() {
     viewParam === 'shared' || (isGuestUser && !folderId && !isTrashView);
   const isRecentsView = !isGuestUser && viewParam === 'recents';
   const isFavoritesView = !isGuestUser && viewParam === 'favorites';
+  const isTasksView = !isGuestUser && viewParam === 'tasks';
+  const [inspectorInitialTab, setInspectorInitialTab] =
+    useState<InspectorTab>('details');
 
   const [favoriteKeys, setFavoriteKeys] = useState<Set<string>>(new Set());
 
@@ -231,12 +236,13 @@ export function WorkspaceFileBrowser() {
       isTrashView ||
       isSharedView ||
       isRecentsView ||
-      isFavoritesView
+      isFavoritesView ||
+      isTasksView
     ) {
       return;
     }
     void touchRecentItem('folder', folderId, 'view').catch(() => {});
-  }, [user, folderId, isTrashView, isSharedView, isRecentsView, isFavoritesView]);
+  }, [user, folderId, isTrashView, isSharedView, isRecentsView, isFavoritesView, isTasksView]);
 
   const handleToggleFavorite = useCallback(
     async (row: WorkspaceTableRow) => {
@@ -1427,12 +1433,14 @@ export function WorkspaceFileBrowser() {
     );
   }
 
-  if (isRecentsView || isFavoritesView) {
+  if (isRecentsView || isFavoritesView || isTasksView) {
     return (
       <div className="flex min-h-screen bg-[#efeff1] text-[#111214]">
         <AppShellRail
           user={user}
-          activeView={isRecentsView ? 'recents' : 'favorites'}
+          activeView={
+            isTasksView ? 'tasks' : isRecentsView ? 'recents' : 'favorites'
+          }
           activeFolderId={null}
           onSelectResult={handleSearchSelect}
           onSelectFolder={(targetFolderId) =>
@@ -1444,7 +1452,22 @@ export function WorkspaceFileBrowser() {
           tabIndex={-1}
           className="mb-2 mr-2 mt-2 min-w-0 flex-1 space-y-4 rounded-2xl border border-[#e7e7ea] bg-[#f9f9fa] px-5 py-4 lg:px-7"
         >
-          {isRecentsView ? (
+          {isTasksView ? (
+            <WorkspaceMyTasksView
+              onOpenFolder={(targetFolderId) =>
+                router.push(
+                  `/workspace?folderId=${encodeURIComponent(targetFolderId)}`
+                )
+              }
+              onOpenFile={(fileId) => {
+                void touchRecentItem('file', fileId, 'view').catch(() => {});
+                window.open(
+                  `/workspace/file/${encodeURIComponent(fileId)}`,
+                  '_blank'
+                );
+              }}
+            />
+          ) : isRecentsView ? (
             <WorkspaceRecentsView
               onOpenFolder={(targetFolderId) =>
                 router.push(
@@ -2005,6 +2028,7 @@ export function WorkspaceFileBrowser() {
         }
         currentUserId={user?.id ?? null}
         isPrivilegedAdmin={isPrivilegedAdmin}
+        initialTab={inspectorInitialTab}
         open={inspectorOpen}
         isTrashView={isTrashView}
         target={inspectorTarget}
@@ -2013,7 +2037,10 @@ export function WorkspaceFileBrowser() {
         capabilities={directory.capabilities}
         syncStore={syncStore}
         onLockChanged={handleLockChanged}
-        onClose={() => setInspectorOpen(false)}
+        onClose={() => {
+          setInspectorOpen(false);
+          setInspectorInitialTab('details');
+        }}
         onPreview={openFileOrEditor}
         onDownload={handleDownloadFile}
         onOpenVersionHistory={openVersionHistoryForFile}
@@ -2091,6 +2118,16 @@ export function WorkspaceFileBrowser() {
         }}
         onToggleFavorite={(row) => {
           void handleToggleFavorite(row);
+        }}
+        onOpenActivity={(row) => {
+          const key =
+            row.kind === 'folder'
+              ? `folder:${row.folder.id}`
+              : `file:${row.file.id}`;
+          setSelectedKeys(new Set([key]));
+          setFocusedRowKey(key);
+          setInspectorInitialTab('activity');
+          setInspectorOpen(true);
         }}
         onContextAction={handleContextMenuAction}
         onCloseContextMenu={() => setContextMenu(null)}
