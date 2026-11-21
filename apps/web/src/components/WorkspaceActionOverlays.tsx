@@ -66,6 +66,7 @@ export function WorkspaceActionOverlays({
   isTargetFavorited = false,
   onToggleLock,
   onToggleFavorite,
+  onOpenActivity,
   onContextAction,
   onCloseContextMenu,
   onBackgroundAction,
@@ -97,6 +98,7 @@ export function WorkspaceActionOverlays({
   isTargetFavorited?: boolean;
   onToggleLock?: (row: ContextRowTarget) => void;
   onToggleFavorite?: (row: ContextRowTarget) => void;
+  onOpenActivity?: (row: ContextRowTarget) => void;
   onContextAction: (
     action: ContextMenuActionId,
     row: ContextRowTarget,
@@ -150,6 +152,7 @@ export function WorkspaceActionOverlays({
             returnFocus={contextMenu.trigger}
             onToggleLock={onToggleLock}
             onToggleFavorite={onToggleFavorite}
+            onOpenActivity={onOpenActivity}
             onAction={(action) =>
               onContextAction(
                 action,

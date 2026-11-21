@@ -49,6 +49,7 @@ export type ContextMenuActionId =
   | 'pin'
   | 'permissions'
   | 'inspector'
+  | 'activity'
   | 'versionHistory'
   | 'toggleLock'
   | 'toggleFavorite'
@@ -65,6 +66,7 @@ export function WorkspaceContextMenu({
   returnFocus = null,
   onToggleLock,
   onToggleFavorite,
+  onOpenActivity,
   onAction,
   onClose,
 }: {
@@ -78,6 +80,7 @@ export function WorkspaceContextMenu({
   returnFocus?: HTMLElement | null;
   onToggleLock?: (row: ContextRowTarget) => void;
   onToggleFavorite?: (row: ContextRowTarget) => void;
+  onOpenActivity?: (row: ContextRowTarget) => void;
   onAction: (action: ContextMenuActionId) => void;
   onClose: () => void;
 }) {
@@ -298,10 +301,10 @@ export function WorkspaceContextMenu({
             enabled: capabilities.canVersionHistory,
           },
           {
-            id: 'inspector',
-            label: 'アクティビティ（準備中）',
+            id: 'activity',
+            label: 'アクティビティ',
             icon: <Activity className="h-3.5 w-3.5" />,
-            enabled: false,
+            enabled: capabilities.canInspector,
           },
           {
             id: 'toggleLock',
@@ -374,6 +377,14 @@ export function WorkspaceContextMenu({
             onToggleFavorite(primaryRow);
           } else {
             onAction('toggleFavorite');
+          }
+          return;
+        }
+        if (action === 'activity') {
+          if (onOpenActivity && primaryRow) {
+            onOpenActivity(primaryRow);
+          } else {
+            onAction('inspector');
           }
           return;
         }

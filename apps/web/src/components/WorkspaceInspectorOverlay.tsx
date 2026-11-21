@@ -5,6 +5,7 @@ import {
   type InspectorTarget,
 } from '@/components/WorkspaceInspectorDrawer';
 import { canAccess } from '@/lib/capabilities';
+import type { InspectorTab } from '@/lib/files-api/comments-activity';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import type {
   BreadcrumbItem,
@@ -24,6 +25,7 @@ export function WorkspaceInspectorOverlay({
   lock,
   currentUserId,
   isPrivilegedAdmin = false,
+  initialTab,
   syncStore,
   onLockChanged,
   onClose,
@@ -44,6 +46,7 @@ export function WorkspaceInspectorOverlay({
   lock?: FileLockInfo | null;
   currentUserId?: string | null;
   isPrivilegedAdmin?: boolean;
+  initialTab?: InspectorTab;
   syncStore: WorkspaceSyncStore;
   onLockChanged?: (fileId: string, lock: FileLockInfo | null) => void;
   onClose: () => void;
@@ -90,6 +93,7 @@ export function WorkspaceInspectorOverlay({
       canVersionHistory={canAccess(access, 'item.preview')}
       currentUserId={currentUserId}
       isPrivilegedAdmin={isPrivilegedAdmin}
+      initialTab={initialTab}
       lock={lock}
       syncStore={syncStore}
       onLockChanged={onLockChanged}

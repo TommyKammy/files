@@ -1,22 +1,31 @@
 'use client';
 
 import {
+  Activity,
   Download,
   Eye,
   FileText,
   Folder,
   History,
+  Info,
   Link2,
   Loader2,
   Lock,
+  MessageSquare,
   Shield,
   Sparkles,
   Tag,
   Unlock,
   X,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
+import {
+  InspectorActivityPanel,
+  InspectorCommentsPanel,
+} from '@/components/InspectorCommentsActivityPanels';
 import { canAccess } from '@/lib/capabilities';
+import type { InspectorTab } from '@/lib/files-api/comments-activity';
 import { formatBytes, formatDateTime } from '@/lib/formatters';
 import {
   canUserUnlockFileLock,
@@ -52,6 +61,7 @@ export function WorkspaceInspectorDrawer({
   isPrivilegedAdmin,
   lock,
   currentUserId = null,
+  initialTab = 'details',
   syncStore,
   onClose,
   onPreview,
@@ -78,6 +88,7 @@ export function WorkspaceInspectorDrawer({
   isPrivilegedAdmin: boolean;
   lock?: FileLockInfo | null;
   currentUserId?: string | null;
+  initialTab?: InspectorTab;
   syncStore: WorkspaceSyncStore;
   onClose: () => void;
   onPreview: (file: FileItem) => void;
@@ -94,6 +105,12 @@ export function WorkspaceInspectorDrawer({
 }) {
   const isFolder = target.kind === 'folder';
   const item = isFolder ? target.folder : target.file;
+  const itemType = isFolder ? 'folder' : 'file';
+  const [activeTab, setActiveTab] = useState<InspectorTab>(initialTab);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab, item.id, itemType]);
   const itemRole = isFolder
     ? target.folder.effectiveRole ?? effectiveRole
     : effectiveRole;
@@ -178,6 +195,57 @@ export function WorkspaceInspectorDrawer({
           <X className="h-4 w-4" />
         </button>
       </div>
+
+      <div
+        role="tablist"
+        aria-label="インスペクタタブ"
+        className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 text-xs"
+      >
+        {(
+          [
+            { id: 'details', label: '詳細', icon: Info },
+            { id: 'comments', label: 'コメント', icon: MessageSquare },
+            { id: 'activity', label: 'アクティビティ', icon: Activity },
+          ] as const
+        ).map((tab) => {
+          const Icon = tab.icon;
+          const selected = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              data-testid={`inspector-tab-${tab.id}`}
+              onClick={() => setActiveTab(tab.id)}
+              className={`inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 font-medium transition-colors ${
+                selected
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              <span className="truncate">{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === 'comments' && (
+        <InspectorCommentsPanel
+          itemType={itemType}
+          itemId={item.id}
+          currentUserId={currentUserId}
+          isPrivilegedAdmin={isPrivilegedAdmin}
+        />
+      )}
+
+      {activeTab === 'activity' && (
+        <InspectorActivityPanel itemType={itemType} itemId={item.id} />
+      )}
+
+      {activeTab === 'details' && (
+        <>
 
       {activeLock && (
         <section
@@ -412,6 +480,8 @@ export function WorkspaceInspectorDrawer({
           </button>
         )}
       </section>
+        </>
+      )}
     </aside>
   );
 }
