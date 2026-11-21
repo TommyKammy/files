@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useId, useMemo, useRef, useState } from 'react';
 import { AdminScimTokensSection } from '@/components/admin/AdminScimTokensSection';
 import { AdminSiemSettingsSection } from '@/components/admin/AdminSiemSettingsSection';
+import { AdminWebhooksTokensSection } from '@/components/admin/AdminWebhooksTokensSection';
 import {
   hasActiveAdminIntegrationFilters,
   filterAdminIntegrations,
@@ -581,6 +582,7 @@ export function AdminIntegrationsSection({
               initialSiem={initialSiem}
             />
           )}
+          {!selectedIntegrationId && <AdminWebhooksTokensSection user={user} />}
 
           {selectedIntegrationId === 'oidc-sso' && (
             <div

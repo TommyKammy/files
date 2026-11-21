@@ -30,6 +30,7 @@ import { registerStorageStatsRoutes } from './admin/storage';
 import { registerAdminTosRoutes } from './admin/tos';
 import { registerAdminTrashRoutes } from './admin/trash';
 import { registerAdminUserRoutes } from './admin/users';
+import { registerAdminWebhookRoutes } from './admin/webhooks';
 import { registerAdminBrandingRoutes } from './branding';
 
 export const adminGovernanceRoutes = new Hono<OidcHonoEnv>();
@@ -299,6 +300,23 @@ guards.use(
   requireAdminCapabilityForMethods('admin.reports.run', ['GET', 'POST', 'PATCH', 'DELETE'])
 );
 
+guards.use(
+  '/webhooks',
+  requireAdminCapabilityForMethods('admin.policies.read', ['GET'])
+);
+guards.use(
+  '/webhooks',
+  requireAdminCapabilityForMethods('admin.policies.edit', ['POST'])
+);
+guards.use(
+  '/webhooks/*',
+  requireAdminCapabilityForMethods('admin.policies.read', ['GET'])
+);
+guards.use(
+  '/webhooks/*',
+  requireAdminCapabilityForMethods('admin.policies.edit', ['POST', 'PATCH', 'DELETE'])
+);
+
 registerStorageStatsRoutes(adminGovernanceRoutes);
 registerAdminInsightsRoutes(adminGovernanceRoutes);
 registerAiSuggestionRoutes(adminGovernanceRoutes);
@@ -323,5 +341,6 @@ registerAdminReportRoutes(adminGovernanceRoutes);
 registerAdminDelegationRoutes(adminGovernanceRoutes);
 registerAdminSettingsBundleRoutes(adminGovernanceRoutes);
 registerAdminBrandingRoutes(adminGovernanceRoutes);
+registerAdminWebhookRoutes(adminGovernanceRoutes);
 
 export { auditLogsRoutes } from './admin/audit-logs';

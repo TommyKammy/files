@@ -15,3 +15,4 @@ export * from './files-api/wopi';
 export * from './files-api/locks';
 export * from './files-api/search';
 export * from './files-api/favorites-recents';
+export * from './files-api/webhooks-tokens';

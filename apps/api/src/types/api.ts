@@ -115,6 +115,8 @@ export interface AuthUser {
   adminCapabilities?: AdminCapability[];
   /** Delegation scope; `null` for sys_admin/sec_admin/guests/no delegation. */
   adminScope?: AdminScope | null;
+  /** Scopes attached when authenticated via a personal `fls_` API token. */
+  apiTokenScopes?: string[];
 }
 
 export interface AppVariables {

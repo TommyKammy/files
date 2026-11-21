@@ -160,11 +160,134 @@ function sessionFailure(
   };
 }
 
+interface ApiTokenAuthRow {
+  token_id: string;
+  scopes_json: string;
+  expires_at: string | null;
+  revoked_at: string | null;
+  id: string;
+  tenant_id: string;
+  email: string;
+  display_name: string;
+  role: UserRole;
+  status: 'active' | 'suspended';
+  user_type: UserType;
+  external_org: string | null;
+  user_expires_at: string | null;
+}
+
+function readBearerApiToken(c: Context<OidcHonoEnv>): string | null {
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader) return null;
+  const match = authHeader.match(/^Bearer\s+(fls_\S+)$/i);
+  return match ? match[1] : null;
+}
+
 export function sessionAuthMiddleware(options: { required?: boolean } = {}) {
   const isRequired = options.required ?? true;
 
   return createMiddleware<OidcHonoEnv>(async (c, next) => {
     const ipAddress = resolveClientIp(c);
+
+    const bearerApiToken = readBearerApiToken(c);
+    if (bearerApiToken) {
+      const tokenHash = await sha256Hex(bearerApiToken);
+      const tokenRow = await c.env.DB.prepare(
+        `SELECT t.id AS token_id,
+                t.scopes_json,
+                t.expires_at,
+                t.revoked_at,
+                u.id, u.tenant_id, u.email, u.display_name, u.role, u.status,
+                u.user_type, u.external_org, u.expires_at AS user_expires_at
+           FROM api_tokens t
+           JOIN users u ON u.id = t.user_id AND u.tenant_id = t.tenant_id
+          WHERE t.token_hash = ?`
+      )
+        .bind(tokenHash)
+        .first<ApiTokenAuthRow>();
+
+      const nowIso = new Date().toISOString();
+      const invalidReason = !tokenRow
+        ? { code: 'API_TOKEN_INVALID', error: 'Invalid API token' }
+        : tokenRow.revoked_at
+          ? { code: 'API_TOKEN_REVOKED', error: 'API token has been revoked' }
+          : tokenRow.expires_at && tokenRow.expires_at <= nowIso
+            ? { code: 'API_TOKEN_EXPIRED', error: 'API token has expired' }
+            : tokenRow.status !== 'active'
+              ? { code: 'ACCOUNT_SUSPENDED', error: 'Account is suspended' }
+              : isGuestUserExpired(tokenRow.user_type, tokenRow.user_expires_at, nowIso)
+                ? { code: 'GUEST_ACCOUNT_EXPIRED', error: 'Guest account has expired' }
+                : null;
+
+      if (!tokenRow || invalidReason) {
+        c.set('user', null);
+        if (isRequired) {
+          return c.json(
+            {
+              error: invalidReason?.error ?? 'Invalid API token',
+              code: invalidReason?.code ?? 'API_TOKEN_INVALID',
+            },
+            401
+          );
+        }
+        await next();
+        return;
+      }
+
+      let apiTokenScopes: string[] = [];
+      try {
+        const parsed = JSON.parse(tokenRow.scopes_json) as unknown;
+        if (Array.isArray(parsed)) {
+          apiTokenScopes = parsed.filter((s): s is string => typeof s === 'string');
+        }
+      } catch {
+        apiTokenScopes = [];
+      }
+
+      await c.env.DB.prepare(
+        'UPDATE api_tokens SET last_used_at = ? WHERE id = ?'
+      )
+        .bind(nowIso, tokenRow.token_id)
+        .run();
+
+      const authenticatedUserBase = {
+        id: tokenRow.id,
+        tenantId: tokenRow.tenant_id,
+        email: tokenRow.email,
+        displayName: tokenRow.display_name,
+        role: tokenRow.role,
+        ipAddress,
+        userType: tokenRow.user_type,
+        externalOrg: tokenRow.external_org,
+        expiresAt: tokenRow.user_expires_at,
+        sessionId: null,
+        apiTokenScopes,
+      } satisfies AuthUser;
+
+      const authorization = await resolveAdminAuthorization(
+        c.env.DB,
+        authenticatedUserBase
+      );
+      const authenticatedUser: AuthUser = {
+        ...authenticatedUserBase,
+        adminCapabilities: authorization.capabilities,
+        adminScope: authorization.scope,
+      };
+      c.set('user', authenticatedUser);
+
+      const ipBlocked = await enforceSessionIpAllowlist(c, authenticatedUser);
+      if (ipBlocked) return ipBlocked;
+
+      const tosBlocked = await enforceTosAcceptanceForPath(
+        c.env.DB,
+        authenticatedUser,
+        c.req.path
+      );
+      if (tosBlocked) return tosBlocked;
+
+      await next();
+      return;
+    }
 
     const csrfError = verifyRequestOriginForCsrf(c);
     if (csrfError) return csrfError;
