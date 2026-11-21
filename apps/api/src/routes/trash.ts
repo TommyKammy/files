@@ -1,6 +1,10 @@
 import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
 import { getAuthenticatedUser } from '../services/authorization';
+import {
+  checkPurgeProtection,
+  formatPurgeProtectionMessage,
+} from '../services/legal-hold';
 import { emitTenantSyncSignal } from '../services/sync-notifier';
 import {
   parseTrashConflictPolicy,
@@ -136,6 +140,30 @@ trashRoutes.delete('/items', async (c) => {
 
   try {
     const items = parseTrashItemsInput(body?.items);
+    for (const item of items) {
+      const protection = await checkPurgeProtection(
+        c.env.DB,
+        user.tenantId,
+        item.type,
+        item.id
+      );
+      if (protection.blocked) {
+        return c.json(
+          {
+            error: formatPurgeProtectionMessage(protection),
+            code:
+              protection.reason === 'retention_policy'
+                ? 'RETENTION_POLICY_ACTIVE'
+                : 'LEGAL_HOLD_ACTIVE',
+            ...(protection.holdName ? { holdName: protection.holdName } : {}),
+            ...(protection.policyName
+              ? { policyName: protection.policyName }
+              : {}),
+          },
+          423
+        );
+      }
+    }
     const result = await purgeTrashItems(c.env, user, items);
 
     if (result.succeededCount > 0) {

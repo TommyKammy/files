@@ -15,6 +15,7 @@ import {
   synthesizeEffectiveAccess,
 } from './capabilities';
 import { FileLockedError, assertFileNotLocked } from './file-lock';
+import { PurgeProtectionError, checkPurgeProtection } from './legal-hold';
 import type { FileRow } from './file-upload-common';
 import type { FolderRow } from './folder-closure-service';
 import { buildSyncChangeStmt } from './sync-changes';
@@ -483,6 +484,21 @@ export async function purgeTrashFileItem(
   }
 
   await assertFileNotLocked(env, fileId);
+  const protection = await checkPurgeProtection(
+    env.DB,
+    user.tenantId,
+    'file',
+    fileId,
+    {
+      createdBy: file.created_by,
+      classification: file.classification,
+      createdAt: file.created_at,
+      nowIso,
+    }
+  );
+  if (protection.blocked) {
+    throw new PurgeProtectionError(protection);
+  }
 
   const { syncSeq } = await purgeFileRows({
     db: env.DB,
@@ -581,6 +597,21 @@ export async function purgeTrashFolderItem(
   );
 
   await assertFilesNotLocked(env, files);
+  const folderProtection = await checkPurgeProtection(
+    env.DB,
+    user.tenantId,
+    'folder',
+    folderId,
+    {
+      createdBy: folder.created_by,
+      classification: folder.classification,
+      createdAt: folder.created_at,
+      nowIso,
+    }
+  );
+  if (folderProtection.blocked) {
+    throw new PurgeProtectionError(folderProtection);
+  }
 
   const { syncSeq } = await purgeFileRows({
     db: env.DB,
@@ -653,7 +684,7 @@ function toPurgeFailure(
   item: TrashItemRefInput,
   err: unknown
 ): TrashPurgeItemResult {
-  if (err instanceof FileLockedError) {
+  if (err instanceof FileLockedError || err instanceof PurgeProtectionError) {
     return {
       type: item.type,
       id: item.id,

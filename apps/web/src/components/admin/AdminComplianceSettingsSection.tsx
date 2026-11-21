@@ -36,6 +36,7 @@ import type {
   TenantPolicyRow,
   TosTargetAudience,
 } from '@/types/files';
+import { AdminLegalHoldsSection } from './AdminLegalHoldsSection';
 
 function errorText(err: unknown, fallback: string): string {
   if (err instanceof ApiClientError) {
@@ -964,6 +965,7 @@ export function AdminComplianceSettingsSection({
         </form>
       </section>
       )}
+      {showRetention && <AdminLegalHoldsSection canManage={canManage} />}
     </div>
   );
 }

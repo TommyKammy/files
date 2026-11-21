@@ -1,9 +1,11 @@
-import { chunkArray } from '../../utils/batch';
+import { buildAuditLogStmt } from '../../services/audit';
+import { checkPurgeProtection } from '../../services/legal-hold';
 import {
   purgeFileRows,
   purgeFolderRows,
   type PurgeFileRow,
 } from '../../services/trash-purge';
+import { chunkArray, executeBatchChunks } from '../../utils/batch';
 
 const TRASH_FILE_BATCH_SIZE = 100;
 const TRASH_FOLDER_BATCH_SIZE = 50;
@@ -68,18 +70,91 @@ export async function purgeExpiredTrashForTenant(
     }
   }
 
-  const expiredFiles = [...expiredFilesMap.values()];
+  const blockedAuditStmts: D1PreparedStatement[] = [];
+  const purgeableFiles: PurgeFileRow[] = [];
+  for (const file of expiredFilesMap.values()) {
+    const protection = await checkPurgeProtection(
+      db,
+      tenantId,
+      'file',
+      file.id,
+      {
+        createdBy: file.created_by,
+        classification: file.classification,
+        nowIso,
+      }
+    );
+    if (protection.blocked) {
+      console.info(
+        `[trash.purge_blocked_legal_hold] skipped file ${file.id} (${protection.reason})`
+      );
+      blockedAuditStmts.push(
+        buildAuditLogStmt(db, {
+          tenantId,
+          actorId: null,
+          actorEmail: null,
+          actorIp: null,
+          action: 'trash.purge_blocked_legal_hold',
+          targetType: 'file',
+          targetId: file.id,
+          classificationSnapshot: file.classification,
+          status: 'blocked',
+          metadata: {
+            reason: protection.reason,
+            holdName: protection.holdName ?? null,
+            policyName: protection.policyName ?? null,
+          },
+          nowIso,
+        })
+      );
+      continue;
+    }
+    purgeableFiles.push(file);
+  }
+
   const { filesPurged } = await purgeFileRows({
     db,
     bucket,
     tenantId,
-    files: expiredFiles,
+    files: purgeableFiles,
     nowIso,
   });
 
-  // Only delete expired folders that have no remaining child folders or files
+  // Only delete expired folders that have no remaining child folders or files and are not protected
   const safeFolderIds: string[] = [];
   for (const folderId of candidateFolderIds) {
+    const protection = await checkPurgeProtection(
+      db,
+      tenantId,
+      'folder',
+      folderId,
+      { nowIso }
+    );
+    if (protection.blocked) {
+      console.info(
+        `[trash.purge_blocked_legal_hold] skipped folder ${folderId} (${protection.reason})`
+      );
+      blockedAuditStmts.push(
+        buildAuditLogStmt(db, {
+          tenantId,
+          actorId: null,
+          actorEmail: null,
+          actorIp: null,
+          action: 'trash.purge_blocked_legal_hold',
+          targetType: 'folder',
+          targetId: folderId,
+          status: 'blocked',
+          metadata: {
+            reason: protection.reason,
+            holdName: protection.holdName ?? null,
+            policyName: protection.policyName ?? null,
+          },
+          nowIso,
+        })
+      );
+      continue;
+    }
+
     const childCheck = await db
       .prepare(
         `SELECT (
@@ -92,6 +167,10 @@ export async function purgeExpiredTrashForTenant(
     if ((childCheck?.remaining_children ?? 0) === 0) {
       safeFolderIds.push(folderId);
     }
+  }
+
+  if (blockedAuditStmts.length > 0) {
+    await executeBatchChunks(db, blockedAuditStmts, 30);
   }
 
   const foldersPurged = await purgeFolderRows(db, safeFolderIds);

@@ -15,6 +15,7 @@ import { registerAdminFileRequestRoutes } from './admin/file-requests';
 import { registerAdminGroupRoutes } from './admin/groups';
 import { registerAdminGuestRoutes } from './admin/guests';
 import { registerAdminInsightsRoutes } from './admin/insights';
+import { registerAdminLegalHoldRoutes } from './admin/legal-holds';
 import { registerAdminPermissionRoutes } from './admin/permissions';
 import { registerAdminPolicyRoutes } from './admin/policies';
 import { registerAdminRootFolderBulkRoutes } from './admin/root-folders-bulk';
@@ -316,6 +317,30 @@ guards.use(
   '/webhooks/*',
   requireAdminCapabilityForMethods('admin.policies.edit', ['POST', 'PATCH', 'DELETE'])
 );
+guards.use(
+  '/legal-holds',
+  requireAdminCapabilityForMethods('admin.policies.read', ['GET'])
+);
+guards.use(
+  '/legal-holds',
+  requireAdminCapabilityForMethods('admin.policies.edit', ['POST'])
+);
+guards.use(
+  '/legal-holds/*',
+  requireAdminCapabilityForMethods('admin.policies.edit', ['POST'])
+);
+guards.use(
+  '/retention-policies',
+  requireAdminCapabilityForMethods('admin.policies.read', ['GET'])
+);
+guards.use(
+  '/retention-policies',
+  requireAdminCapabilityForMethods('admin.policies.edit', ['POST'])
+);
+guards.use(
+  '/retention-policies/*',
+  requireAdminCapabilityForMethods('admin.policies.edit', ['PATCH', 'DELETE'])
+);
 
 registerStorageStatsRoutes(adminGovernanceRoutes);
 registerAdminInsightsRoutes(adminGovernanceRoutes);
@@ -342,5 +367,6 @@ registerAdminDelegationRoutes(adminGovernanceRoutes);
 registerAdminSettingsBundleRoutes(adminGovernanceRoutes);
 registerAdminBrandingRoutes(adminGovernanceRoutes);
 registerAdminWebhookRoutes(adminGovernanceRoutes);
+registerAdminLegalHoldRoutes(adminGovernanceRoutes);
 
 export { auditLogsRoutes } from './admin/audit-logs';

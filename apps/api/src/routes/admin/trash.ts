@@ -6,6 +6,10 @@ import {
 } from '../../services/admin-delegations';
 import { getAuthenticatedUser } from '../../services/authorization';
 import {
+  checkPurgeProtection,
+  formatPurgeProtectionMessage,
+} from '../../services/legal-hold';
+import {
   emptyAdminTrash,
   listAdminTrash,
   purgeAdminTrashItems,
@@ -381,6 +385,30 @@ export function registerAdminTrashRoutes(routes: Hono<OidcHonoEnv>) {
 
     try {
       const items = parseTrashItemsInput(body?.items);
+      for (const item of items) {
+        const protection = await checkPurgeProtection(
+          c.env.DB,
+          user.tenantId,
+          item.type,
+          item.id
+        );
+        if (protection.blocked) {
+          return c.json(
+            {
+              error: formatPurgeProtectionMessage(protection),
+              code:
+                protection.reason === 'retention_policy'
+                  ? 'RETENTION_POLICY_ACTIVE'
+                  : 'LEGAL_HOLD_ACTIVE',
+              ...(protection.holdName ? { holdName: protection.holdName } : {}),
+              ...(protection.policyName
+                ? { policyName: protection.policyName }
+                : {}),
+            },
+            423
+          );
+        }
+      }
       const result = await purgeAdminTrashItems(c.env, user, items);
       if (result.succeededCount > 0) {
         await emitTenantSyncSignal(c, {
