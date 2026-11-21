@@ -1,20 +1,20 @@
 import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
 import { buildAuditLogStmt } from '../services/audit';
+import { getAuthenticatedUser } from '../services/authorization';
 import {
-  canAccess,
-  getAuthenticatedUser,
-  resolveTargetAccess,
-} from '../services/authorization';
+  normalizeTargetId,
+  parseItemTargetType,
+  verifyItemTargetAccess,
+  type ItemTargetType,
+} from '../services/item-target-access';
 import { createUserNotification } from '../services/notifications';
 import type { OidcHonoEnv } from '../types/oidc';
-
-type ItemType = 'file' | 'folder';
 
 interface CommentRow {
   id: string;
   tenant_id: string;
-  item_type: ItemType;
+  item_type: ItemTargetType;
   item_id: string;
   author_id: string;
   body: string;
@@ -82,16 +82,6 @@ const ACTION_LABELS: Record<string, string> = {
 
 const SENSITIVE_KEY_PATTERN =
   /ip|ua|user_?agent|token|secret|password|hash|cipher|key|auth|cookie|session/i;
-
-function isValidItemType(value: string): value is ItemType {
-  return value === 'file' || value === 'folder';
-}
-
-function normalizeItemId(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > 128) return null;
-  return trimmed;
-}
 
 function parseCommentBody(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
@@ -221,52 +211,28 @@ function formatComment(row: CommentRow) {
   };
 }
 
-async function authorizeItemTarget(
-  db: D1Database,
-  user: ReturnType<typeof getAuthenticatedUser>,
-  itemType: ItemType,
-  itemId: string
-): Promise<
-  | { ok: true; classification: string }
-  | { ok: false; status: 403 | 404; error: string }
-> {
-  const access = await resolveTargetAccess(db, user, itemType, itemId);
-  if (
-    !access ||
-    !access.exists ||
-    access.deletedAt !== null ||
-    (itemType === 'file' && access.uploadState !== 'active')
-  ) {
-    return { ok: false, status: 404, error: 'Item not found' };
-  }
-  if (access.accessMode !== 'full') {
-    return { ok: false, status: 403, error: 'Forbidden' };
-  }
-  const requiredCap = itemType === 'file' ? 'item.preview' : 'folder.traverse';
-  if (!canAccess(access, requiredCap)) {
-    return { ok: false, status: 403, error: 'Forbidden' };
-  }
-  return { ok: true, classification: access.classification };
-}
-
 export const itemCommentsRoutes = new Hono<OidcHonoEnv>();
 itemCommentsRoutes.use('*', sessionAuthMiddleware({ required: true }));
 
 /** GET /api/items/:itemType/:itemId/comments */
 itemCommentsRoutes.get('/:itemType/:itemId/comments', async (c) => {
   const user = getAuthenticatedUser(c);
-  const rawType = c.req.param('itemType');
-  const rawId = c.req.param('itemId');
-
-  if (!isValidItemType(rawType)) {
+  const itemType = parseItemTargetType(c.req.param('itemType'));
+  if (!itemType) {
     return c.json({ error: 'Invalid itemType' }, 400);
   }
-  const itemId = normalizeItemId(rawId);
+  const itemId = normalizeTargetId(c.req.param('itemId'));
   if (!itemId) {
     return c.json({ error: 'Invalid itemId' }, 400);
   }
 
-  const authz = await authorizeItemTarget(c.env.DB, user, rawType, itemId);
+  const authz = await verifyItemTargetAccess(
+    c.env.DB,
+    user,
+    itemType,
+    itemId,
+    'read'
+  );
   if (!authz.ok) {
     return c.json({ error: authz.error }, authz.status);
   }
@@ -288,7 +254,7 @@ itemCommentsRoutes.get('/:itemType/:itemId/comments', async (c) => {
         ORDER BY c.created_at ASC, c.id ASC
         LIMIT ? OFFSET ?`
     )
-      .bind(user.tenantId, rawType, itemId, limit, offset)
+      .bind(user.tenantId, itemType, itemId, limit, offset)
       .all<CommentRow>(),
     c.env.DB.prepare(
       `SELECT COUNT(*) AS total
@@ -298,7 +264,7 @@ itemCommentsRoutes.get('/:itemType/:itemId/comments', async (c) => {
           AND item_id = ?
           AND deleted_at IS NULL`
     )
-      .bind(user.tenantId, rawType, itemId)
+      .bind(user.tenantId, itemType, itemId)
       .first<{ total: number }>(),
   ]);
 
@@ -313,18 +279,22 @@ itemCommentsRoutes.get('/:itemType/:itemId/comments', async (c) => {
 /** POST /api/items/:itemType/:itemId/comments */
 itemCommentsRoutes.post('/:itemType/:itemId/comments', async (c) => {
   const user = getAuthenticatedUser(c);
-  const rawType = c.req.param('itemType');
-  const rawId = c.req.param('itemId');
-
-  if (!isValidItemType(rawType)) {
+  const itemType = parseItemTargetType(c.req.param('itemType'));
+  if (!itemType) {
     return c.json({ error: 'Invalid itemType' }, 400);
   }
-  const itemId = normalizeItemId(rawId);
+  const itemId = normalizeTargetId(c.req.param('itemId'));
   if (!itemId) {
     return c.json({ error: 'Invalid itemId' }, 400);
   }
 
-  const authz = await authorizeItemTarget(c.env.DB, user, rawType, itemId);
+  const authz = await verifyItemTargetAccess(
+    c.env.DB,
+    user,
+    itemType,
+    itemId,
+    'read'
+  );
   if (!authz.ok) {
     return c.json({ error: authz.error }, authz.status);
   }
@@ -357,7 +327,7 @@ itemCommentsRoutes.post('/:itemType/:itemId/comments', async (c) => {
     ).bind(
       commentId,
       user.tenantId,
-      rawType,
+      itemType,
       itemId,
       user.id,
       body,
@@ -371,7 +341,7 @@ itemCommentsRoutes.post('/:itemType/:itemId/comments', async (c) => {
       actorEmail: user.email,
       actorIp: c.req.header('CF-Connecting-IP') ?? null,
       action: 'comment.create',
-      targetType: rawType,
+      targetType: itemType,
       targetId: itemId,
       classificationSnapshot: authz.classification,
       metadata: {
@@ -394,7 +364,7 @@ itemCommentsRoutes.post('/:itemType/:itemId/comments', async (c) => {
             type: 'mention',
             title: `${actorLabel} さんがあなたをメンションしました`,
             body: body.slice(0, 140),
-            targetType: rawType,
+            targetType: itemType,
             targetId: itemId,
             actorId: user.id,
             nowIso,
@@ -409,7 +379,7 @@ itemCommentsRoutes.post('/:itemType/:itemId/comments', async (c) => {
     {
       comment: {
         id: commentId,
-        itemType: rawType,
+        itemType,
         itemId,
         authorId: user.id,
         authorDisplayName: user.displayName ?? user.email,
@@ -428,18 +398,22 @@ itemCommentsRoutes.post('/:itemType/:itemId/comments', async (c) => {
 /** GET /api/items/:itemType/:itemId/activity */
 itemCommentsRoutes.get('/:itemType/:itemId/activity', async (c) => {
   const user = getAuthenticatedUser(c);
-  const rawType = c.req.param('itemType');
-  const rawId = c.req.param('itemId');
-
-  if (!isValidItemType(rawType)) {
+  const itemType = parseItemTargetType(c.req.param('itemType'));
+  if (!itemType) {
     return c.json({ error: 'Invalid itemType' }, 400);
   }
-  const itemId = normalizeItemId(rawId);
+  const itemId = normalizeTargetId(c.req.param('itemId'));
   if (!itemId) {
     return c.json({ error: 'Invalid itemId' }, 400);
   }
 
-  const authz = await authorizeItemTarget(c.env.DB, user, rawType, itemId);
+  const authz = await verifyItemTargetAccess(
+    c.env.DB,
+    user,
+    itemType,
+    itemId,
+    'read'
+  );
   if (!authz.ok) {
     return c.json({ error: authz.error }, authz.status);
   }
@@ -457,7 +431,7 @@ itemCommentsRoutes.get('/:itemType/:itemId/activity', async (c) => {
       ORDER BY a.created_at DESC
       LIMIT ?`
   )
-    .bind(user.tenantId, rawType, itemId, ACTIVITY_LIMIT)
+    .bind(user.tenantId, itemType, itemId, ACTIVITY_LIMIT)
     .all<ActivityAuditRow>();
 
   return c.json({
@@ -480,7 +454,7 @@ commentRoutes.use('*', sessionAuthMiddleware({ required: true }));
 /** PATCH /api/comments/:commentId */
 commentRoutes.patch('/:commentId', async (c) => {
   const user = getAuthenticatedUser(c);
-  const commentId = normalizeItemId(c.req.param('commentId'));
+  const commentId = normalizeTargetId(c.req.param('commentId'));
   if (!commentId) {
     return c.json({ error: 'Invalid commentId' }, 400);
   }
@@ -548,7 +522,7 @@ commentRoutes.patch('/:commentId', async (c) => {
 /** DELETE /api/comments/:commentId */
 commentRoutes.delete('/:commentId', async (c) => {
   const user = getAuthenticatedUser(c);
-  const commentId = normalizeItemId(c.req.param('commentId'));
+  const commentId = normalizeTargetId(c.req.param('commentId'));
   if (!commentId) {
     return c.json({ error: 'Invalid commentId' }, 400);
   }

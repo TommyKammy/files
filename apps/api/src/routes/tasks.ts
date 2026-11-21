@@ -1,16 +1,17 @@
 import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
 import { buildAuditLogStmt } from '../services/audit';
+import { getAuthenticatedUser } from '../services/authorization';
 import {
-  canAccess,
-  getAuthenticatedUser,
-  hasAtLeastRole,
-  resolveTargetAccess,
-} from '../services/authorization';
+  filterReadableItems,
+  normalizeTargetId,
+  parseItemTargetType,
+  verifyItemTargetAccess,
+  type ItemTargetType,
+} from '../services/item-target-access';
 import { createUserNotification } from '../services/notifications';
 import type { OidcHonoEnv } from '../types/oidc';
 
-type ItemType = 'file' | 'folder';
 export type TaskStatus = 'open' | 'approved' | 'rejected' | 'completed';
 
 const VALID_TASK_STATUSES = new Set<TaskStatus>([
@@ -27,7 +28,7 @@ const MAX_RESOLUTION_NOTE_LENGTH = 1000;
 interface TaskRow {
   id: string;
   tenant_id: string;
-  item_type: ItemType;
+  item_type: ItemTargetType;
   item_id: string;
   item_name?: string | null;
   title: string;
@@ -46,16 +47,6 @@ interface TaskRow {
   resolution_note: string | null;
   created_at: string;
   updated_at: string;
-}
-
-function isValidItemType(value: string): value is ItemType {
-  return value === 'file' || value === 'folder';
-}
-
-function normalizeId(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > 128) return null;
-  return trimmed;
 }
 
 function parseOptionalText(raw: unknown, maxLen: number): string | null | undefined {
@@ -131,29 +122,24 @@ itemTasksRoutes.use('*', sessionAuthMiddleware({ required: true }));
 /** GET /api/items/:itemType/:itemId/tasks */
 itemTasksRoutes.get('/:itemType/:itemId/tasks', async (c) => {
   const user = getAuthenticatedUser(c);
-  const rawType = c.req.param('itemType');
-  const rawId = c.req.param('itemId');
-
-  if (!isValidItemType(rawType)) {
+  const itemType = parseItemTargetType(c.req.param('itemType'));
+  if (!itemType) {
     return c.json({ error: 'Invalid itemType' }, 400);
   }
-  const itemId = normalizeId(rawId);
+  const itemId = normalizeTargetId(c.req.param('itemId'));
   if (!itemId) {
     return c.json({ error: 'Invalid itemId' }, 400);
   }
 
-  const access = await resolveTargetAccess(c.env.DB, user, rawType, itemId);
-  if (
-    !access ||
-    !access.exists ||
-    access.deletedAt !== null ||
-    (rawType === 'file' && access.uploadState !== 'active')
-  ) {
-    return c.json({ error: 'Item not found' }, 404);
-  }
-  const readCap = rawType === 'file' ? 'item.preview' : 'folder.traverse';
-  if (access.accessMode !== 'full' || !canAccess(access, readCap)) {
-    return c.json({ error: 'Forbidden' }, 403);
+  const authz = await verifyItemTargetAccess(
+    c.env.DB,
+    user,
+    itemType,
+    itemId,
+    'read'
+  );
+  if (!authz.ok) {
+    return c.json({ error: authz.error }, authz.status);
   }
 
   const rows = await c.env.DB.prepare(
@@ -173,7 +159,7 @@ itemTasksRoutes.get('/:itemType/:itemId/tasks', async (c) => {
                t.id DESC
       LIMIT 100`
   )
-    .bind(user.tenantId, rawType, itemId)
+    .bind(user.tenantId, itemType, itemId)
     .all<TaskRow>();
 
   return c.json({
@@ -184,32 +170,24 @@ itemTasksRoutes.get('/:itemType/:itemId/tasks', async (c) => {
 /** POST /api/items/:itemType/:itemId/tasks */
 itemTasksRoutes.post('/:itemType/:itemId/tasks', async (c) => {
   const user = getAuthenticatedUser(c);
-  const rawType = c.req.param('itemType');
-  const rawId = c.req.param('itemId');
-
-  if (!isValidItemType(rawType)) {
+  const itemType = parseItemTargetType(c.req.param('itemType'));
+  if (!itemType) {
     return c.json({ error: 'Invalid itemType' }, 400);
   }
-  const itemId = normalizeId(rawId);
+  const itemId = normalizeTargetId(c.req.param('itemId'));
   if (!itemId) {
     return c.json({ error: 'Invalid itemId' }, 400);
   }
 
-  const access = await resolveTargetAccess(c.env.DB, user, rawType, itemId);
-  if (
-    !access ||
-    !access.exists ||
-    access.deletedAt !== null ||
-    (rawType === 'file' && access.uploadState !== 'active')
-  ) {
-    return c.json({ error: 'Item not found' }, 404);
-  }
-  const editCap = rawType === 'file' ? 'item.edit_content' : 'folder.create';
-  if (
-    access.accessMode !== 'full' ||
-    (!canAccess(access, editCap) && !hasAtLeastRole(access.effectiveRole, 'editor'))
-  ) {
-    return c.json({ error: 'Forbidden' }, 403);
+  const authz = await verifyItemTargetAccess(
+    c.env.DB,
+    user,
+    itemType,
+    itemId,
+    'task_create'
+  );
+  if (!authz.ok) {
+    return c.json({ error: authz.error }, authz.status);
   }
 
   const payload = (await c.req.json().catch(() => null)) as {
@@ -278,7 +256,7 @@ itemTasksRoutes.post('/:itemType/:itemId/tasks', async (c) => {
     ).bind(
       taskId,
       user.tenantId,
-      rawType,
+      itemType,
       itemId,
       title,
       message,
@@ -294,9 +272,9 @@ itemTasksRoutes.post('/:itemType/:itemId/tasks', async (c) => {
       actorEmail: user.email,
       actorIp: c.req.header('CF-Connecting-IP') ?? null,
       action: 'task.create',
-      targetType: rawType,
+      targetType: itemType,
       targetId: itemId,
-      classificationSnapshot: access.classification,
+      classificationSnapshot: authz.classification,
       metadata: {
         taskId,
         title,
@@ -315,7 +293,7 @@ itemTasksRoutes.post('/:itemType/:itemId/tasks', async (c) => {
       type: 'task_assigned',
       title: `${user.displayName ?? user.email} さんがタスクを割り当てました`,
       body: title,
-      targetType: rawType,
+      targetType: itemType,
       targetId: itemId,
       actorId: user.id,
       nowIso,
@@ -330,7 +308,7 @@ itemTasksRoutes.post('/:itemType/:itemId/tasks', async (c) => {
         ? formatTask(created)
         : {
             id: taskId,
-            itemType: rawType,
+            itemType,
             itemId,
             title,
             message,
@@ -392,37 +370,19 @@ taskRoutes.get('/my', async (c) => {
     .bind(user.tenantId, user.id)
     .all<TaskRow>();
 
-  const accessibleTasks: ReturnType<typeof formatTask>[] = [];
-  for (const row of rows.results) {
-    const access = await resolveTargetAccess(
-      c.env.DB,
-      user,
-      row.item_type,
-      row.item_id
-    );
-    if (
-      !access ||
-      !access.exists ||
-      access.deletedAt !== null ||
-      (row.item_type === 'file' && access.uploadState !== 'active') ||
-      access.accessMode !== 'full'
-    ) {
-      continue;
-    }
-    const readCap = row.item_type === 'file' ? 'item.preview' : 'folder.traverse';
-    if (!canAccess(access, readCap)) {
-      continue;
-    }
-    accessibleTasks.push(formatTask(row));
-  }
+  const readableRows = await filterReadableItems(
+    c.env.DB,
+    user,
+    rows.results
+  );
 
-  return c.json({ tasks: accessibleTasks });
+  return c.json({ tasks: readableRows.map(formatTask) });
 });
 
 /** PATCH /api/tasks/:taskId */
 taskRoutes.patch('/:taskId', async (c) => {
   const user = getAuthenticatedUser(c);
-  const taskId = normalizeId(c.req.param('taskId'));
+  const taskId = normalizeTargetId(c.req.param('taskId'));
   if (!taskId) {
     return c.json({ error: 'Invalid taskId' }, 400);
   }
