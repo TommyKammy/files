@@ -19,6 +19,7 @@ import type {
   SharePermissionLevel,
   SharedLinkSummary,
   TenantPolicyRow,
+  UpdateSharedLinkPayload,
 } from '@/types/files';
 
 type SharePolicyLike =
@@ -246,6 +247,29 @@ export function useSharePopover({
     }
   }
 
+  async function handleUpdateSettings(
+    linkId: string,
+    payload: UpdateSharedLinkPayload
+  ): Promise<boolean> {
+    if (!canManageLinks) return false;
+    setUpdatingLinkId(linkId);
+    setError(null);
+    try {
+      await updateSharedLink(linkId, payload);
+      await reloadLinks();
+      return true;
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : '共有リンクの設定更新に失敗しました'
+      );
+      return false;
+    } finally {
+      setUpdatingLinkId(null);
+    }
+  }
+
   return {
     publicRestricted,
     allowSharedLinkEdit,
@@ -278,5 +302,6 @@ export function useSharePopover({
     handleCreate,
     handleRevoke,
     handleUpdateLevel,
+    handleUpdateSettings,
   };
 }

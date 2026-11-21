@@ -12,3 +12,4 @@ export * from './files-api/admin-scim-tokens';
 export * from './files-api/admin-users';
 export * from './files-api/guests';
 export * from './files-api/wopi';
+export * from './files-api/locks';

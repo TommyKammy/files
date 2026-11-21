@@ -465,4 +465,82 @@ describe('Shared Links Control, PBKDF2 Lockout & XSS Prevention (TOM-15)', () =>
     expect(proxyFetch.headers.get('Content-Disposition')).toContain('attachment');
     expect(proxyFetch.headers.get('Content-Type')).toContain('text/plain');
   });
+
+  it('returns recoverable shareUrl on list and update, null for legacy links, and never logs raw tokens in audit logs', async () => {
+    const testEnv = buildTestEnv();
+    const createRes = await app.fetch(
+      new Request('http://127.0.0.1:8787/api/shared-links', {
+        method: 'POST',
+        headers: authHeaders('sl-editor'),
+        body: JSON.stringify({
+          targetType: 'file',
+          targetId: 'sl-file-internal',
+          accessScope: 'company_only',
+          permissionLevel: 'download',
+        }),
+      }),
+      testEnv
+    );
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as {
+      link: { id: string; shareUrl: string | null };
+      token: string;
+      shareUrl: string;
+    };
+    expect(created.link.shareUrl).toBe(created.shareUrl);
+
+    // Insert a legacy row without token_ciphertext
+    const legacyId = 'legacy-share-link-1';
+    await env.DB.prepare(
+      `INSERT INTO shared_links (
+         id, tenant_id, token_hash, target_type, target_id, access_scope,
+         can_download, permission_level, require_watermark, created_by
+       ) VALUES (?, ?, ?, 'file', 'sl-file-internal', 'company_only', 1, 'download', 0, ?)`
+    )
+      .bind(legacyId, 'tenant-sl', 'legacy-hash-1', 'sl-editor')
+      .run();
+
+    const listRes = await app.fetch(
+      new Request(
+        'http://127.0.0.1:8787/api/shared-links?targetType=file&targetId=sl-file-internal',
+        { headers: authHeaders('sl-editor') }
+      ),
+      testEnv
+    );
+    expect(listRes.status).toBe(200);
+    const listJson = (await listRes.json()) as {
+      links: Array<{ id: string; shareUrl: string | null }>;
+    };
+    const newRow = listJson.links.find((l) => l.id === created.link.id);
+    const legacyRow = listJson.links.find((l) => l.id === legacyId);
+    expect(newRow?.shareUrl).toBe(created.shareUrl);
+    expect(legacyRow?.shareUrl).toBeNull();
+
+    // Update settings and ensure shareUrl is preserved
+    const patchRes = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/shared-links/${created.link.id}`, {
+        method: 'PATCH',
+        headers: authHeaders('sl-editor'),
+        body: JSON.stringify({ maxDownloads: 5, requireWatermark: true }),
+      }),
+      testEnv
+    );
+    expect(patchRes.status).toBe(200);
+    const patched = (await patchRes.json()) as {
+      link: { shareUrl: string | null; maxDownloads: number | null; requireWatermark: boolean };
+    };
+    expect(patched.link.shareUrl).toBe(created.shareUrl);
+    expect(patched.link.maxDownloads).toBe(5);
+    expect(patched.link.requireWatermark).toBe(true);
+
+    // Verify raw token is never stored in audit_logs
+    const auditHit = await env.DB.prepare(
+      `SELECT metadata_json FROM audit_logs WHERE tenant_id = ? AND action = 'shared_link.create'`
+    )
+      .bind('tenant-sl')
+      .all<{ metadata_json: string | null }>();
+    for (const row of auditHit.results) {
+      expect(row.metadata_json ?? '').not.toContain(created.token);
+    }
+  });
 });

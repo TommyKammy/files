@@ -21,6 +21,7 @@ export interface SharedLinkRow {
   id: string;
   tenant_id: string;
   token_hash: string;
+  token_ciphertext?: string | null;
   target_type: 'file' | 'folder';
   target_id: string;
   access_scope: ShareAccessScope;
@@ -79,7 +80,7 @@ export function getClientIp(req: { header: (name: string) => string | undefined 
   );
 }
 
-export function formatLinkSummary(row: SharedLinkRow) {
+export function formatLinkSummary(row: SharedLinkRow, shareUrl: string | null = null) {
   const nowMs = Date.now();
   return {
     id: row.id,
@@ -97,6 +98,7 @@ export function formatLinkSummary(row: SharedLinkRow) {
     downloadCount: row.download_count,
     createdBy: row.created_by,
     createdAt: row.created_at,
+    shareUrl,
   };
 }
 

@@ -19,6 +19,7 @@ import {
   Shield,
   Tag,
   Trash2,
+  Unlock,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import {
@@ -48,6 +49,7 @@ export type ContextMenuActionId =
   | 'permissions'
   | 'inspector'
   | 'versionHistory'
+  | 'toggleLock'
   | 'trash';
 
 export function WorkspaceContextMenu({
@@ -56,7 +58,9 @@ export function WorkspaceContextMenu({
   primaryRow,
   capabilities,
   clipboardCount,
+  isTargetLocked = false,
   returnFocus = null,
+  onToggleLock,
   onAction,
   onClose,
 }: {
@@ -65,7 +69,9 @@ export function WorkspaceContextMenu({
   primaryRow: ContextRowTarget | null;
   capabilities: ContextMenuCapabilities;
   clipboardCount: number;
+  isTargetLocked?: boolean;
   returnFocus?: HTMLElement | null;
+  onToggleLock?: (row: ContextRowTarget) => void;
   onAction: (action: ContextMenuActionId) => void;
   onClose: () => void;
 }) {
@@ -280,10 +286,16 @@ export function WorkspaceContextMenu({
             enabled: false,
           },
           {
-            id: 'inspector',
-            label: 'ロック（Phase 7）',
-            icon: <Lock className="h-3.5 w-3.5" />,
-            enabled: false,
+            id: 'toggleLock',
+            label: isTargetLocked ? 'ロック解除' : 'ロック',
+            icon: isTargetLocked ? (
+              <Unlock className="h-3.5 w-3.5" />
+            ) : (
+              <Lock className="h-3.5 w-3.5" />
+            ),
+            enabled:
+              primaryRow.kind === 'file' &&
+              (capabilities.canLock ?? capabilities.canRename),
           },
         ],
       });
@@ -308,6 +320,7 @@ export function WorkspaceContextMenu({
     targets.length,
     clipboardCount,
     isPinnedFolder,
+    isTargetLocked,
   ]);
 
   return (
@@ -327,7 +340,17 @@ export function WorkspaceContextMenu({
       widthClass="w-60"
       submenuWidthClass="w-56"
       returnFocus={returnFocus}
-      onAction={onAction}
+      onAction={(action) => {
+        if (action === 'toggleLock') {
+          if (onToggleLock && primaryRow) {
+            onToggleLock(primaryRow);
+          } else {
+            onAction('inspector');
+          }
+          return;
+        }
+        onAction(action);
+      }}
       onClose={onClose}
     />
   );

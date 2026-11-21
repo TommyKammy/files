@@ -1,10 +1,13 @@
 'use client';
 
 import {
+  Check,
+  Copy,
   Inbox,
   Loader2,
   Trash2,
 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { ModalShell } from '@/components/ModalShell';
 import { useCreateFileRequest } from '@/lib/use-create-file-request';
 import { CopyableUrl } from '@/components/ui/CopyableUrl';
@@ -44,6 +47,27 @@ export function CreateFileRequestModal({
     handleCreate,
     handleDeactivate,
   } = useCreateFileRequest({ folderId, folderName, canEdit });
+
+  const [copiedReqId, setCopiedReqId] = useState<string | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    },
+    []
+  );
+
+  async function handleCopyRequestUrl(reqId: string, requestUrl: string) {
+    const fullUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${requestUrl}`
+        : requestUrl;
+    await navigator.clipboard.writeText(fullUrl);
+    setCopiedReqId(reqId);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopiedReqId(null), 1800);
+  }
 
   return (
     <ModalShell
@@ -214,16 +238,48 @@ export function CreateFileRequestModal({
                       </div>
                     </div>
 
-                    {canEdit && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeactivate(req.id)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1 text-[0.6875rem] font-medium text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        <span>受付停止</span>
-                      </button>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {req.requestUrl ? (
+                        <button
+                          type="button"
+                          data-testid={`copy-file-request-${req.id}`}
+                          onClick={() =>
+                            void handleCopyRequestUrl(req.id, req.requestUrl!)
+                          }
+                          className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[0.6875rem] font-medium text-indigo-700 hover:bg-indigo-100"
+                        >
+                          {copiedReqId === req.id ? (
+                            <>
+                              <Check className="h-3 w-3" />
+                              <span>コピー済み</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-3 w-3" />
+                              <span>URLをコピー</span>
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <span
+                          data-testid={`legacy-file-request-${req.id}`}
+                          className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[0.625rem] text-slate-500"
+                        >
+                          再コピー不可（旧リンク）
+                        </span>
+                      )}
+
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeactivate(req.id)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1 text-[0.6875rem] font-medium text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span>受付停止</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

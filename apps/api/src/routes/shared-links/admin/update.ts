@@ -5,6 +5,7 @@ import {
   resolveTargetAccess,
 } from '../../../services/authorization';
 import { can } from '../../../services/capabilities';
+import { unsealRecoverableToken } from '../../../services/crypto-utils';
 import { hashSharePassword } from '../../../services/shared-link-security';
 import {
   canDownloadForPermissionLevel,
@@ -393,8 +394,14 @@ export function registerSharedLinkUpdateRoute(routes: Hono<OidcHonoEnv>) {
       .bind(user.tenantId, linkId)
       .first<SharedLinkRow>();
 
+    const token = updated
+      ? await unsealRecoverableToken(c.env, updated.token_ciphertext)
+      : null;
+
     return c.json({
-      link: updated ? formatLinkSummary(updated) : null,
+      link: updated
+        ? formatLinkSummary(updated, token ? `/s/${token}` : null)
+        : null,
       syncChanges,
     });
   });

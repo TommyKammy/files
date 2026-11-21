@@ -4,6 +4,7 @@ import {
   resolveTargetAccess,
 } from '../../../services/authorization';
 import { can } from '../../../services/capabilities';
+import { unsealRecoverableToken } from '../../../services/crypto-utils';
 import type { OidcHonoEnv } from '../../../types/oidc';
 import { SharedLinkRow, formatLinkSummary } from '../shared';
 
@@ -34,8 +35,15 @@ export function registerSharedLinkListRoute(routes: Hono<OidcHonoEnv>) {
       .bind(user.tenantId, targetType, targetId)
       .all<SharedLinkRow>();
 
+    const links = await Promise.all(
+      rows.results.map(async (row) => {
+        const token = await unsealRecoverableToken(c.env, row.token_ciphertext);
+        return formatLinkSummary(row, token ? `/s/${token}` : null);
+      })
+    );
+
     return c.json({
-      links: rows.results.map(formatLinkSummary),
+      links,
     });
   });
 

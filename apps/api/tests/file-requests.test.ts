@@ -475,4 +475,60 @@ describe('External File Requests / Blind Dropbox API (TOM-16)', () => {
     expect(enabledJson.turnstileEnabled).toBe(true);
     expect(enabledJson.turnstileSiteKey).toBe('0x4AAAAAAATestSiteKey');
   });
+
+  it('returns recoverable requestUrl on GET /api/file-requests, null for legacy rows, and never logs raw tokens', async () => {
+    const testEnv = buildTestEnv();
+    const createRes = await app.fetch(
+      new Request('http://127.0.0.1:8787/api/file-requests', {
+        method: 'POST',
+        headers: authHeaders('fr-editor'),
+        body: JSON.stringify({
+          folderId: 'fr-folder-int',
+          title: 'Recopy Test Request',
+        }),
+      }),
+      testEnv
+    );
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as {
+      fileRequest: { id: string; requestUrl: string | null };
+      token: string;
+      requestUrl: string;
+    };
+    expect(created.fileRequest.requestUrl).toBe(created.requestUrl);
+
+    const legacyId = 'legacy-file-request-1';
+    await env.DB.prepare(
+      `INSERT INTO file_requests (
+         id, tenant_id, folder_id, token_hash, title, is_active, created_by
+       ) VALUES (?, ?, ?, ?, 'Legacy Request', 1, ?)`
+    )
+      .bind(legacyId, 'tenant-fr', 'fr-folder-int', 'legacy-fr-hash-1', 'fr-editor')
+      .run();
+
+    const listRes = await app.fetch(
+      new Request(
+        'http://127.0.0.1:8787/api/file-requests?folderId=fr-folder-int',
+        { headers: authHeaders('fr-editor') }
+      ),
+      testEnv
+    );
+    expect(listRes.status).toBe(200);
+    const listJson = (await listRes.json()) as {
+      fileRequests: Array<{ id: string; requestUrl: string | null }>;
+    };
+    const newRow = listJson.fileRequests.find((r) => r.id === created.fileRequest.id);
+    const legacyRow = listJson.fileRequests.find((r) => r.id === legacyId);
+    expect(newRow?.requestUrl).toBe(created.requestUrl);
+    expect(legacyRow?.requestUrl).toBeNull();
+
+    const auditHit = await env.DB.prepare(
+      `SELECT metadata_json FROM audit_logs WHERE tenant_id = ? AND action = 'file_request.create'`
+    )
+      .bind('tenant-fr')
+      .all<{ metadata_json: string | null }>();
+    for (const row of auditHit.results) {
+      expect(row.metadata_json ?? '').not.toContain(created.token);
+    }
+  });
 });

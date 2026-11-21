@@ -1,14 +1,18 @@
 'use client';
 
 import {
+  Check,
+  Copy,
   Eye,
   EyeOff,
   Link2,
   Loader2,
   Lock,
+  Settings2,
   ShieldAlert,
   Trash2,
 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
 import { CopyableUrl } from '@/components/ui/CopyableUrl';
 import { useSharePopover } from '@/lib/use-share-popover';
@@ -25,6 +29,7 @@ import type {
   ClassificationLabel,
   ShareAccessScope,
   SharePermissionLevel,
+  SharedLinkSummary,
   TenantPolicyRow,
 } from '@/types/files';
 
@@ -92,6 +97,7 @@ export function SharePopover({
     handleCreate,
     handleRevoke,
     handleUpdateLevel,
+    handleUpdateSettings,
   } = useSharePopover({
     targetType,
     targetId,
@@ -100,6 +106,79 @@ export function SharePopover({
     canManageLinks,
     policy,
   });
+
+  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+  const [editExpiresInDays, setEditExpiresInDays] = useState('');
+  const [editMaxDownloads, setEditMaxDownloads] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [editClearPassword, setEditClearPassword] = useState(false);
+  const [editRequireWatermark, setEditRequireWatermark] = useState(false);
+
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    },
+    []
+  );
+
+  async function handleCopyExistingLink(linkId: string, shareUrl: string) {
+    const fullUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${shareUrl}`
+        : shareUrl;
+    await navigator.clipboard.writeText(fullUrl);
+    setCopiedLinkId(linkId);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopiedLinkId(null), 1800);
+  }
+
+  function startEditingLink(link: SharedLinkSummary) {
+    if (editingLinkId === link.id) {
+      setEditingLinkId(null);
+      return;
+    }
+    setEditingLinkId(link.id);
+    setEditExpiresInDays('');
+    setEditMaxDownloads(
+      link.maxDownloads !== null ? String(link.maxDownloads) : ''
+    );
+    setEditPassword('');
+    setEditClearPassword(false);
+    setEditRequireWatermark(link.requireWatermark);
+  }
+
+  async function submitLinkSettings(link: SharedLinkSummary) {
+    const parsedDays = editExpiresInDays.trim()
+      ? Number.parseInt(editExpiresInDays.trim(), 10)
+      : undefined;
+    const trimmedMax = editMaxDownloads.trim();
+    const parsedMax = trimmedMax
+      ? Number.parseInt(trimmedMax, 10)
+      : null;
+
+    const ok = await handleUpdateSettings(link.id, {
+      requireWatermark: editRequireWatermark,
+      ...(parsedDays && Number.isFinite(parsedDays) && parsedDays > 0
+        ? { expiresInDays: parsedDays }
+        : {}),
+      maxDownloads:
+        parsedMax && Number.isFinite(parsedMax) && parsedMax > 0
+          ? parsedMax
+          : null,
+      ...(editClearPassword
+        ? { password: '' }
+        : editPassword.trim()
+          ? { password: editPassword.trim() }
+          : {}),
+    });
+    if (ok) {
+      setEditingLinkId(null);
+      setEditPassword('');
+      setEditClearPassword(false);
+    }
+  }
 
   const levelOptions = availablePermissionLevels({
     canManageLinks,
@@ -471,77 +550,218 @@ export function SharePopover({
           ) : (
             <div className="overflow-hidden rounded-xl border border-slate-200 divide-y divide-slate-100">
               {links.map((link) => (
-                <div
-                  key={link.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-xs"
-                >
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span
-                        data-testid={`shared-link-level-${link.id}`}
-                        className="rounded bg-blue-50 px-2 py-0.5 text-[0.625rem] font-semibold text-blue-700"
-                      >
-                        {permissionLevelLabel(link.permissionLevel)}
-                      </span>
-                      <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[0.6875rem] font-medium text-slate-700">
-                        {link.accessScope}
-                      </span>
-                      {link.hasPassword && (
-                        <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[0.625rem] text-slate-600">
-                          <Lock className="h-2.5 w-2.5" />
-                          PW保護
+                <div key={link.id} className="px-4 py-3 text-xs space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          data-testid={`shared-link-level-${link.id}`}
+                          className="rounded bg-blue-50 px-2 py-0.5 text-[0.625rem] font-semibold text-blue-700"
+                        >
+                          {permissionLevelLabel(link.permissionLevel)}
                         </span>
-                      )}
-                      {link.requireWatermark && (
-                        <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[0.625rem] text-indigo-700">
-                          Watermark
+                        <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[0.6875rem] font-medium text-slate-700">
+                          {link.accessScope}
                         </span>
-                      )}
-                      {link.isLocked && (
-                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[0.625rem] font-semibold text-red-700">
-                          ロック中
-                        </span>
-                      )}
+                        {link.hasPassword && (
+                          <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[0.625rem] text-slate-600">
+                            <Lock className="h-2.5 w-2.5" />
+                            PW保護
+                          </span>
+                        )}
+                        {link.requireWatermark && (
+                          <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[0.625rem] text-indigo-700">
+                            Watermark
+                          </span>
+                        )}
+                        {link.isLocked && (
+                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[0.625rem] font-semibold text-red-700">
+                            ロック中
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[0.6875rem] text-slate-500">
+                        DL回数: {link.downloadCount}
+                        {link.maxDownloads ? ` / ${link.maxDownloads}` : ''} • 期限:{' '}
+                        {formatDateTime(link.expiresAt)}
+                      </div>
                     </div>
-                    <div className="text-[0.6875rem] text-slate-500">
-                      DL回数: {link.downloadCount}
-                      {link.maxDownloads ? ` / ${link.maxDownloads}` : ''} • 期限:{' '}
-                      {formatDateTime(link.expiresAt)}
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {link.shareUrl ? (
+                        <button
+                          type="button"
+                          data-testid={`copy-shared-link-${link.id}`}
+                          onClick={() =>
+                            void handleCopyExistingLink(link.id, link.shareUrl!)
+                          }
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[0.6875rem] font-medium text-emerald-700 hover:bg-emerald-100"
+                        >
+                          {copiedLinkId === link.id ? (
+                            <>
+                              <Check className="h-3 w-3" />
+                              <span>コピー済み</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-3 w-3" />
+                              <span>リンクをコピー</span>
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <span
+                          data-testid={`legacy-shared-link-${link.id}`}
+                          className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[0.625rem] text-slate-500"
+                        >
+                          再コピー不可（旧リンク）
+                        </span>
+                      )}
+
+                      {canManageLinks && (
+                        <>
+                          <label className="sr-only" htmlFor={`share-level-${link.id}`}>
+                            共有リンクの権限レベル
+                          </label>
+                          <select
+                            id={`share-level-${link.id}`}
+                            value={link.permissionLevel}
+                            disabled={updatingLinkId === link.id}
+                            onChange={(e) =>
+                              handleUpdateLevel(
+                                link.id,
+                                e.target.value as SharePermissionLevel
+                              )
+                            }
+                            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[0.6875rem] text-slate-700"
+                          >
+                            {levelOptions.map((level) => (
+                              <option key={level} value={level}>
+                                {permissionLevelLabel(level)}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            data-testid={`edit-shared-link-${link.id}`}
+                            onClick={() => startEditingLink(link)}
+                            title="有効期限・DL上限・パスワード設定を編集"
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[0.6875rem] font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            <Settings2 className="h-3 w-3" />
+                            <span>設定</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRevoke(link.id)}
+                            title="共有リンクを即時失効"
+                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1 text-[0.6875rem] font-medium text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            <span>失効</span>
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  {canManageLinks && (
-                    <div className="flex items-center gap-2">
-                      <label className="sr-only" htmlFor={`share-level-${link.id}`}>
-                        共有リンクの権限レベル
-                      </label>
-                      <select
-                        id={`share-level-${link.id}`}
-                        value={link.permissionLevel}
-                        disabled={updatingLinkId === link.id}
-                        onChange={(e) =>
-                          handleUpdateLevel(
-                            link.id,
-                            e.target.value as SharePermissionLevel
-                          )
-                        }
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[0.6875rem] text-slate-700"
-                      >
-                        {levelOptions.map((level) => (
-                          <option key={level} value={level}>
-                            {permissionLevelLabel(level)}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => handleRevoke(link.id)}
-                        title="共有リンクを即時失効"
-                        className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1 text-[0.6875rem] font-medium text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        <span>失効</span>
-                      </button>
+                  {canManageLinks && editingLinkId === link.id && (
+                    <div
+                      data-testid={`edit-shared-link-panel-${link.id}`}
+                      className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2.5"
+                    >
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <label className="block text-[0.6875rem]">
+                          <span className="font-medium text-slate-700">
+                            期限延長 (日)
+                          </span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={365}
+                            placeholder="変更しない"
+                            value={editExpiresInDays}
+                            onChange={(e) => setEditExpiresInDays(e.target.value)}
+                            className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                          />
+                        </label>
+                        <label className="block text-[0.6875rem]">
+                          <span className="font-medium text-slate-700">
+                            DL上限回数
+                          </span>
+                          <input
+                            type="number"
+                            min={1}
+                            placeholder="無制限"
+                            value={editMaxDownloads}
+                            onChange={(e) => setEditMaxDownloads(e.target.value)}
+                            className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                          />
+                        </label>
+                        <label className="block text-[0.6875rem]">
+                          <span className="font-medium text-slate-700">
+                            新パスワード
+                          </span>
+                          <input
+                            type="password"
+                            placeholder="変更時のみ入力"
+                            disabled={editClearPassword}
+                            value={editPassword}
+                            onChange={(e) => setEditPassword(e.target.value)}
+                            className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs disabled:opacity-50"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <label className="inline-flex items-center gap-1.5 text-[0.6875rem] text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={editRequireWatermark}
+                              disabled={
+                                classification === 'confidential' ||
+                                link.permissionLevel === 'view'
+                              }
+                              onChange={(e) =>
+                                setEditRequireWatermark(e.target.checked)
+                              }
+                              className="rounded border-slate-300 text-blue-600 disabled:opacity-50"
+                            />
+                            <span>Watermark</span>
+                          </label>
+                          {link.hasPassword && (
+                            <label className="inline-flex items-center gap-1.5 text-[0.6875rem] text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={editClearPassword}
+                                onChange={(e) =>
+                                  setEditClearPassword(e.target.checked)
+                                }
+                                className="rounded border-slate-300 text-blue-600"
+                              />
+                              <span>パスワードを解除</span>
+                            </label>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingLinkId(null)}
+                            className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[0.6875rem] text-slate-600 hover:bg-slate-100"
+                          >
+                            キャンセル
+                          </button>
+                          <button
+                            type="button"
+                            disabled={updatingLinkId === link.id}
+                            onClick={() => void submitLinkSettings(link)}
+                            className="rounded bg-blue-600 px-2.5 py-1 text-[0.6875rem] font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            保存
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

@@ -275,6 +275,8 @@ export interface ContextMenuCapabilities {
   canInspector: boolean;
   /** Single file, previewer+ (version list reads are previewer-gated). */
   canVersionHistory: boolean;
+  /** Single file, editor+ (`item.edit_content`). */
+  canLock?: boolean;
 }
 
 export function buildContextMenuCapabilities(options: {
@@ -448,6 +450,12 @@ export function buildContextMenuCapabilities(options: {
       !isMulti &&
       primaryIsFile &&
       (isSysAdmin || canAccess(primaryAccess, 'item.preview')),
+    canLock:
+      !isMulti &&
+      primaryIsFile &&
+      (isSysAdmin ||
+        isPrivilegedAdmin ||
+        canAccess(primaryAccess, 'item.edit_content')),
   };
 }
 

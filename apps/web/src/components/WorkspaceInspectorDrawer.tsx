@@ -7,15 +7,21 @@ import {
   Folder,
   History,
   Link2,
+  Loader2,
   Lock,
   Shield,
   Sparkles,
   Tag,
+  Unlock,
   X,
 } from 'lucide-react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
 import { canAccess } from '@/lib/capabilities';
 import { formatBytes, formatDateTime } from '@/lib/formatters';
+import {
+  canUserUnlockFileLock,
+  useFileLockActions,
+} from '@/lib/use-file-lock-actions';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import type {
   BreadcrumbItem,
@@ -45,6 +51,7 @@ export function WorkspaceInspectorDrawer({
   canVersionHistory,
   isPrivilegedAdmin,
   lock,
+  currentUserId = null,
   syncStore,
   onClose,
   onPreview,
@@ -54,6 +61,7 @@ export function WorkspaceInspectorDrawer({
   onOpenShare,
   onOpenPermissions,
   onApproveAi,
+  onLockChanged,
 }: {
   target: InspectorTarget;
   effectiveRole: ResourceRole;
@@ -69,6 +77,7 @@ export function WorkspaceInspectorDrawer({
   canVersionHistory: boolean;
   isPrivilegedAdmin: boolean;
   lock?: FileLockInfo | null;
+  currentUserId?: string | null;
   syncStore: WorkspaceSyncStore;
   onClose: () => void;
   onPreview: (file: FileItem) => void;
@@ -81,6 +90,7 @@ export function WorkspaceInspectorDrawer({
   onOpenShare: (target: InspectorTarget) => void;
   onOpenPermissions: (target: InspectorTarget) => void;
   onApproveAi: (file: FileItem) => void;
+  onLockChanged?: (fileId: string, lock: FileLockInfo | null) => void;
 }) {
   const isFolder = target.kind === 'folder';
   const item = isFolder ? target.folder : target.file;
@@ -112,6 +122,27 @@ export function WorkspaceInspectorDrawer({
   };
   const canCopyItem =
     isPrivilegedAdmin || canAccess(targetAccess, 'item.download');
+  const canEditContent =
+    isPrivilegedAdmin || canAccess(targetAccess, 'item.edit_content');
+  const {
+    lock: activeLock,
+    busy: lockBusy,
+    error: lockError,
+    acquireLock,
+    releaseLock,
+  } = useFileLockActions({
+    fileId: isFolder ? null : target.file.id,
+    initialLock: lock ?? null,
+    syncStore,
+    onLockChanged,
+  });
+  const canUnlock = canUserUnlockFileLock({
+    lock: activeLock,
+    currentUserId,
+    isPrivilegedAdmin,
+    canManagePermissions: canManagePerms,
+    canEditContent,
+  });
 
   return (
     <aside
@@ -148,21 +179,50 @@ export function WorkspaceInspectorDrawer({
         </button>
       </div>
 
-      {lock && (
-        <section className="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-xs">
+      {activeLock && (
+        <section
+          data-testid="inspector-lock-banner"
+          className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-xs"
+        >
           <div className="flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5 font-semibold text-amber-800">
               <Lock className="h-3.5 w-3.5" />
-              編集中
+              ロック中
             </span>
             <span className="rounded-full bg-white/70 px-2 py-0.5 text-[0.625rem] text-amber-700">
-              {lock.mode === 'desktop_exclusive' ? 'Files Drive' : 'Web WOPI'}
+              {activeLock.mode === 'desktop_exclusive' ? '排他ロック' : 'Web WOPI'}
             </span>
           </div>
           <p className="text-[0.6875rem] leading-relaxed text-amber-800">
-            {lock.ownerName} さんが編集中です。期限: {formatDateTime(new Date(lock.expiresAt).toISOString())}
+            {activeLock.ownerName} さんがロック中です。期限:{' '}
+            {formatDateTime(new Date(activeLock.expiresAt).toISOString())}
           </p>
+          {!isFolder && canUnlock && (
+            <button
+              type="button"
+              data-testid="inspector-unlock-button"
+              disabled={lockBusy}
+              onClick={() => void releaseLock()}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-[0.6875rem] font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+            >
+              {lockBusy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Unlock className="h-3.5 w-3.5" />
+              )}
+              <span>ロックを解除</span>
+            </button>
+          )}
         </section>
+      )}
+      {lockError && (
+        <div
+          role="alert"
+          data-testid="inspector-lock-error"
+          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[0.6875rem] text-red-700"
+        >
+          {lockError}
+        </div>
       )}
 
       <section className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs">
@@ -298,6 +358,22 @@ export function WorkspaceInspectorDrawer({
           >
             <Download className="h-3.5 w-3.5 text-slate-600" />
             <span>ダウンロード (d)</span>
+          </button>
+        )}
+        {!isFolder && canEditContent && !activeLock && (
+          <button
+            type="button"
+            data-testid="inspector-lock-button"
+            disabled={lockBusy}
+            onClick={() => void acquireLock()}
+            className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            {lockBusy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-600" />
+            ) : (
+              <Lock className="h-3.5 w-3.5 text-amber-600" />
+            )}
+            <span>ファイルをロック</span>
           </button>
         )}
         {!isFolder && (canClassify || isPrivilegedAdmin) && (

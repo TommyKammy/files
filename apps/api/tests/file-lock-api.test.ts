@@ -414,4 +414,85 @@ describe('Files Drive lock REST API and WOPI/Drive mutual exclusion', () => {
       testEnv
     );
   });
+
+  it('supports manual Web UI unlock without lockId for owner and admin, while blocking other editors', async () => {
+    const testEnv = buildTestEnv();
+    const OTHER_EDITOR = 'drive-other-editor';
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO users (id, tenant_id, email, display_name, role, status)
+         VALUES (?, ?, 'other-editor@example.com', 'Other Editor', 'member', 'active')`
+      ).bind(OTHER_EDITOR, TENANT_ID),
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO permissions (
+           id, tenant_id, target_type, target_id, grantee_type, grantee_id,
+           role, granted_by
+         ) VALUES ('drive-perm-other', ?, 'file', ?, 'user', ?, 'editor', ?)`
+      ).bind(TENANT_ID, FILE_A, OTHER_EDITOR, USER_ID),
+    ]);
+
+    const otherHeaders = {
+      'X-Dev-User-Id': OTHER_EDITOR,
+      'X-Dev-User-Role': 'member',
+      'X-Dev-Tenant-Id': TENANT_ID,
+      'X-Dev-User-Email': 'other-editor@example.com',
+      'Content-Type': 'application/json',
+    };
+
+    // Other editor acquires a manual lock without passing lockId
+    const locked = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/files/${FILE_A}/lock`, {
+        method: 'POST',
+        headers: otherHeaders,
+        body: JSON.stringify({}),
+      }),
+      testEnv
+    );
+    expect(locked.status).toBe(201);
+
+    // Owner can unlock without lockId
+    const ownerUnlock = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/files/${FILE_A}/lock`, {
+        method: 'DELETE',
+        headers: otherHeaders,
+      }),
+      testEnv
+    );
+    expect(ownerUnlock.status).toBe(200);
+    expect(((await ownerUnlock.json()) as { released: boolean }).released).toBe(true);
+
+    // Admin acquires a lock; other editor (non-owner, non-admin) cannot unlock without lockId
+    const adminLocked = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/files/${FILE_A}/lock`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({}),
+      }),
+      testEnv
+    );
+    expect(adminLocked.status).toBe(201);
+
+    const forbiddenUnlock = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/files/${FILE_A}/lock`, {
+        method: 'DELETE',
+        headers: otherHeaders,
+      }),
+      testEnv
+    );
+    expect(forbiddenUnlock.status).toBe(403);
+    expect(((await forbiddenUnlock.json()) as { code: string }).code).toBe(
+      'LOCK_UNLOCK_FORBIDDEN'
+    );
+
+    // Admin can unlock without lockId
+    const adminUnlock = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/files/${FILE_A}/lock`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      }),
+      testEnv
+    );
+    expect(adminUnlock.status).toBe(200);
+    expect(((await adminUnlock.json()) as { released: boolean }).released).toBe(true);
+  });
 });

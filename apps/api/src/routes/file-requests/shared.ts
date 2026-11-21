@@ -40,6 +40,7 @@ export interface FileRequestRow {
   tenant_id: string;
   folder_id: string;
   token_hash: string;
+  token_ciphertext?: string | null;
   title: string;
   description: string | null;
   require_submitter_email: number;
@@ -153,7 +154,10 @@ export async function resolveFolderRequestClassification(
   return row ? 'confidential' : 'internal';
 }
 
-export function formatInternalFileRequest(row: FileRequestRow) {
+export function formatInternalFileRequest(
+  row: FileRequestRow,
+  requestUrl: string | null = null
+) {
   return {
     id: row.id,
     folderId: row.folder_id,
@@ -167,6 +171,7 @@ export function formatInternalFileRequest(row: FileRequestRow) {
     isActive: row.is_active === 1,
     createdBy: row.created_by,
     createdAt: row.created_at,
+    requestUrl,
   };
 }
 

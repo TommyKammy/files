@@ -157,7 +157,7 @@ fileLockRoutes.post('/:id/lock', async (c) => {
   );
 });
 
-/** DELETE /api/files/:id/lock — release a Files Drive lock. */
+/** DELETE /api/files/:id/lock — release a Files Drive / manual Web UI lock. */
 fileLockRoutes.delete('/:id/lock', async (c) => {
   const user = getAuthenticatedUser(c);
   const fileId = c.req.param('id');
@@ -168,9 +168,6 @@ fileLockRoutes.delete('/:id/lock', async (c) => {
     lockId?: unknown;
   } | null;
   const lockId = getDriveLockId(body, c);
-  if (!lockId) {
-    return c.json({ error: 'lockId is required' }, 400);
-  }
   if (!c.env.FILE_LOCK_HUB) {
     return c.json({ error: 'Lock service unavailable' }, 503);
   }
@@ -178,14 +175,63 @@ fileLockRoutes.delete('/:id/lock', async (c) => {
   const stub = c.env.FILE_LOCK_HUB.get(
     c.env.FILE_LOCK_HUB.idFromName(fileId)
   );
-  const result = await stub.unlockFile({ fileId, lockId });
+
+  // When a lockId is explicitly supplied (e.g., Files Drive client), require an
+  // exact token match so concurrent clients cannot accidentally unlock each other.
+  if (lockId) {
+    const result = await stub.unlockFile({ fileId, lockId });
+    if (!result.ok) {
+      if (result.lock) {
+        await applyActiveFileLockShadow(c.env.DB, result.lock);
+      }
+      return c.json(
+        {
+          error: 'Lock token does not match',
+          code: 'FILE_LOCKED',
+          lock: result.lock,
+        },
+        409
+      );
+    }
+    await clearActiveFileLockShadow(c.env.DB, fileId, user.tenantId);
+    return c.json({ ok: true, released: result.released });
+  }
+
+  // Web UI manual unlock: allow the lock owner (with content edit permission),
+  // a co-owner (`permission.manage`), or a privileged admin to release the lock.
+  const current = await stub.getLock({ fileId });
+  if (!current.lock) {
+    await clearActiveFileLockShadow(c.env.DB, fileId, user.tenantId);
+    return c.json({ ok: true, released: false });
+  }
+
+  const isAdmin = user.role === 'sys_admin' || user.role === 'sec_admin';
+  const isCoOwner = can(loaded.capabilities, 'permission.manage');
+  const isOwnerWithEdit =
+    current.lock.ownerId === user.id &&
+    can(loaded.capabilities, 'item.edit_content');
+  if (!isOwnerWithEdit && !isCoOwner && !isAdmin) {
+    return c.json(
+      {
+        error: 'Only the lock owner or an administrator can unlock this file',
+        code: 'LOCK_UNLOCK_FORBIDDEN',
+        lock: current.lock,
+      },
+      403
+    );
+  }
+
+  const result = await stub.unlockFile({
+    fileId,
+    lockId: current.lock.lockId,
+  });
   if (!result.ok) {
     if (result.lock) {
       await applyActiveFileLockShadow(c.env.DB, result.lock);
     }
     return c.json(
       {
-        error: 'Lock token does not match',
+        error: 'Lock state changed concurrently',
         code: 'FILE_LOCKED',
         lock: result.lock,
       },

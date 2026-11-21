@@ -5,7 +5,11 @@ import {
   resolveTargetAccess,
 } from '../../../services/authorization';
 import { can } from '../../../services/capabilities';
-import { generateRandomToken, sha256Hex } from '../../../services/crypto-utils';
+import {
+  generateRandomToken,
+  sealRecoverableToken,
+  sha256Hex,
+} from '../../../services/crypto-utils';
 import { hashSharePassword } from '../../../services/shared-link-security';
 import {
   canDownloadForPermissionLevel,
@@ -263,19 +267,21 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
     const linkId = crypto.randomUUID();
     const rawToken = generateRandomToken(32);
     const tokenHash = await sha256Hex(rawToken);
+    const tokenCiphertext = await sealRecoverableToken(c.env, rawToken);
     const nowIso = new Date().toISOString();
 
     const batchResults = await c.env.DB.batch([
       c.env.DB.prepare(
         `INSERT INTO shared_links (
-           id, tenant_id, token_hash, target_type, target_id, access_scope,
+           id, tenant_id, token_hash, token_ciphertext, target_type, target_id, access_scope,
            can_download, permission_level, require_watermark, password_hash,
            expires_at, max_downloads, download_count, created_by, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
       ).bind(
         linkId,
         user.tenantId,
         tokenHash,
+        tokenCiphertext,
         body.targetType,
         targetId,
         accessScope,
@@ -345,7 +351,7 @@ export function registerSharedLinkCreateRoute(routes: Hono<OidcHonoEnv>) {
 
     return c.json(
       {
-        link: created ? formatLinkSummary(created) : null,
+        link: created ? formatLinkSummary(created, `/s/${rawToken}`) : null,
         token: rawToken,
         shareUrl: `/s/${rawToken}`,
       },

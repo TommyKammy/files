@@ -683,6 +683,7 @@ export interface SharedLinkSummary {
   downloadCount: number;
   createdBy: string;
   createdAt: string;
+  shareUrl?: string | null;
 }
 
 export interface CreateSharedLinkPayload {
@@ -812,6 +813,7 @@ export interface FileRequestSummary {
   isActive: boolean;
   createdBy: string;
   createdAt: string;
+  requestUrl?: string | null;
 }
 
 export interface PublicFileRequestMeta {

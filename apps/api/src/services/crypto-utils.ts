@@ -85,3 +85,28 @@ export async function decryptCookiePayload<T>(
     return null;
   }
 }
+
+export async function sealRecoverableToken(
+  env: { SESSION_SECRET?: string; LOCAL_PROXY_SECRET?: string },
+  rawToken: string
+): Promise<string | null> {
+  const secret = env.SESSION_SECRET ?? env.LOCAL_PROXY_SECRET;
+  if (!secret || !rawToken) return null;
+  return encryptCookiePayload(secret, { kind: 'recoverable_token', token: rawToken });
+}
+
+export async function unsealRecoverableToken(
+  env: { SESSION_SECRET?: string; LOCAL_PROXY_SECRET?: string },
+  ciphertext: string | null | undefined
+): Promise<string | null> {
+  const secret = env.SESSION_SECRET ?? env.LOCAL_PROXY_SECRET;
+  if (!secret || !ciphertext) return null;
+  const payload = await decryptCookiePayload<{ kind?: string; token?: string }>(
+    secret,
+    ciphertext
+  );
+  if (payload?.kind !== 'recoverable_token' || typeof payload.token !== 'string' || !payload.token) {
+    return null;
+  }
+  return payload.token;
+}

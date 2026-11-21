@@ -7,7 +7,12 @@ import {
   resolveTargetAccess,
 } from '../../services/authorization';
 import { can } from '../../services/capabilities';
-import { generateRandomToken, sha256Hex } from '../../services/crypto-utils';
+import {
+  generateRandomToken,
+  sealRecoverableToken,
+  sha256Hex,
+  unsealRecoverableToken,
+} from '../../services/crypto-utils';
 import {
   loadFileRequestPolicy,
   resolveRequestMaxSizeBytes,
@@ -48,7 +53,13 @@ fileRequestsRoutes.get('/', async (c) => {
     )
       .bind(user.tenantId, folderId)
       .all<FileRequestRow>();
-    return c.json({ fileRequests: rows.results.map(formatInternalFileRequest) });
+    const fileRequests = await Promise.all(
+      rows.results.map(async (row) => {
+        const token = await unsealRecoverableToken(c.env, row.token_ciphertext);
+        return formatInternalFileRequest(row, token ? `/fr/${token}` : null);
+      })
+    );
+    return c.json({ fileRequests });
   }
 
   const rows = await c.env.DB.prepare(
@@ -58,7 +69,13 @@ fileRequestsRoutes.get('/', async (c) => {
   )
     .bind(user.tenantId, user.id)
     .all<FileRequestRow>();
-  return c.json({ fileRequests: rows.results.map(formatInternalFileRequest) });
+  const fileRequests = await Promise.all(
+    rows.results.map(async (row) => {
+      const token = await unsealRecoverableToken(c.env, row.token_ciphertext);
+      return formatInternalFileRequest(row, token ? `/fr/${token}` : null);
+    })
+  );
+  return c.json({ fileRequests });
 });
 
 fileRequestsRoutes.post('/', async (c) => {
@@ -203,20 +220,22 @@ fileRequestsRoutes.post('/', async (c) => {
   const requestId = crypto.randomUUID();
   const rawToken = generateRandomToken(32);
   const tokenHash = await sha256Hex(rawToken);
+  const tokenCiphertext = await sealRecoverableToken(c.env, rawToken);
   const nowIso = new Date().toISOString();
 
   await c.env.DB.batch([
     c.env.DB.prepare(
       `INSERT INTO file_requests (
-         id, tenant_id, folder_id, token_hash, title, description,
+         id, tenant_id, folder_id, token_hash, token_ciphertext, title, description,
          require_submitter_email, max_file_size_bytes, allowed_extensions,
          submission_count, expires_at, is_active, created_by, created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, ?, ?)`
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, ?, ?)`
     ).bind(
       requestId,
       user.tenantId,
       folderId,
       tokenHash,
+      tokenCiphertext,
       body.title.trim(),
       description,
       body.requireSubmitterEmail ? 1 : 0,
@@ -251,7 +270,9 @@ fileRequestsRoutes.post('/', async (c) => {
 
   return c.json(
     {
-      fileRequest: created ? formatInternalFileRequest(created) : null,
+      fileRequest: created
+        ? formatInternalFileRequest(created, `/fr/${rawToken}`)
+        : null,
       token: rawToken,
       requestUrl: `/fr/${rawToken}`,
     },
