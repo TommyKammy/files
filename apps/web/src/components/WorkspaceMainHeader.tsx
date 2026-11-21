@@ -1,10 +1,16 @@
 'use client';
 
-import { AlertCircle, Loader2, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertCircle, Filter, Loader2, RefreshCw, Trash2, X } from 'lucide-react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
 import { WorkspaceBreadcrumbs } from '@/components/WorkspaceBreadcrumbs';
 import { WorkspaceSelectionBar } from '@/components/WorkspaceSelectionBar';
 import { WorkspaceToolbar } from '@/components/WorkspaceToolbar';
+import type { OfficeDocumentKind } from '@/lib/files-api/create-office';
+import {
+  isWorkspaceFilterActive,
+  type WorkspaceQuickFilter,
+  type WorkspaceQuickFilterItemType,
+} from '@/lib/workspace-filter';
 import type {
   WorkspaceSortDirection,
   WorkspaceSortField,
@@ -13,6 +19,7 @@ import type { WorkspaceTableRow } from '@/lib/workspace-table-row';
 import type {
   AccessMode,
   BreadcrumbItem,
+  ClassificationLabel,
   FolderSummary,
   ResourceRole,
 } from '@/types/files';
@@ -33,6 +40,7 @@ export function WorkspaceMainHeader({
   onRetrySortDrain,
   selectedRows,
   canCreateFolder,
+  canCreateOfficeDoc = false,
   canRenameCurrentFolder,
   canShareCurrentFolder,
   canManageCurrentFolderPerms,
@@ -50,7 +58,11 @@ export function WorkspaceMainHeader({
   viewMode,
   inspectorOpen,
   rootCreationRestricted = false,
+  quickFilter,
+  onQuickFilterChange,
+  onClearQuickFilter,
   onNewFolder,
+  onCreateOfficeDoc,
   onTogglePin,
   onOpenFileRequest,
   onOpenShare,
@@ -81,6 +93,7 @@ export function WorkspaceMainHeader({
   onRetrySortDrain?: () => void;
   selectedRows: WorkspaceTableRow[];
   canCreateFolder: boolean;
+  canCreateOfficeDoc?: boolean;
   canRenameCurrentFolder: boolean;
   canShareCurrentFolder: boolean;
   canManageCurrentFolderPerms: boolean;
@@ -98,7 +111,11 @@ export function WorkspaceMainHeader({
   viewMode: 'list' | 'grid';
   inspectorOpen: boolean;
   rootCreationRestricted?: boolean;
+  quickFilter?: WorkspaceQuickFilter;
+  onQuickFilterChange?: (next: WorkspaceQuickFilter) => void;
+  onClearQuickFilter?: () => void;
   onNewFolder: () => void;
+  onCreateOfficeDoc?: (kind: OfficeDocumentKind) => void;
   onTogglePin: (folder: FolderSummary) => void;
   onOpenFileRequest: () => void;
   onOpenShare: () => void;
@@ -189,6 +206,7 @@ export function WorkspaceMainHeader({
           isTrashView={isTrashView}
           hasSelection={!isTrashView && selectedRows.length > 0}
           canCreateFolder={canCreateFolder}
+          canCreateOfficeDoc={canCreateOfficeDoc}
           canRenameCurrentFolder={canRenameCurrentFolder}
           canShareCurrentFolder={canShareCurrentFolder}
           canManageCurrentFolderPerms={canManageCurrentFolderPerms}
@@ -199,6 +217,7 @@ export function WorkspaceMainHeader({
           inspectorOpen={inspectorOpen}
           rootCreationRestricted={rootCreationRestricted}
           onNewFolder={onNewFolder}
+          onCreateOfficeDoc={onCreateOfficeDoc}
           onTogglePin={onTogglePin}
           onOpenFileRequest={onOpenFileRequest}
           onOpenShare={onOpenShare}
@@ -232,6 +251,72 @@ export function WorkspaceMainHeader({
           />
         )}
       </div>
+
+      {!isTrashView && quickFilter && onQuickFilterChange && (
+        <div
+          role="search"
+          aria-label="フォルダ内クイックフィルタ"
+          className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-[#e7e7ea] bg-white px-2.5 py-1.5"
+        >
+          <Filter className="h-3.5 w-3.5 shrink-0 text-[#6b6f76]" />
+          <input
+            type="search"
+            value={quickFilter.query}
+            onChange={(e) =>
+              onQuickFilterChange({ ...quickFilter, query: e.target.value })
+            }
+            placeholder="このフォルダ内を名前で絞り込み..."
+            aria-label="フォルダ内を名前で絞り込み"
+            data-testid="in-folder-filter-input"
+            className="h-7 min-w-[180px] flex-1 rounded border border-[#e1e1e4] bg-[#fafafa] px-2.5 text-[0.75rem] text-[#111214] placeholder:text-[#8c919b] focus:border-[#5e6ad2] focus:bg-white focus:outline-none"
+          />
+          <select
+            aria-label="種別で絞り込み"
+            value={quickFilter.itemType}
+            onChange={(e) =>
+              onQuickFilterChange({
+                ...quickFilter,
+                itemType: e.target.value as WorkspaceQuickFilterItemType,
+              })
+            }
+            data-testid="in-folder-filter-type"
+            className="h-7 rounded border border-[#e1e1e4] bg-white px-2 text-[0.75rem] text-[#3c3f46] focus:border-[#5e6ad2] focus:outline-none"
+          >
+            <option value="all">すべて</option>
+            <option value="folder">フォルダ</option>
+            <option value="file">ファイル</option>
+          </select>
+          <select
+            aria-label="機密区分で絞り込み"
+            value={quickFilter.classification}
+            onChange={(e) =>
+              onQuickFilterChange({
+                ...quickFilter,
+                classification: e.target.value as 'all' | ClassificationLabel,
+              })
+            }
+            data-testid="in-folder-filter-classification"
+            className="h-7 rounded border border-[#e1e1e4] bg-white px-2 text-[0.75rem] text-[#3c3f46] focus:border-[#5e6ad2] focus:outline-none"
+          >
+            <option value="all">すべての区分</option>
+            <option value="unset">未設定</option>
+            <option value="public">公開</option>
+            <option value="internal">社内限定</option>
+            <option value="confidential">社外秘</option>
+          </select>
+          {isWorkspaceFilterActive(quickFilter) && onClearQuickFilter && (
+            <button
+              type="button"
+              onClick={onClearQuickFilter}
+              data-testid="in-folder-filter-clear"
+              className="inline-flex h-7 items-center gap-1 rounded border border-[#e1e1e4] bg-[#f4f4f6] px-2 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#e9e9ed] hover:text-[#111214]"
+            >
+              <X className="h-3 w-3" />
+              <span>クリア</span>
+            </button>
+          )}
+        </div>
+      )}
     </header>
   );
 }

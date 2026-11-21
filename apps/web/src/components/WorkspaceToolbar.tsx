@@ -1,6 +1,11 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import {
+  ChevronDown,
+  FilePlus,
+  FileSpreadsheet,
+  FileText,
   FolderPlus,
   Inbox,
   Info,
@@ -8,16 +13,45 @@ import {
   LayoutGrid,
   Link2,
   List,
+  Presentation,
   Shield,
   Star,
 } from 'lucide-react';
+import type { OfficeDocumentKind } from '@/lib/files-api/create-office';
 import type { FolderSummary } from '@/types/files';
 import { ROOT_CREATION_NOTICE } from '@/lib/workspace-actions';
+
+const OFFICE_DOC_OPTIONS: ReadonlyArray<{
+  kind: OfficeDocumentKind;
+  label: string;
+  extLabel: string;
+  iconClass: string;
+}> = [
+  {
+    kind: 'docx',
+    label: 'Word ドキュメント',
+    extLabel: '.docx',
+    iconClass: 'text-blue-600',
+  },
+  {
+    kind: 'xlsx',
+    label: 'Excel スプレッドシート',
+    extLabel: '.xlsx',
+    iconClass: 'text-emerald-600',
+  },
+  {
+    kind: 'pptx',
+    label: 'PowerPoint プレゼンテーション',
+    extLabel: '.pptx',
+    iconClass: 'text-orange-600',
+  },
+];
 
 export function WorkspaceToolbar({
   isTrashView,
   hasSelection,
   canCreateFolder,
+  canCreateOfficeDoc = false,
   canRenameCurrentFolder,
   canShareCurrentFolder,
   canManageCurrentFolderPerms,
@@ -28,6 +62,7 @@ export function WorkspaceToolbar({
   inspectorOpen,
   rootCreationRestricted = false,
   onNewFolder,
+  onCreateOfficeDoc,
   onTogglePin,
   onOpenFileRequest,
   onOpenShare,
@@ -39,6 +74,7 @@ export function WorkspaceToolbar({
   isTrashView: boolean;
   hasSelection: boolean;
   canCreateFolder: boolean;
+  canCreateOfficeDoc?: boolean;
   canRenameCurrentFolder: boolean;
   canShareCurrentFolder: boolean;
   canManageCurrentFolderPerms: boolean;
@@ -49,6 +85,7 @@ export function WorkspaceToolbar({
   inspectorOpen: boolean;
   rootCreationRestricted?: boolean;
   onNewFolder: () => void;
+  onCreateOfficeDoc?: (kind: OfficeDocumentKind) => void;
   onTogglePin: (folder: FolderSummary) => void;
   onOpenFileRequest: () => void;
   onOpenShare: () => void;
@@ -57,6 +94,32 @@ export function WorkspaceToolbar({
   onToggleInspector: () => void;
   onOpenShortcuts: () => void;
 }) {
+  const [docMenuOpen, setDocMenuOpen] = useState(false);
+  const docMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!docMenuOpen) return;
+    function handlePointerDown(e: MouseEvent) {
+      if (
+        docMenuRef.current &&
+        !docMenuRef.current.contains(e.target as Node)
+      ) {
+        setDocMenuOpen(false);
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setDocMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [docMenuOpen]);
+
   return (
     <div
       role="toolbar"
@@ -82,6 +145,60 @@ export function WorkspaceToolbar({
               <FolderPlus className="h-3.5 w-3.5 text-blue-600" />
               <span>新規フォルダ</span>
             </button>
+          )}
+
+          {canCreateOfficeDoc && onCreateOfficeDoc && (
+            <div ref={docMenuRef} className="relative">
+              <button
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={docMenuOpen}
+                onClick={() => setDocMenuOpen((prev) => !prev)}
+                data-testid="new-office-doc-button"
+                className="inline-flex items-center gap-1.5 h-7 rounded-md border border-[#e1e1e4] bg-white px-2.5 text-[0.75rem] font-medium text-[#3c3f46] transition hover:bg-[#f2f2f4] hover:text-[#111214]"
+              >
+                <FilePlus className="h-3.5 w-3.5 text-indigo-600" />
+                <span>新規ドキュメント</span>
+                <ChevronDown className="h-3 w-3 text-[#6b6f76]" />
+              </button>
+
+              {docMenuOpen && (
+                <div
+                  role="menu"
+                  aria-label="新規ドキュメントの種類"
+                  className="absolute left-0 top-8 z-30 w-60 rounded-lg border border-[#e1e1e4] bg-white py-1 shadow-lg"
+                >
+                  {OFFICE_DOC_OPTIONS.map((opt) => {
+                    const Icon =
+                      opt.kind === 'docx'
+                        ? FileText
+                        : opt.kind === 'xlsx'
+                          ? FileSpreadsheet
+                          : Presentation;
+                    return (
+                      <button
+                        key={opt.kind}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setDocMenuOpen(false);
+                          onCreateOfficeDoc(opt.kind);
+                        }}
+                        className="flex w-full items-center justify-between px-3 py-1.5 text-left text-[0.75rem] text-[#22242a] transition hover:bg-[#f2f2f4]"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Icon className={`h-3.5 w-3.5 ${opt.iconClass}`} />
+                          <span>{opt.label}</span>
+                        </span>
+                        <span className="font-mono text-[0.6875rem] text-[#6b6f76]">
+                          {opt.extLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
 
           {rootCreationRestricted && (

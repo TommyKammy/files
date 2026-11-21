@@ -53,6 +53,15 @@ import {
 } from '@/components/WorkspaceDragPortal';
 import { type DragWorkspaceItem } from '@/lib/drag-drop-controller';
 import {
+  createOfficeFile,
+  type OfficeDocumentKind,
+} from '@/lib/files-api/create-office';
+import {
+  DEFAULT_WORKSPACE_QUICK_FILTER,
+  filterWorkspaceItems,
+  type WorkspaceQuickFilter,
+} from '@/lib/workspace-filter';
+import {
   ApiClientError,
   downloadWorkspaceZip,
   getFileContentUrl,
@@ -294,6 +303,15 @@ export function WorkspaceFileBrowser() {
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [selectionAnchorKey, setSelectionAnchorKey] = useState<string | null>(null);
+  const [quickFilter, setQuickFilter] = useState<WorkspaceQuickFilter>(
+    DEFAULT_WORKSPACE_QUICK_FILTER
+  );
+  const [createOfficeModal, setCreateOfficeModal] = useState<{
+    kind: OfficeDocumentKind;
+    name: string;
+    submitting: boolean;
+    error: string | null;
+  } | null>(null);
 
   useEffect(() => () => prefetcher.cancel(), [prefetcher]);
 
@@ -301,6 +319,7 @@ export function WorkspaceFileBrowser() {
     setFocusedRowKey(null);
     setSelectedKeys(new Set());
     setSelectionAnchorKey(null);
+    setQuickFilter(DEFAULT_WORKSPACE_QUICK_FILTER);
     setInlineRename(null);
     setClassificationPicker(null);
     setContextMenu(null);
@@ -549,8 +568,12 @@ export function WorkspaceFileBrowser() {
             sortDir,
             isTrashView: true,
           })
-        : { folders, files: visibleFiles },
-    [folders, visibleFiles, sortBy, sortDir, isTrashView]
+        : filterWorkspaceItems({
+            folders,
+            files: visibleFiles,
+            filter: quickFilter,
+          }),
+    [folders, visibleFiles, sortBy, sortDir, isTrashView, quickFilter]
   );
 
   const rows = useMemo<WorkspaceTableRow[]>(
@@ -1313,6 +1336,9 @@ export function WorkspaceFileBrowser() {
     handleOpenMoveCopyModal,
     handleToggleViewMode,
     handleDownloadFile,
+    onRedo: () => {
+      void syncStore.redoLatest();
+    },
   });
 
   const workspaceActions = useWorkspacePaletteActions({
@@ -1706,6 +1732,9 @@ export function WorkspaceFileBrowser() {
           sortDrainStatus="idle"
           selectedRows={selectedRows}
           canCreateFolder={canCreateFolder && !rootCreationRestricted}
+          canCreateOfficeDoc={
+            Boolean(folderId) && (canCreateFolder || canUploadNew)
+          }
           canRenameCurrentFolder={canRenameCurrentFolder}
           canShareCurrentFolder={canShareCurrentFolder}
           canManageCurrentFolderPerms={canManageCurrentFolderPerms}
@@ -1723,7 +1752,20 @@ export function WorkspaceFileBrowser() {
           viewMode={viewMode}
           inspectorOpen={inspectorOpen}
           rootCreationRestricted={rootCreationRestricted}
+          quickFilter={quickFilter}
+          onQuickFilterChange={setQuickFilter}
+          onClearQuickFilter={() =>
+            setQuickFilter(DEFAULT_WORKSPACE_QUICK_FILTER)
+          }
           onNewFolder={openCreateFolderModal}
+          onCreateOfficeDoc={(kind) =>
+            setCreateOfficeModal({
+              kind,
+              name: '',
+              submitting: false,
+              error: null,
+            })
+          }
           onTogglePin={handleTogglePin}
           onOpenFileRequest={() => {
             if (!currentFolder) return;
@@ -2137,6 +2179,104 @@ export function WorkspaceFileBrowser() {
         onUndo={() => void syncStore.undoLatest()}
         onDismiss={(id) => syncStore.dismissToast(id)}
       />
+
+      {createOfficeModal && folderId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="新規Officeドキュメント作成"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+        >
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!createOfficeModal.name.trim() || createOfficeModal.submitting) {
+                return;
+              }
+              setCreateOfficeModal((prev) =>
+                prev ? { ...prev, submitting: true, error: null } : null
+              );
+              try {
+                const res = await createOfficeFile({
+                  folderId,
+                  name: createOfficeModal.name.trim(),
+                  kind: createOfficeModal.kind,
+                });
+                syncStore.upsertFileInCache(res.file);
+                void syncStore
+                  .ensureDirectoryLoaded(folderId, { force: true })
+                  .catch(() => undefined);
+                setCreateOfficeModal(null);
+                router.push(`/workspace/file/${encodeURIComponent(res.file.id)}`);
+              } catch (err) {
+                setCreateOfficeModal((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        submitting: false,
+                        error:
+                          err instanceof Error
+                            ? err.message
+                            : 'ドキュメントの作成に失敗しました',
+                      }
+                    : null
+                );
+              }
+            }}
+            className="w-full max-w-md rounded-xl border border-[#e1e1e4] bg-white p-5 shadow-xl"
+          >
+            <h2 className="text-sm font-semibold text-[#111214]">
+              新規{' '}
+              {createOfficeModal.kind === 'docx'
+                ? 'Word (.docx)'
+                : createOfficeModal.kind === 'xlsx'
+                  ? 'Excel (.xlsx)'
+                  : 'PowerPoint (.pptx)'}{' '}
+              ドキュメントを作成
+            </h2>
+            <p className="mt-1 text-xs text-[#6b6f76]">
+              ドキュメント名を入力してください（拡張子は自動で補完されます）。
+            </p>
+            <input
+              type="text"
+              autoFocus
+              value={createOfficeModal.name}
+              onChange={(e) =>
+                setCreateOfficeModal((prev) =>
+                  prev ? { ...prev, name: e.target.value, error: null } : null
+                )
+              }
+              placeholder={`例: 新規ドキュメント.${createOfficeModal.kind}`}
+              className="mt-3 w-full rounded-lg border border-[#d6d7dc] px-3 py-2 text-sm text-[#111214] focus:border-[#5e6ad2] focus:outline-none"
+            />
+            {createOfficeModal.error && (
+              <p className="mt-2 text-xs text-red-600" role="alert">
+                {createOfficeModal.error}
+              </p>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={createOfficeModal.submitting}
+                onClick={() => setCreateOfficeModal(null)}
+                className="rounded-lg border border-[#e1e1e4] bg-white px-3 py-1.5 text-xs font-medium text-[#3c3f46] hover:bg-[#f4f4f6]"
+              >
+                キャンセル
+              </button>
+              <button
+                type="submit"
+                disabled={
+                  createOfficeModal.submitting ||
+                  !createOfficeModal.name.trim()
+                }
+                className="rounded-lg bg-[#5e6ad2] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#4f5ac2] disabled:opacity-50"
+              >
+                {createOfficeModal.submitting ? '作成中...' : '作成して開く'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
         </div>
         );

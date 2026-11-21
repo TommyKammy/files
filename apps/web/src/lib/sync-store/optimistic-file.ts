@@ -90,6 +90,17 @@ export function optimisticRenameFile(
             { skipUndo: true }
           );
         },
+        redoLabel: `「${trimmed}」への名前変更をやり直す`,
+        applyRedo: () => {
+          const current = ctx.filesById.get(updated.id) ?? prevFile;
+          optimisticRenameFile(
+            ctx,
+            current,
+            trimmed,
+            effectiveRole,
+            { skipUndo: true }
+          );
+        },
       },
       `ファイル名を「${trimmed}」に変更しました`
     );

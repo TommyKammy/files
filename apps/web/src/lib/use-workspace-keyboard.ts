@@ -73,6 +73,7 @@ export interface WorkspaceKeyboardContext {
   ) => void;
   handleToggleViewMode: () => void;
   handleDownloadFile: (fileId: string) => void;
+  onRedo?: () => void;
 }
 
 export function useWorkspaceKeyboard(ctx: WorkspaceKeyboardContext) {
@@ -119,6 +120,7 @@ export function useWorkspaceKeyboard(ctx: WorkspaceKeyboardContext) {
     handleOpenMoveCopyModal,
     handleToggleViewMode,
     handleDownloadFile,
+    onRedo,
   } = ctx;
 
   useEffect(() => {
@@ -156,6 +158,27 @@ export function useWorkspaceKeyboard(ctx: WorkspaceKeyboardContext) {
         if (!syncStore.getSnapshot().canUndo) return;
         e.preventDefault();
         void syncStore.undoLatest();
+        return;
+      }
+
+      if (
+        !isTrashView &&
+        !e.altKey &&
+        (((e.metaKey || e.ctrlKey) &&
+          e.shiftKey &&
+          e.key.toLowerCase() === 'z') ||
+          (e.ctrlKey &&
+            !e.metaKey &&
+            !e.shiftKey &&
+            e.key.toLowerCase() === 'y'))
+      ) {
+        if (!syncStore.getSnapshot().canRedo) return;
+        e.preventDefault();
+        if (onRedo) {
+          onRedo();
+        } else {
+          void syncStore.redoLatest();
+        }
         return;
       }
 

@@ -6,11 +6,14 @@ export interface UndoAction {
   id: string;
   label: string;
   applyUndo: () => Promise<void> | void;
+  redoLabel?: string;
+  applyRedo?: () => Promise<void> | void;
 }
 
 export interface ToastContext {
   toasts: WorkspaceToastItem[];
   undoStack: UndoAction[];
+  redoStack: UndoAction[];
   toastTimers: Map<string, ReturnType<typeof setTimeout>>;
   jobPollTimers: Set<ReturnType<typeof setTimeout>>;
   copiedRootsByMutationId: Map<string, unknown>;
@@ -37,6 +40,7 @@ export function clearToastsAndUndo(ctx: ToastContext): void {
   ctx.jobPollTimers.clear();
   ctx.toasts = [];
   ctx.undoStack = [];
+  ctx.redoStack = [];
   ctx.copiedRootsByMutationId.clear();
   ctx.cancelledCopyMutationIds.clear();
   ctx.pendingMutationCount = 0;
@@ -83,6 +87,18 @@ export async function undoLatest(ctx: ToastContext): Promise<boolean> {
     }
   }
   await entry.applyUndo();
+  if (entry.applyRedo) {
+    ctx.redoStack = [...ctx.redoStack.slice(-(MAX_UNDO_STACK - 1)), entry];
+  }
+  ctx.emit();
+  return true;
+}
+
+export async function redoLatest(ctx: ToastContext): Promise<boolean> {
+  const entry = ctx.redoStack.pop();
+  if (!entry || !entry.applyRedo) return false;
+  await entry.applyRedo();
+  ctx.undoStack = [...ctx.undoStack.slice(-(MAX_UNDO_STACK - 1)), entry];
   ctx.emit();
   return true;
 }
@@ -96,6 +112,7 @@ export function pushUndo(
     id: makeClientMutationId('undo'),
     ...entry,
   };
+  ctx.redoStack = [];
   ctx.undoStack = [...ctx.undoStack.slice(-(MAX_UNDO_STACK - 1)), action];
   pushToast(ctx, {
     kind: 'undo',

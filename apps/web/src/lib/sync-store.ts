@@ -52,6 +52,7 @@ import {
   dismissToast,
   pushToast,
   pushUndo,
+  redoLatest,
   undoLatest,
   type ToastContext,
   type UndoAction,
@@ -158,6 +159,7 @@ export interface SyncStoreSnapshot {
   activeDirectoryNotice: string | null;
   toasts: WorkspaceToastItem[];
   canUndo: boolean;
+  canRedo: boolean;
   pendingMutationCount: number;
   revision: number;
   sessionError: SessionErrorInfo | null;
@@ -300,6 +302,7 @@ export class WorkspaceSyncStore {
   private readonly toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private toasts: WorkspaceToastItem[] = [];
   private undoStack: UndoAction[] = [];
+  private redoStack: UndoAction[] = [];
   private pendingMutationCount = 0;
   private outboxLoadedScopeKey: string | null = null;
 
@@ -411,6 +414,7 @@ export class WorkspaceSyncStore {
       activeDirectoryNotice: this.activeDirectoryNotice,
       toasts: this.toasts,
       canUndo: this.undoStack.length > 0,
+      canRedo: this.redoStack.length > 0,
       pendingMutationCount: this.pendingMutationCount,
       revision: this.revision,
       sessionError: this.sessionError,
@@ -1025,6 +1029,12 @@ export class WorkspaceSyncStore {
       set undoStack(value) {
         self.undoStack = value;
       },
+      get redoStack() {
+        return self.redoStack;
+      },
+      set redoStack(value) {
+        self.redoStack = value;
+      },
       toastTimers: this.toastTimers,
       jobPollTimers: this.jobPollTimers,
       copiedRootsByMutationId: this.copiedRootsByMutationId,
@@ -1056,6 +1066,10 @@ export class WorkspaceSyncStore {
 
   async undoLatest(): Promise<boolean> {
     return undoLatest(this.toastContext());
+  }
+
+  async redoLatest(): Promise<void> {
+    await redoLatest(this.toastContext());
   }
 
   private pushUndo(entry: Omit<UndoAction, 'id'>, toastMessage: string): void {

@@ -18,12 +18,23 @@ import {
   deliverFileContent,
 } from '../services/file-content-access';
 import {
+  buildR2ObjectKey,
   type FileRow,
   FileUploadError,
   finalizeUploadedVersion,
+  getTenantQuotaStatus,
   initializePendingUpload,
   SINGLE_UPLOAD_MAX_BYTES,
+  validateFileNameAndExt,
 } from '../services/file-upload-common';
+import {
+  buildMinimalOfficeDocument,
+  type OfficeDocumentKind,
+} from '../services/ooxml-templates';
+import {
+  buildUserStorageDeltaStmt,
+  getUserStorageQuotaStatus,
+} from '../services/user-storage-stats';
 import { issueSignedStorageUrl } from '../services/storage-url-provider';
 import {
   getShareLinkPolicyFlags,
@@ -34,7 +45,10 @@ import { buildSyncChangeStmt, parseExpectedVersionInput } from '../services/sync
 import { emitTenantSyncSignal, extractLastSyncSeq } from '../services/sync-notifier';
 import type { ClassificationLabel } from '../types/api';
 import type { OidcHonoEnv } from '../types/oidc';
-import { VALID_CLASSIFICATIONS } from '../utils/classification';
+import {
+  pickStricterClassification,
+  VALID_CLASSIFICATIONS,
+} from '../utils/classification';
 import { normalizeVersionComment } from './file-versions/shared';
 
 function handleFileError(
@@ -178,6 +192,288 @@ filesUploadRoutes.post('/upload-complete', async (c) => {
       result.file.id
     );
     return c.json(result);
+  } catch (err) {
+    return handleFileError(c, err);
+  }
+});
+
+const VALID_OFFICE_KINDS = new Set<OfficeDocumentKind>(['docx', 'xlsx', 'pptx']);
+
+/** POST /api/files/create-office — create a new minimal Office document (.docx/.xlsx/.pptx) */
+filesUploadRoutes.post('/create-office', async (c) => {
+  const user = getAuthenticatedUser(c);
+  const body = (await c.req.json().catch(() => null)) as {
+    folderId?: unknown;
+    name?: unknown;
+    kind?: unknown;
+  } | null;
+
+  if (!body || typeof body.folderId !== 'string' || !body.folderId.trim()) {
+    return c.json(
+      { error: 'Target folderId is required', code: 'FOLDER_ID_REQUIRED' },
+      400
+    );
+  }
+  const folderId = body.folderId.trim();
+
+  if (
+    typeof body.kind !== 'string' ||
+    !VALID_OFFICE_KINDS.has(body.kind as OfficeDocumentKind)
+  ) {
+    return c.json(
+      { error: 'kind must be one of docx, xlsx, pptx', code: 'INVALID_KIND' },
+      400
+    );
+  }
+  const kind = body.kind as OfficeDocumentKind;
+
+  try {
+    const validated = validateFileNameAndExt(body.name);
+    const normalizedName = validated.name.toLowerCase().endsWith(`.${kind}`)
+      ? validated.name
+      : `${validated.name}.${kind}`;
+    const { name, extension } = validateFileNameAndExt(normalizedName);
+
+    const folderAccess = await resolveTargetAccess(
+      c.env.DB,
+      user,
+      'folder',
+      folderId
+    );
+    if (!folderAccess || folderAccess.deletedAt !== null) {
+      return c.json({ error: 'Target folder not found', code: 'FOLDER_NOT_FOUND' }, 404);
+    }
+    if (!can(folderAccess.capabilities, 'item.upload_new')) {
+      return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);
+    }
+
+    // Inherit strictest classification across folder and all ancestors
+    let classification: ClassificationLabel = folderAccess.classification;
+    const ancClassRow = await c.env.DB.prepare(
+      `SELECT MAX(CASE f.classification
+         WHEN 'confidential' THEN 3
+         WHEN 'internal' THEN 2
+         WHEN 'public' THEN 1
+         ELSE 0
+       END) AS max_cls
+         FROM folder_closures fc
+         JOIN folders f ON f.id = fc.ancestor_id
+        WHERE fc.tenant_id = ? AND fc.descendant_id = ?`
+    )
+      .bind(user.tenantId, folderId)
+      .first<{ max_cls: number | null }>();
+    const mapCls: Record<number, ClassificationLabel> = {
+      0: 'unset',
+      1: 'public',
+      2: 'internal',
+      3: 'confidential',
+    };
+    const ancLabel = ancClassRow?.max_cls
+      ? (mapCls[ancClassRow.max_cls] ?? 'unset')
+      : 'unset';
+    classification = pickStricterClassification(classification, ancLabel);
+
+    const existing = await c.env.DB.prepare(
+      `SELECT id
+         FROM files
+        WHERE tenant_id = ?
+          AND folder_id = ?
+          AND name = ?
+          AND deleted_at IS NULL
+          AND upload_state = 'active'`
+    )
+      .bind(user.tenantId, folderId, name)
+      .first<{ id: string }>();
+
+    if (existing) {
+      return c.json(
+        {
+          error: `File "${name}" already exists in this folder`,
+          code: 'NAME_CONFLICT',
+        },
+        409
+      );
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const doc = buildMinimalOfficeDocument(kind, now);
+    const sizeBytes = doc.bytes.byteLength;
+
+    const quota = await getTenantQuotaStatus(c.env.DB, user.tenantId);
+    if (quota.usedBytes + sizeBytes > quota.quotaBytes) {
+      return c.json(
+        {
+          error: `Tenant storage quota exceeded (remaining ${quota.remainingBytes} bytes)`,
+          code: 'QUOTA_EXCEEDED',
+        },
+        413
+      );
+    }
+
+    const userQuota = await getUserStorageQuotaStatus(
+      c.env.DB,
+      user.tenantId,
+      user.id
+    );
+    if (
+      userQuota.quotaBytes !== null &&
+      userQuota.usedBytes + sizeBytes > userQuota.quotaBytes
+    ) {
+      const remainingBytes = Math.max(
+        0,
+        userQuota.quotaBytes - userQuota.usedBytes
+      );
+      return c.json(
+        {
+          error: `Personal storage quota exceeded (remaining ${remainingBytes} bytes)`,
+          code: 'USER_QUOTA_EXCEEDED',
+        },
+        413
+      );
+    }
+
+    const fileId = crypto.randomUUID();
+    const versionId = crypto.randomUUID();
+    const r2ObjectKey = buildR2ObjectKey(user.tenantId, fileId, 1);
+
+    await c.env.BUCKET.put(r2ObjectKey, doc.bytes, {
+      httpMetadata: { contentType: doc.mimeType },
+    });
+
+    const statements: D1PreparedStatement[] = [
+      c.env.DB.prepare(
+        `INSERT INTO files (
+           id, tenant_id, folder_id, name, extension, mime_type, size_bytes,
+           upload_state, current_version_id, current_version_num, classification,
+           created_by, updated_by, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, 1, ?, ?, ?, ?, ?)`
+      ).bind(
+        fileId,
+        user.tenantId,
+        folderId,
+        name,
+        extension,
+        doc.mimeType,
+        sizeBytes,
+        versionId,
+        classification,
+        user.id,
+        user.id,
+        nowIso,
+        nowIso
+      ),
+      c.env.DB.prepare(
+        `INSERT INTO file_versions (
+           id, tenant_id, file_id, version_num, r2_object_key, r2_upload_id,
+           size_bytes, mime_type, upload_status, uploaded_by, created_at
+         ) VALUES (?, ?, ?, 1, ?, NULL, ?, ?, 'completed', ?, ?)`
+      ).bind(
+        versionId,
+        user.tenantId,
+        fileId,
+        r2ObjectKey,
+        sizeBytes,
+        doc.mimeType,
+        user.id,
+        nowIso
+      ),
+      c.env.DB.prepare(
+        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason)
+         VALUES (?, ?, ?, ?, ?, '')`
+      ).bind(fileId, user.tenantId, classification, name, extension ?? ''),
+      c.env.DB.prepare(
+        `INSERT INTO tenant_storage_stats (tenant_id, classification, file_count, total_bytes, updated_at)
+         VALUES (?, ?, 1, ?, ?)
+         ON CONFLICT (tenant_id, classification)
+         DO UPDATE SET file_count = file_count + 1,
+                       total_bytes = total_bytes + ?,
+                       updated_at = excluded.updated_at`
+      ).bind(user.tenantId, classification, sizeBytes, nowIso, sizeBytes),
+      buildUserStorageDeltaStmt(c.env.DB, {
+        tenantId: user.tenantId,
+        userId: user.id,
+        countDelta: 1,
+        bytesDelta: sizeBytes,
+        nowIso,
+      }),
+      ...buildRootFolderDeltaByFolderStmts(c.env.DB, {
+        tenantId: user.tenantId,
+        folderId,
+        countDelta: 1,
+        bytesDelta: sizeBytes,
+        nowIso,
+      }),
+      buildAuditLogStmt(c.env.DB, {
+        tenantId: user.tenantId,
+        actorId: user.id,
+        actorEmail: user.email,
+        actorIp: user.ipAddress,
+        action: 'file.create_office',
+        targetType: 'file',
+        targetId: fileId,
+        classificationSnapshot: classification,
+        metadata: {
+          kind,
+          name,
+          folderId,
+          sizeBytes,
+        },
+        nowIso,
+      }),
+      buildSyncChangeStmt(c.env.DB, {
+        tenantId: user.tenantId,
+        entityType: 'file',
+        entityId: fileId,
+        folderId,
+        action: 'file.create_office',
+        payload: {
+          name,
+          extension,
+          folderId,
+          sizeBytes,
+          mimeType: doc.mimeType,
+          currentVersionNum: 1,
+          metaVersion: 1,
+          classification,
+          updatedAt: nowIso,
+        },
+        nowIso,
+      }),
+    ];
+
+    let batchResults: D1Result[];
+    try {
+      batchResults = await c.env.DB.batch(statements);
+    } catch (err) {
+      await c.env.BUCKET.delete(r2ObjectKey).catch(() => {});
+      if (((err as Error).message ?? '').includes('UNIQUE constraint failed')) {
+        return c.json(
+          {
+            error: `File "${name}" already exists in this folder`,
+            code: 'NAME_CONFLICT',
+          },
+          409
+        );
+      }
+      throw err;
+    }
+
+    await emitTenantSyncSignal(c, {
+      tenantId: user.tenantId,
+      seq: extractLastSyncSeq(batchResults),
+      eventKind: 'file.create_office',
+      scopeFolderIds: [folderId],
+    });
+    await recordGuestAccess(c.env.DB, user, 'create_office', 'file', fileId);
+
+    const file = await c.env.DB.prepare(
+      'SELECT * FROM files WHERE tenant_id = ? AND id = ?'
+    )
+      .bind(user.tenantId, fileId)
+      .first<FileRow>();
+
+    return c.json({ file }, 201);
   } catch (err) {
     return handleFileError(c, err);
   }
