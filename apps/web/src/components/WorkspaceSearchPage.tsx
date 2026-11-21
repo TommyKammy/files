@@ -72,6 +72,7 @@ export function WorkspaceSearchPage() {
     parseClassificationParam(searchParams.get('classification'))
   );
   const [extension, setExtension] = useState(() => searchParams.get('extension') ?? '');
+  const [tag, setTag] = useState(() => searchParams.get('tag') ?? '');
   const [updatedFrom, setUpdatedFrom] = useState(() => searchParams.get('updatedFrom') ?? '');
   const [updatedTo, setUpdatedTo] = useState(() => searchParams.get('updatedTo') ?? '');
   const [folderId, setFolderId] = useState(() => searchParams.get('folderId') ?? '');
@@ -101,6 +102,7 @@ export function WorkspaceSearchPage() {
     type: searchType,
     classification,
     extension,
+    tag,
     folderId: folderId || undefined,
     updatedFrom,
     updatedTo,
@@ -160,6 +162,7 @@ export function WorkspaceSearchPage() {
       type: parseTypeParam(searchParams.get('type')),
       classification: parseClassificationParam(searchParams.get('classification')),
       extension: searchParams.get('extension') ?? '',
+      tag: searchParams.get('tag') ?? '',
       folderId: searchParams.get('folderId') ?? undefined,
       updatedFrom: searchParams.get('updatedFrom') ?? '',
       updatedTo: searchParams.get('updatedTo') ?? '',
@@ -185,6 +188,7 @@ export function WorkspaceSearchPage() {
     setSearchType('all');
     setClassification('');
     setExtension('');
+    setTag('');
     setUpdatedFrom('');
     setUpdatedTo('');
     setFolderId('');
@@ -322,6 +326,17 @@ export function WorkspaceSearchPage() {
                     value={extension}
                     onChange={(e) => setExtension(e.target.value)}
                     placeholder="例: pdf, docx"
+                    className="h-8 w-full rounded-md border border-[#d7d7dc] bg-white px-2.5 text-xs text-[#111214] placeholder:text-[#8a8d94] focus:border-[#5e6ad2] focus:outline-none"
+                  />
+                </label>
+
+                <label className="block space-y-1 text-xs">
+                  <span className="font-medium text-[#3c3f46]">タグ</span>
+                  <input
+                    type="text"
+                    value={tag}
+                    onChange={(e) => setTag(e.target.value)}
+                    placeholder="例: urgent, 契約"
                     className="h-8 w-full rounded-md border border-[#d7d7dc] bg-white px-2.5 text-xs text-[#111214] placeholder:text-[#8a8d94] focus:border-[#5e6ad2] focus:outline-none"
                   />
                 </label>

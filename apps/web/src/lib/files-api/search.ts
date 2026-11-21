@@ -24,6 +24,7 @@ export interface SearchWorkspaceParams {
   minSize?: number | null;
   maxSize?: number | null;
   ownerId?: string;
+  tag?: string;
   limit?: number;
   offset?: number;
 }
@@ -76,6 +77,10 @@ export function buildSearchQueryString(params: SearchWorkspaceParams): string {
   if (ownerId) {
     qs.set('ownerId', ownerId);
   }
+  const normalizedTag = params.tag?.trim().toLowerCase();
+  if (normalizedTag) {
+    qs.set('tag', normalizedTag);
+  }
   if (typeof params.limit === 'number' && Number.isFinite(params.limit)) {
     qs.set('limit', String(Math.min(Math.max(Math.floor(params.limit), 1), 100)));
   }
@@ -96,7 +101,8 @@ export function hasActiveSearchFilters(params: SearchWorkspaceParams): boolean {
       params.updatedTo?.trim() ||
       (typeof params.minSize === 'number' && Number.isFinite(params.minSize)) ||
       (typeof params.maxSize === 'number' && Number.isFinite(params.maxSize)) ||
-      params.ownerId?.trim()
+      params.ownerId?.trim() ||
+      params.tag?.trim()
   );
 }
 

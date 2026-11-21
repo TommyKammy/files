@@ -216,6 +216,7 @@ searchRoutes.get('/', async (c) => {
   const minSize = parseOptionalNonNegativeInt(c.req.query('minSize'));
   const maxSize = parseOptionalNonNegativeInt(c.req.query('maxSize'));
   const ownerId = (c.req.query('ownerId') ?? '').trim() || null;
+  const tagFilter = (c.req.query('tag') ?? '').trim().toLowerCase() || null;
 
   const parsed = parseSearchQuery(rawQuery);
   const effectiveClassification = explicitClassification ?? parsed.classificationFilter;
@@ -229,6 +230,7 @@ searchRoutes.get('/', async (c) => {
       minSize !== null ||
       maxSize !== null ||
       ownerId ||
+      tagFilter ||
       explicitType === 'folder' ||
       explicitType === 'file'
   );
@@ -314,6 +316,19 @@ searchRoutes.get('/', async (c) => {
       fileConditions.push('fl.created_by = ?');
       fileBindings.push(ownerId);
     }
+    if (tagFilter) {
+      fileConditions.push(
+        `EXISTS (
+          SELECT 1
+            FROM item_tags it
+           WHERE it.tenant_id = fl.tenant_id
+             AND it.item_type = 'file'
+             AND it.item_id = fl.id
+             AND it.tag = ?
+        )`
+      );
+      fileBindings.push(tagFilter);
+    }
 
     const fileSql = `SELECT fl.id, fl.folder_id, pf.name AS folder_name, fl.name, fl.extension,
               fl.mime_type, fl.size_bytes, fl.classification, fl.ai_suggested_label,
@@ -373,6 +388,19 @@ searchRoutes.get('/', async (c) => {
     if (ownerId) {
       folderConditions.push('f.created_by = ?');
       folderBindings.push(ownerId);
+    }
+    if (tagFilter) {
+      folderConditions.push(
+        `EXISTS (
+          SELECT 1
+            FROM item_tags it
+           WHERE it.tenant_id = f.tenant_id
+             AND it.item_type = 'folder'
+             AND it.item_id = f.id
+             AND it.tag = ?
+        )`
+      );
+      folderBindings.push(tagFilter);
     }
 
     const folderSql = `SELECT f.id, f.parent_id, pf.name AS parent_name, f.name, f.depth,
