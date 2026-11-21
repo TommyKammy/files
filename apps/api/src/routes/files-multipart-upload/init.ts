@@ -6,6 +6,7 @@ import { issueSignedMultipartPartUrl } from '../../services/storage-url-provider
 import type { ClassificationLabel } from '../../types/api';
 import type { OidcHonoEnv } from '../../types/oidc';
 import { VALID_CLASSIFICATIONS } from '../../utils/classification';
+import { normalizeVersionComment } from '../file-versions/shared';
 import {
   MIN_MULTIPART_INIT_BYTES,
   handleMultipartError,
@@ -22,6 +23,7 @@ export function registerMultipartInitRoute(routes: Hono<OidcHonoEnv>) {
       sizeBytes?: number;
       classification?: ClassificationLabel;
       conflictPolicy?: 'fail' | 'new_version';
+      comment?: unknown;
     } | null;
 
     if (!body || typeof body.sizeBytes !== 'number') {
@@ -38,6 +40,10 @@ export function registerMultipartInitRoute(routes: Hono<OidcHonoEnv>) {
     }
     if (body.classification !== undefined && !VALID_CLASSIFICATIONS.has(body.classification)) {
       return c.json({ error: 'Invalid classification value' }, 400);
+    }
+    const parsedComment = normalizeVersionComment(body.comment);
+    if (!parsedComment.ok) {
+      return c.json({ error: parsedComment.error }, 400);
     }
 
     const mimeType =
@@ -59,9 +65,17 @@ export function registerMultipartInitRoute(routes: Hono<OidcHonoEnv>) {
       let uploadId: string;
       try {
         uploadId = await initiateMultipartUpload(c.env, initialized.r2ObjectKey, mimeType);
-        await c.env.DB.prepare('UPDATE file_versions SET r2_upload_id = ? WHERE id = ?')
-          .bind(uploadId, initialized.versionId)
-          .run();
+        if (parsedComment.value !== null) {
+          await c.env.DB.prepare(
+            'UPDATE file_versions SET r2_upload_id = ?, comment = ? WHERE id = ?'
+          )
+            .bind(uploadId, parsedComment.value, initialized.versionId)
+            .run();
+        } else {
+          await c.env.DB.prepare('UPDATE file_versions SET r2_upload_id = ? WHERE id = ?')
+            .bind(uploadId, initialized.versionId)
+            .run();
+        }
       } catch (initErr) {
         // Clean up pending DB rows so abandoned init leaves zero dangling pending state
         const cleanupStmts: D1PreparedStatement[] = [

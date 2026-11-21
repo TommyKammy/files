@@ -188,6 +188,7 @@ export async function uploadWorkspaceFile(options: {
   folderId: string;
   file: File;
   conflictPolicy?: 'fail' | 'new_version';
+  comment?: string;
   signal?: AbortSignal;
   onProgress?: (progress: UploadTaskProgress) => void;
   retryOptions?: PartUploadRetryOptions;
@@ -200,11 +201,13 @@ export async function uploadWorkspaceFile(options: {
     folderId,
     file,
     conflictPolicy = 'fail',
+    comment,
     signal,
     onProgress,
     retryOptions,
     deps,
   } = options;
+  const trimmedComment = comment?.trim() || undefined;
   const apiFetchFn = deps?.apiFetchFn ?? apiFetch;
   const putBlobFn = deps?.putBlobFn ?? putBlobWithProgress;
   const mimeType = file.type || 'application/octet-stream';
@@ -223,6 +226,7 @@ export async function uploadWorkspaceFile(options: {
         mimeType,
         sizeBytes: file.size,
         conflictPolicy,
+        ...(trimmedComment ? { comment: trimmedComment } : {}),
       }),
       signal,
     });
@@ -276,6 +280,7 @@ export async function uploadWorkspaceFile(options: {
       mimeType,
       sizeBytes: file.size,
       conflictPolicy,
+      ...(trimmedComment ? { comment: trimmedComment } : {}),
     }),
     signal,
   });

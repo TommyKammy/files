@@ -35,6 +35,7 @@ import { emitTenantSyncSignal, extractLastSyncSeq } from '../services/sync-notif
 import type { ClassificationLabel } from '../types/api';
 import type { OidcHonoEnv } from '../types/oidc';
 import { VALID_CLASSIFICATIONS } from '../utils/classification';
+import { normalizeVersionComment } from './file-versions/shared';
 
 function handleFileError(
   c: { json: (body: unknown, status: 400 | 403 | 404 | 409 | 413) => Response },
@@ -66,6 +67,7 @@ filesUploadRoutes.post('/upload-init', async (c) => {
     sizeBytes?: number;
     classification?: ClassificationLabel;
     conflictPolicy?: 'fail' | 'new_version';
+    comment?: unknown;
   } | null;
 
   if (!body || typeof body.sizeBytes !== 'number') {
@@ -73,6 +75,10 @@ filesUploadRoutes.post('/upload-init', async (c) => {
   }
   if (body.classification !== undefined && !VALID_CLASSIFICATIONS.has(body.classification)) {
     return c.json({ error: 'Invalid classification value' }, 400);
+  }
+  const parsedComment = normalizeVersionComment(body.comment);
+  if (!parsedComment.ok) {
+    return c.json({ error: parsedComment.error }, 400);
   }
 
   try {
@@ -85,6 +91,14 @@ filesUploadRoutes.post('/upload-init', async (c) => {
       conflictPolicy: body.conflictPolicy === 'new_version' ? 'new_version' : 'fail',
       multipart: false,
     });
+
+    if (parsedComment.value !== null) {
+      await c.env.DB.prepare(
+        'UPDATE file_versions SET comment = ? WHERE tenant_id = ? AND id = ?'
+      )
+        .bind(parsedComment.value, user.tenantId, initialized.versionId)
+        .run();
+    }
 
     const signedPut = await issueSignedStorageUrl(c.env, {
       method: 'PUT',
@@ -121,10 +135,15 @@ filesUploadRoutes.post('/upload-complete', async (c) => {
   const body = (await c.req.json().catch(() => null)) as {
     fileId?: string;
     versionId?: string;
+    comment?: unknown;
   } | null;
 
   if (!body?.fileId || !body?.versionId) {
     return c.json({ error: 'fileId and versionId are required' }, 400);
+  }
+  const parsedComment = normalizeVersionComment(body.comment);
+  if (!parsedComment.ok) {
+    return c.json({ error: parsedComment.error }, 400);
   }
 
   try {
@@ -139,6 +158,13 @@ filesUploadRoutes.post('/upload-complete', async (c) => {
         maxAllowedBytes: SINGLE_UPLOAD_MAX_BYTES,
       }
     );
+    if (parsedComment.value !== null) {
+      await c.env.DB.prepare(
+        'UPDATE file_versions SET comment = ? WHERE tenant_id = ? AND id = ?'
+      )
+        .bind(parsedComment.value, user.tenantId, body.versionId)
+        .run();
+    }
     await emitTenantSyncSignal(c, {
       tenantId: user.tenantId,
       eventKind: 'file.upload_complete',

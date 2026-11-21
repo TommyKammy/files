@@ -8,6 +8,29 @@ import type { AuthUser } from '../../types/api';
 
 export const DEFAULT_VERSION_LIMIT = 50;
 export const MAX_VERSION_LIMIT = 200;
+export const MAX_VERSION_COMMENT_LENGTH = 500;
+
+export function normalizeVersionComment(
+  raw: unknown
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) {
+    return { ok: true, value: null };
+  }
+  if (typeof raw !== 'string') {
+    return { ok: false, error: 'comment must be a string' };
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return { ok: true, value: null };
+  }
+  if (trimmed.length > MAX_VERSION_COMMENT_LENGTH) {
+    return {
+      ok: false,
+      error: `comment must be ${MAX_VERSION_COMMENT_LENGTH} characters or fewer`,
+    };
+  }
+  return { ok: true, value: trimmed };
+}
 
 export interface VersionCursor {
   versionNum: number;
@@ -56,6 +79,7 @@ export interface FileVersionListRow {
   created_at: string;
   upload_status: 'pending' | 'completed' | 'failed';
   is_current: number;
+  comment: string | null;
 }
 
 export interface PublicFileVersion {
@@ -68,6 +92,7 @@ export interface PublicFileVersion {
   createdAt: string;
   uploadStatus: 'pending' | 'completed' | 'failed';
   isCurrent: boolean;
+  comment: string | null;
 }
 
 /** Map a version row to the public shape; `r2_object_key` is never selected or exposed. */
@@ -82,6 +107,7 @@ export function toPublicVersion(row: FileVersionListRow): PublicFileVersion {
     createdAt: row.created_at,
     uploadStatus: row.upload_status,
     isCurrent: row.is_current === 1,
+    comment: row.comment ?? null,
   };
 }
 

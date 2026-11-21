@@ -8,6 +8,7 @@ import { type FileVersionRow, finalizeUploadedVersion } from '../../services/fil
 import { type CompletedPartInput, completeMultipartUpload } from '../../services/multipart-storage-provider';
 import { emitTenantSyncSignal } from '../../services/sync-notifier';
 import type { OidcHonoEnv } from '../../types/oidc';
+import { normalizeVersionComment } from '../file-versions/shared';
 import {
   handleMultipartError,
 } from './shared';
@@ -20,10 +21,15 @@ export function registerMultipartCompleteRoute(routes: Hono<OidcHonoEnv>) {
       fileId?: string;
       versionId?: string;
       parts?: CompletedPartInput[];
+      comment?: unknown;
     } | null;
 
     if (!body?.fileId || !body?.versionId || !Array.isArray(body.parts) || body.parts.length === 0) {
       return c.json({ error: 'fileId, versionId, and non-empty parts[] are required' }, 400);
+    }
+    const parsedComment = normalizeVersionComment(body.comment);
+    if (!parsedComment.ok) {
+      return c.json({ error: parsedComment.error }, 400);
     }
 
     for (const part of body.parts) {
@@ -78,6 +84,13 @@ export function registerMultipartCompleteRoute(routes: Hono<OidcHonoEnv>) {
         user,
         { fileId: body.fileId, versionId: body.versionId }
       );
+      if (parsedComment.value !== null) {
+        await c.env.DB.prepare(
+          'UPDATE file_versions SET comment = ? WHERE tenant_id = ? AND id = ?'
+        )
+          .bind(parsedComment.value, user.tenantId, body.versionId)
+          .run();
+      }
       await emitTenantSyncSignal(c, {
         tenantId: user.tenantId,
         eventKind: 'file.upload_complete',

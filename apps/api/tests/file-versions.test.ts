@@ -59,6 +59,8 @@ async function uploadVersion(options: {
   mimeType?: string;
   content: string;
   userId?: string;
+  comment?: string;
+  commentOnComplete?: string;
 }): Promise<UploadedVersion> {
   const {
     testEnv,
@@ -67,6 +69,8 @@ async function uploadVersion(options: {
     mimeType = 'text/plain',
     content,
     userId = EDITOR,
+    comment,
+    commentOnComplete,
   } = options;
   const bytes = new TextEncoder().encode(content);
 
@@ -80,6 +84,7 @@ async function uploadVersion(options: {
         mimeType,
         sizeBytes: bytes.byteLength,
         conflictPolicy: 'new_version',
+        ...(comment !== undefined ? { comment } : {}),
       }),
     }),
     testEnv
@@ -109,6 +114,7 @@ async function uploadVersion(options: {
       body: JSON.stringify({
         fileId: initialized.fileId,
         versionId: initialized.versionId,
+        ...(commentOnComplete !== undefined ? { comment: commentOnComplete } : {}),
       }),
     }),
     testEnv
@@ -344,6 +350,7 @@ describe('File version history, historical content URLs and CoW restore (TOM-46)
     expect(listBody.versions[0].mimeType).toBe('text/csv');
     expect(Object.keys(listBody.versions[0]).sort()).toEqual(
       [
+        'comment',
         'createdAt',
         'id',
         'isCurrent',
@@ -1520,5 +1527,61 @@ describe('File version history, historical content URLs and CoW restore (TOM-46)
       ),
       testEnv
     );
+  });
+
+  it('persists trimmed version comments on upload/new_version and returns them in GET /:id/versions', async () => {
+    const testEnv = buildTestEnv();
+    const v1 = await uploadVersion({
+      testEnv,
+      fileName: 'commented.txt',
+      content: 'initial',
+      comment: '  Initial draft  ',
+    });
+    const v2 = await uploadVersion({
+      testEnv,
+      fileName: 'commented.txt',
+      content: 'revised',
+      commentOnComplete: '  Updated on complete  ',
+    });
+    await uploadVersion({
+      testEnv,
+      fileName: 'commented.txt',
+      content: 'blank-comment',
+      comment: '   ',
+    });
+
+    const tooLongRes = await app.fetch(
+      new Request('http://127.0.0.1:8787/api/files/upload-init', {
+        method: 'POST',
+        headers: authHeaders(EDITOR),
+        body: JSON.stringify({
+          folderId: INTERNAL_FOLDER,
+          fileName: 'commented.txt',
+          mimeType: 'text/plain',
+          sizeBytes: 5,
+          conflictPolicy: 'new_version',
+          comment: 'a'.repeat(501),
+        }),
+      }),
+      testEnv
+    );
+    expect(tooLongRes.status).toBe(400);
+
+    const listRes = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/files/${v1.fileId}/versions`, {
+        headers: authHeaders(PREVIEWER),
+      }),
+      testEnv
+    );
+    expect(listRes.status).toBe(200);
+    const listBody = (await listRes.json()) as {
+      versions: Array<{ id: string; versionNum: number; comment: string | null }>;
+    };
+    expect(listBody.versions.map((v) => [v.versionNum, v.comment])).toEqual([
+      [3, null],
+      [2, 'Updated on complete'],
+      [1, 'Initial draft'],
+    ]);
+    expect(listBody.versions[1].id).toBe(v2.versionId);
   });
 });

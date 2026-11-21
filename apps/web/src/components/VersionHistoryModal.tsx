@@ -294,7 +294,7 @@ export function VersionHistoryModal({
                       {row.comment && (
                         <p
                           data-testid={`version-comment-${version.versionNum}`}
-                          className="text-[0.6875rem] text-slate-600"
+                          className="break-words text-[0.6875rem] text-slate-600"
                         >
                           {row.comment}
                         </p>

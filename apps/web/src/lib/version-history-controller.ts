@@ -348,8 +348,7 @@ export class VersionHistoryController {
             restoredVersion.restoredFromVersionNum ??
             response.restoredFromVersionNum,
         };
-        // `GET /versions` does not persist the synthetic restore comment, so
-        // keep the API restore row's note and re-apply it after the re-fetch.
+        // Merge the restore response immediately while the edge replica settles.
         this.setState({
           versions: mergeVersionPages(this.state.versions, [
             enrichedRestored,

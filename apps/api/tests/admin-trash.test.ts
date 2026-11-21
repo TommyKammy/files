@@ -663,7 +663,7 @@ describe('Admin Trash listing / delegated restore / tenant empty (TOM-51)', () =
   it('lists tenant-wide Trash metadata without R2 keys and supports filters, sorting and keyset pagination', async () => {
     const nowMs = Date.now();
     const nearDeletedAt = new Date(nowMs - 29 * 86_400_000).toISOString();
-    const farDeletedAt = new Date(nowMs - 10 * 86_400_000).toISOString();
+    const farDeletedAt = new Date(nowMs - 2 * 86_400_000).toISOString();
 
     await insertFolder({
       id: 'at-list-folder',
