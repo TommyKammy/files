@@ -100,4 +100,76 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return (parsed ?? {}) as T;
 }
 
+export async function apiFetchBlob(
+  path: string,
+  init?: RequestInit
+): Promise<{ blob: Blob; headers: Headers }> {
+  const headers = new Headers(init?.headers);
+  if (init?.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const res = await fetch(path, {
+    ...init,
+    credentials: 'include',
+    headers,
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      void runAuthPurgeHooks();
+    }
+    const text = await res.text().catch(() => '');
+    let parsed: Record<string, unknown> | null = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        parsed = null;
+      }
+    }
+    const message =
+      typeof parsed?.error === 'string'
+        ? parsed.error
+        : `Request failed with HTTP ${res.status}`;
+    const code = typeof parsed?.code === 'string' ? parsed.code : undefined;
+    throw new ApiClientError(res.status, message, code, parsed ?? undefined);
+  }
+
+  return { blob: await res.blob(), headers: res.headers };
+}
+
+export function parseContentDispositionFilename(
+  header: string | null,
+  fallback = 'download.zip'
+): string {
+  if (!header) return fallback;
+  const starMatch = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (starMatch?.[1]) {
+    try {
+      return decodeURIComponent(starMatch[1].trim());
+    } catch {
+      // fall through
+    }
+  }
+  const plainMatch =
+    header.match(/filename="([^"]+)"/i) ?? header.match(/filename=([^;]+)/i);
+  if (plainMatch?.[1]) {
+    return plainMatch[1].trim().replace(/^"|"$/g, '') || fallback;
+  }
+  return fallback;
+}
+
+export function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 

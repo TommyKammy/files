@@ -11,6 +11,7 @@ import {
   type WorkspaceConflictPolicy,
 } from '../services/workspace-operations';
 import type { OidcHonoEnv } from '../types/oidc';
+import { workspaceZipRoutes } from './workspace-zip';
 
 function handleWorkspaceError(
   c: { json: (body: unknown, status: 400 | 403 | 404 | 409 | 413) => Response },
@@ -32,6 +33,7 @@ function handleWorkspaceError(
 export const workspaceRoutes = new Hono<OidcHonoEnv>();
 
 workspaceRoutes.use('*', sessionAuthMiddleware({ required: true }));
+workspaceRoutes.route('/', workspaceZipRoutes);
 
 /** POST /api/workspace/batch-move — batch move folders and files atomically with RBAC & closure checks */
 workspaceRoutes.post('/batch-move', async (c) => {

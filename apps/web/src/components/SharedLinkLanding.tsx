@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import {
   AlertTriangle,
+  ChevronRight,
   Download,
   Eye,
   EyeOff,
@@ -48,6 +49,9 @@ export function SharedLinkLanding({ token }: { token: string }) {
     wopiSession,
     setWopiSession,
     wopiBusy,
+    downloadingZip,
+    navigateToFolder,
+    handleDownloadZip,
     handleVerifyPassword,
     handlePreview,
     handleDownload,
@@ -215,7 +219,7 @@ export function SharedLinkLanding({ token }: { token: string }) {
                 )}
                 <div>
                   <h1 className="text-base font-semibold text-slate-900">
-                    {meta.file?.name ?? meta.folder?.name ?? '共有リソース'}
+                    {meta.file?.name ?? meta.currentFolder?.name ?? meta.folder?.name ?? '共有リソース'}
                   </h1>
                   <div className="text-xs text-slate-500">
                     期限: {formatDateTime(meta.expiresAt)} • ダウンロード:{' '}
@@ -225,22 +229,81 @@ export function SharedLinkLanding({ token }: { token: string }) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {meta.targetType === 'folder' && meta.canDownload && (
+                  <button
+                    type="button"
+                    disabled={downloadingZip}
+                    onClick={() => {
+                      void handleDownloadZip();
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {downloadingZip ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    <span>
+                      {downloadingZip ? 'ZIP作成中...' : 'ZIPで一括ダウンロード'}
+                    </span>
+                  </button>
+                )}
                 <span
                   data-testid="shared-link-permission-level"
                   className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[0.6875rem] font-semibold text-blue-700"
                 >
                   {permissionLevelLandingLabel(meta.permissionLevel)}
                 </span>
-                {(meta.file || meta.folder) && (
+                {(meta.file || meta.currentFolder || meta.folder) && (
                   <ClassificationBadge
                     classification={
-                      meta.file?.classification ?? meta.folder?.classification ?? 'unset'
+                      meta.file?.classification ??
+                      meta.currentFolder?.classification ??
+                      meta.folder?.classification ??
+                      'unset'
                     }
                   />
                 )}
               </div>
             </div>
+
+            {meta.targetType === 'folder' &&
+              meta.breadcrumbs &&
+              meta.breadcrumbs.length > 0 && (
+                <nav
+                  aria-label="共有フォルダパンくずリスト"
+                  className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-white px-6 py-2.5 text-xs text-slate-600"
+                >
+                  {meta.breadcrumbs.map((crumb, idx) => {
+                    const isLast = idx === meta.breadcrumbs!.length - 1;
+                    return (
+                      <span key={crumb.id} className="inline-flex items-center gap-1">
+                        {idx > 0 && (
+                          <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                        )}
+                        {isLast ? (
+                          <span className="font-semibold text-slate-900">
+                            {crumb.name}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigateToFolder(
+                                crumb.id === meta.folder?.id ? null : crumb.id
+                              )
+                            }
+                            className="rounded px-1.5 py-0.5 text-blue-600 hover:bg-blue-50 hover:underline"
+                          >
+                            {crumb.name}
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })}
+                </nav>
+              )}
 
             {buildComposedAccessNotice(meta) && (
               <div
@@ -392,12 +455,36 @@ export function SharedLinkLanding({ token }: { token: string }) {
 
             {meta.targetType === 'folder' && (
               <div className="divide-y divide-slate-100">
-                {meta.folderFiles.length === 0 ? (
+                {(meta.subfolders?.length ?? 0) === 0 &&
+                meta.folderFiles.length === 0 ? (
                   <div className="px-6 py-10 text-center text-xs text-slate-500">
-                    この共有フォルダ内にアクティブなファイルはありません
+                    この共有フォルダ内にアクティブなフォルダやファイルはありません
                   </div>
                 ) : (
-                  meta.folderFiles.map((item) => (
+                  <>
+                    {meta.subfolders?.map((sf) => (
+                      <button
+                        key={sf.id}
+                        type="button"
+                        onClick={() => navigateToFolder(sf.id)}
+                        className="flex w-full items-center justify-between gap-4 px-6 py-3.5 text-left text-xs transition hover:bg-slate-50/70"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                          <span className="truncate font-medium text-slate-900">
+                            {sf.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <ClassificationBadge
+                            classification={sf.classification}
+                            compact
+                          />
+                          <ChevronRight className="h-4 w-4 text-slate-400" />
+                        </div>
+                      </button>
+                    ))}
+                    {meta.folderFiles.map((item) => (
                     <div
                       key={item.id}
                       className="flex flex-wrap items-center justify-between gap-4 px-6 py-3.5 text-xs hover:bg-slate-50/70"
@@ -452,7 +539,8 @@ export function SharedLinkLanding({ token }: { token: string }) {
                         )}
                       </div>
                     </div>
-                  ))
+                  ))}
+                  </>
                 )}
               </div>
             )}

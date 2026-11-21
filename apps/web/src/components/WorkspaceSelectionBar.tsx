@@ -3,6 +3,7 @@
 import {
   Clipboard,
   Copy,
+  Download,
   FolderInput,
   Scissors,
   Sparkles,
@@ -54,6 +55,8 @@ export function WorkspaceSelectionBar({
   canMoveCopySelection,
   canClassifySelection,
   canTrashSelection,
+  canDownloadSelection = false,
+  downloadingZip = false,
   isPrivilegedAdmin,
   onCopy,
   onCut,
@@ -62,6 +65,7 @@ export function WorkspaceSelectionBar({
   onBulkApproveAi,
   onClassify,
   onTrash,
+  onDownloadZip,
   onClear,
 }: {
   selectedRows: WorkspaceTableRow[];
@@ -71,6 +75,8 @@ export function WorkspaceSelectionBar({
   canMoveCopySelection: boolean;
   canClassifySelection: boolean;
   canTrashSelection: boolean;
+  canDownloadSelection?: boolean;
+  downloadingZip?: boolean;
   isPrivilegedAdmin: boolean;
   onCopy: () => void;
   onCut: () => void;
@@ -79,6 +85,7 @@ export function WorkspaceSelectionBar({
   onBulkApproveAi: () => void;
   onClassify: () => void;
   onTrash: () => void;
+  onDownloadZip?: () => void;
   onClear: () => void;
 }) {
   const hasAiSuggestion = selectedRows.some(
@@ -95,6 +102,13 @@ export function WorkspaceSelectionBar({
       <span className="shrink-0 font-semibold">
         {selectedRows.length} 件選択中
       </span>
+      {canDownloadSelection && onDownloadZip && (
+        <BulkActionButton
+          label={downloadingZip ? 'ZIP作成中...' : 'ZIPダウンロード'}
+          icon={<Download className="h-3.5 w-3.5 text-slate-500" />}
+          onClick={onDownloadZip}
+        />
+      )}
       {canCopySelection && (
         <BulkActionButton
           label="コピー"

@@ -8,8 +8,10 @@ import type {
 import {
   ApiClientError,
   createSharedLinkWopiSession,
+  downloadPublicShareZip,
   getPublicShareMeta,
   issuePublicShareUrl,
+  triggerBlobDownload,
   uploadViaSharedLink,
   verifyPublicSharePassword,
 } from '@/lib/files-api';
@@ -43,13 +45,15 @@ export function useSharedLinkLanding(token: string) {
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [wopiSession, setWopiSession] = useState<WopiSessionResponse | null>(null);
   const [wopiBusy, setWopiBusy] = useState(false);
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [downloadingZip, setDownloadingZip] = useState(false);
 
   const loadMeta = useCallback(async () => {
     setLoading(true);
     setErrorCode(null);
     setErrorMessage(null);
     try {
-      const data = await getPublicShareMeta(token);
+      const data = await getPublicShareMeta(token, currentFolderId);
       setMeta(data);
     } catch (err) {
       if (err instanceof ApiClientError) {
@@ -62,7 +66,7 @@ export function useSharedLinkLanding(token: string) {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, currentFolderId]);
 
   useEffect(() => {
     loadMeta();
@@ -224,6 +228,34 @@ export function useSharedLinkLanding(token: string) {
     }
   }
 
+  function navigateToFolder(folderId: string | null) {
+    setCurrentFolderId(folderId);
+  }
+
+  async function handleDownloadZip() {
+    if (!meta?.canDownload || meta.targetType !== 'folder' || downloadingZip) return;
+    setDownloadingZip(true);
+    setErrorMessage(null);
+    try {
+      const { blob, filename, downloadCount } = await downloadPublicShareZip(token, {
+        folderId: currentFolderId,
+        unlockToken,
+      });
+      if (downloadCount !== null) {
+        setMeta((prev) => (prev ? { ...prev, downloadCount } : prev));
+      }
+      triggerBlobDownload(blob, filename);
+    } catch (err) {
+      setErrorMessage(
+        err instanceof ApiClientError
+          ? err.message
+          : 'ZIPダウンロードに失敗しました'
+      );
+    } finally {
+      setDownloadingZip(false);
+    }
+  }
+
   return {
     meta,
     loading,
@@ -244,6 +276,10 @@ export function useSharedLinkLanding(token: string) {
     wopiSession,
     setWopiSession,
     wopiBusy,
+    currentFolderId,
+    downloadingZip,
+    navigateToFolder,
+    handleDownloadZip,
     handleVerifyPassword,
     handlePreview,
     handleDownload,

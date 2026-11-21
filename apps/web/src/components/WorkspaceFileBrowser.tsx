@@ -45,7 +45,12 @@ import {
   WorkspaceDragProvider,
 } from '@/components/WorkspaceDragPortal';
 import { type DragWorkspaceItem } from '@/lib/drag-drop-controller';
-import { ApiClientError, getFileContentUrl } from '@/lib/files-api';
+import {
+  ApiClientError,
+  downloadWorkspaceZip,
+  getFileContentUrl,
+  triggerBlobDownload,
+} from '@/lib/files-api';
 import { canAccess, capabilitiesForRole } from '@/lib/capabilities';
 import { IntentPrefetcher } from '@/lib/intent-prefetch';
 import { getWorkspaceSyncStore } from '@/lib/sync-store';
@@ -878,6 +883,46 @@ export function WorkspaceFileBrowser() {
     ]
   );
 
+  const [downloadingZip, setDownloadingZip] = useState(false);
+
+  const canDownloadSelection = useMemo(
+    () =>
+      selectedRows.length > 0 &&
+      selectedRows.every((row) =>
+        canAccess(
+          {
+            capabilities: collectRowCapabilities(row, directory.capabilities),
+            effectiveRole: resolveRowRole(row),
+          },
+          'item.download'
+        )
+      ),
+    [selectedRows, directory.capabilities, resolveRowRole]
+  );
+
+  const handleDownloadZip = useCallback(async () => {
+    if (downloadingZip || selectedRows.length === 0 || !canDownloadSelection) return;
+    setDownloadingZip(true);
+    setError(null);
+    try {
+      const { blob, filename } = await downloadWorkspaceZip({
+        items: selectedRows.map((row) => ({
+          type: row.kind,
+          id: row.kind === 'folder' ? row.folder.id : row.file.id,
+        })),
+      });
+      triggerBlobDownload(blob, filename);
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'ZIPダウンロードに失敗しました'
+      );
+    } finally {
+      setDownloadingZip(false);
+    }
+  }, [downloadingZip, selectedRows, canDownloadSelection, setError]);
+
   const openFileOrEditor = useCallback(
     (file: { id: string; capabilities?: Capability[] }) => {
       const access = {
@@ -1562,6 +1607,8 @@ export function WorkspaceFileBrowser() {
           canMoveCopySelection={selectionCapabilities.canMoveCopy}
           canClassifySelection={selectionCapabilities.canClassify}
           canTrashSelection={selectionCapabilities.canTrash}
+          canDownloadSelection={canDownloadSelection}
+          downloadingZip={downloadingZip}
           viewMode={viewMode}
           inspectorOpen={inspectorOpen}
           rootCreationRestricted={rootCreationRestricted}
@@ -1610,6 +1657,9 @@ export function WorkspaceFileBrowser() {
           onBulkApproveAi={handleBulkApproveAi}
           onClassify={openClassificationPickerFromTarget}
           onTrash={trashSelectedOrFocused}
+          onDownloadZip={() => {
+            void handleDownloadZip();
+          }}
           onClearSelection={() => setSelectedKeys(new Set())}
         />
 

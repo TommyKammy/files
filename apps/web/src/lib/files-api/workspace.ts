@@ -31,6 +31,8 @@ import type {
 } from '@/types/files';
 import {
   apiFetch,
+  apiFetchBlob,
+  parseContentDispositionFilename,
 } from './core';
 import { buildTrashQueryString } from '@/lib/trash-view';
 
@@ -360,5 +362,22 @@ export function getWorkspaceJob(
     `/api/workspace/jobs/${encodeURIComponent(jobId)}`,
     { signal }
   );
+}
+
+/** POST /api/workspace/download-zip — bulk / folder ZIP download */
+export async function downloadWorkspaceZip(payload: {
+  items: Array<{ type: 'file' | 'folder'; id: string }>;
+}): Promise<{ blob: Blob; filename: string }> {
+  const { blob, headers } = await apiFetchBlob('/api/workspace/download-zip', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return {
+    blob,
+    filename: parseContentDispositionFilename(
+      headers.get('Content-Disposition'),
+      'workspace-download.zip'
+    ),
+  };
 }
 

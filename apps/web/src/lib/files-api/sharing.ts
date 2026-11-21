@@ -15,6 +15,8 @@ import type {
 } from '@/types/files';
 import {
   apiFetch,
+  apiFetchBlob,
+  parseContentDispositionFilename,
 } from './core';
 
 export function listPermissions(
@@ -114,8 +116,39 @@ export function revokeSharedLink(linkId: string): Promise<{ ok: boolean }> {
   });
 }
 
-export function getPublicShareMeta(token: string): Promise<PublicShareMeta> {
-  return apiFetch(`/api/s/${encodeURIComponent(token)}/meta`);
+export function getPublicShareMeta(
+  token: string,
+  folderId?: string | null
+): Promise<PublicShareMeta> {
+  const qs = folderId ? `?folderId=${encodeURIComponent(folderId)}` : '';
+  return apiFetch(`/api/s/${encodeURIComponent(token)}/meta${qs}`);
+}
+
+export async function downloadPublicShareZip(
+  token: string,
+  options?: { folderId?: string | null; unlockToken?: string }
+): Promise<{ blob: Blob; filename: string; downloadCount: number | null }> {
+  const qs = options?.folderId
+    ? `?folderId=${encodeURIComponent(options.folderId)}`
+    : '';
+  const headers: Record<string, string> = {};
+  if (options?.unlockToken) {
+    headers['X-Share-Unlock'] = options.unlockToken;
+  }
+  const { blob, headers: resHeaders } = await apiFetchBlob(
+    `/api/s/${encodeURIComponent(token)}/zip${qs}`,
+    { method: 'GET', headers }
+  );
+  const rawCount = resHeaders.get('X-Download-Count');
+  const parsedCount = rawCount !== null ? Number(rawCount) : NaN;
+  return {
+    blob,
+    filename: parseContentDispositionFilename(
+      resHeaders.get('Content-Disposition'),
+      'shared-folder.zip'
+    ),
+    downloadCount: Number.isFinite(parsedCount) ? parsedCount : null,
+  };
 }
 
 export function verifyPublicSharePassword(

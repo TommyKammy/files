@@ -743,6 +743,12 @@ export interface PublicShareFileMeta {
   classification: ClassificationLabel;
 }
 
+export interface PublicShareSubfolderMeta {
+  id: string;
+  name: string;
+  classification: ClassificationLabel;
+}
+
 export interface PublicShareMeta {
   targetType: 'file' | 'folder';
   accessScope: ShareAccessScope;
@@ -768,6 +774,13 @@ export interface PublicShareMeta {
     name: string;
     classification: ClassificationLabel;
   } | null;
+  currentFolder?: {
+    id: string;
+    name: string;
+    classification: ClassificationLabel;
+  } | null;
+  subfolders?: PublicShareSubfolderMeta[];
+  breadcrumbs?: Array<{ id: string; name: string }>;
   folderFiles: PublicShareFileMeta[];
   branding?: TenantBranding;
 }

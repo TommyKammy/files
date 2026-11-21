@@ -45,6 +45,8 @@ export function WorkspaceMainHeader({
   canMoveCopySelection,
   canClassifySelection,
   canTrashSelection,
+  canDownloadSelection = false,
+  downloadingZip = false,
   viewMode,
   inspectorOpen,
   rootCreationRestricted = false,
@@ -63,6 +65,7 @@ export function WorkspaceMainHeader({
   onBulkApproveAi,
   onClassify,
   onTrash,
+  onDownloadZip,
   onClearSelection,
 }: {
   isTrashView: boolean;
@@ -90,6 +93,8 @@ export function WorkspaceMainHeader({
   canMoveCopySelection: boolean;
   canClassifySelection: boolean;
   canTrashSelection: boolean;
+  canDownloadSelection?: boolean;
+  downloadingZip?: boolean;
   viewMode: 'list' | 'grid';
   inspectorOpen: boolean;
   rootCreationRestricted?: boolean;
@@ -108,6 +113,7 @@ export function WorkspaceMainHeader({
   onBulkApproveAi: () => void;
   onClassify: () => void;
   onTrash: () => void;
+  onDownloadZip?: () => void;
   onClearSelection: () => void;
 }) {
   return (
@@ -211,6 +217,8 @@ export function WorkspaceMainHeader({
             canMoveCopySelection={canMoveCopySelection}
             canClassifySelection={canClassifySelection}
             canTrashSelection={canTrashSelection}
+            canDownloadSelection={canDownloadSelection}
+            downloadingZip={downloadingZip}
             isPrivilegedAdmin={isPrivilegedAdmin}
             onCopy={onCopy}
             onCut={onCut}
@@ -219,6 +227,7 @@ export function WorkspaceMainHeader({
             onBulkApproveAi={onBulkApproveAi}
             onClassify={onClassify}
             onTrash={onTrash}
+            onDownloadZip={onDownloadZip}
             onClear={onClearSelection}
           />
         )}

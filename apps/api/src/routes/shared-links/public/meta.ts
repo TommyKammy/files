@@ -48,6 +48,13 @@ export function registerPublicShareMetaRoutes(routes: Hono<OidcHonoEnv>) {
       classification: ClassificationLabel;
     } | null = null;
     let folderMeta: { id: string; name: string; classification: ClassificationLabel } | null = null;
+    let currentFolder: { id: string; name: string; classification: ClassificationLabel } | null = null;
+    let subfolders: Array<{
+      id: string;
+      name: string;
+      classification: ClassificationLabel;
+    }> = [];
+    let breadcrumbs: Array<{ id: string; name: string }> = [];
     let folderFiles: Array<{
       id: string;
       name: string;
@@ -104,28 +111,101 @@ export function registerPublicShareMetaRoutes(routes: Hono<OidcHonoEnv>) {
           name: folder.name,
           classification: folder.classification,
         };
-        const listed = await c.env.DB.prepare(
-          `SELECT id, name, extension, mime_type, size_bytes, classification
-           FROM files
-           WHERE tenant_id = ? AND folder_id = ? AND upload_state = 'active' AND deleted_at IS NULL
-           ORDER BY name ASC LIMIT 200`
-        )
-          .bind(link.tenant_id, folder.id)
-          .all<{
-            id: string;
-            name: string;
-            extension: string | null;
-            mime_type: string | null;
-            size_bytes: number;
-            classification: ClassificationLabel;
-          }>();
-        folderFiles = listed.results.map((f) => ({
+        const rawRequestedFolderId = c.req.query('folderId')?.trim();
+        const requestedFolderId =
+          rawRequestedFolderId && rawRequestedFolderId.length > 0
+            ? rawRequestedFolderId
+            : folder.id;
+
+        let activeFolder = folder;
+        if (requestedFolderId !== folder.id) {
+          const descendant = await c.env.DB.prepare(
+            `SELECT f.id, f.name, f.classification, f.deleted_at
+             FROM folder_closures fc
+             JOIN folders f ON f.tenant_id = fc.tenant_id AND f.id = fc.descendant_id
+             WHERE fc.tenant_id = ?
+               AND fc.ancestor_id = ?
+               AND fc.descendant_id = ?
+               AND f.deleted_at IS NULL`
+          )
+            .bind(link.tenant_id, folder.id, requestedFolderId)
+            .first<ShareTargetFolderRow>();
+          if (!descendant) {
+            return c.json(
+              { error: 'Shared subfolder not found', code: 'SUBFOLDER_NOT_FOUND' },
+              404
+            );
+          }
+          activeFolder = descendant;
+          targetClassification = activeFolder.classification;
+          targetFolderId = activeFolder.id;
+        }
+
+        currentFolder = {
+          id: activeFolder.id,
+          name: activeFolder.name,
+          classification: activeFolder.classification,
+        };
+
+        const [listedSubfolders, listedFiles, listedBreadcrumbs] = await Promise.all([
+          c.env.DB.prepare(
+            `SELECT id, name, classification
+             FROM folders
+             WHERE tenant_id = ? AND parent_id = ? AND deleted_at IS NULL
+             ORDER BY name ASC LIMIT 200`
+          )
+            .bind(link.tenant_id, activeFolder.id)
+            .all<{ id: string; name: string; classification: ClassificationLabel }>(),
+          c.env.DB.prepare(
+            `SELECT id, name, extension, mime_type, size_bytes, classification
+             FROM files
+             WHERE tenant_id = ? AND folder_id = ? AND upload_state = 'active' AND deleted_at IS NULL
+             ORDER BY name ASC LIMIT 200`
+          )
+            .bind(link.tenant_id, activeFolder.id)
+            .all<{
+              id: string;
+              name: string;
+              extension: string | null;
+              mime_type: string | null;
+              size_bytes: number;
+              classification: ClassificationLabel;
+            }>(),
+          c.env.DB.prepare(
+            `SELECT f.id, f.name
+             FROM folder_closures fc_cur
+             JOIN folder_closures fc_root
+               ON fc_root.tenant_id = fc_cur.tenant_id
+              AND fc_root.ancestor_id = ?
+              AND fc_root.descendant_id = fc_cur.ancestor_id
+             JOIN folders f
+               ON f.tenant_id = fc_cur.tenant_id
+              AND f.id = fc_cur.ancestor_id
+              AND f.deleted_at IS NULL
+             WHERE fc_cur.tenant_id = ?
+               AND fc_cur.descendant_id = ?
+             ORDER BY fc_cur.depth DESC`
+          )
+            .bind(folder.id, link.tenant_id, activeFolder.id)
+            .all<{ id: string; name: string }>(),
+        ]);
+
+        subfolders = listedSubfolders.results.map((sf) => ({
+          id: sf.id,
+          name: sf.name,
+          classification: sf.classification,
+        }));
+        folderFiles = listedFiles.results.map((f) => ({
           id: f.id,
           name: f.name,
           extension: f.extension,
           mimeType: f.mime_type,
           sizeBytes: f.size_bytes,
           classification: f.classification,
+        }));
+        breadcrumbs = listedBreadcrumbs.results.map((b) => ({
+          id: b.id,
+          name: b.name,
         }));
       }
     }
@@ -170,6 +250,9 @@ export function registerPublicShareMetaRoutes(routes: Hono<OidcHonoEnv>) {
       downloadCount: link.download_count,
       file: fileMeta,
       folder: folderMeta,
+      currentFolder,
+      subfolders,
+      breadcrumbs,
       folderFiles,
       branding,
     });

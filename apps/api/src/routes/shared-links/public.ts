@@ -7,6 +7,7 @@ import { registerPublicSharePasswordRoutes } from './public/password';
 import { registerPublicShareUrlRoutes } from './public/url';
 import { registerPublicShareUploadRoutes } from './public/upload';
 import { registerPublicShareWopiRoutes } from './public/wopi-session';
+import { registerPublicShareZipRoutes } from './public/zip';
 
 export const publicShareRoutes = new Hono<OidcHonoEnv>();
 
@@ -30,3 +31,4 @@ registerPublicSharePasswordRoutes(publicShareRoutes);
 registerPublicShareUrlRoutes(publicShareRoutes);
 registerPublicShareUploadRoutes(publicShareRoutes);
 registerPublicShareWopiRoutes(publicShareRoutes);
+registerPublicShareZipRoutes(publicShareRoutes);
