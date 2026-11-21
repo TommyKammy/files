@@ -184,6 +184,28 @@ export function markNotificationRead(
   );
 }
 
+export interface NotificationPreferences {
+  emailOnMention: boolean;
+  emailOnTaskAssigned: boolean;
+  emailOnTaskResolved: boolean;
+  emailOnShareGranted: boolean;
+}
+
+export function getNotificationPreferences(
+  signal?: AbortSignal
+): Promise<{ preferences: NotificationPreferences }> {
+  return apiFetch('/api/notifications/preferences', { signal });
+}
+
+export function updateNotificationPreferences(
+  patch: Partial<NotificationPreferences>
+): Promise<{ preferences: NotificationPreferences }> {
+  return apiFetch('/api/notifications/preferences', {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
 export function markAllNotificationsRead(): Promise<{
   ok: boolean;
   updatedCount: number;

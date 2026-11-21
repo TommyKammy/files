@@ -1,19 +1,49 @@
 'use client';
 
-import { Bell, CheckCheck, Loader2 } from 'lucide-react';
+import { Bell, CheckCheck, Loader2, Settings } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   formatUnreadBadgeCount,
+  getNotificationPreferences,
   getUnreadNotificationCount,
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
   NOTIFICATION_TYPE_LABELS,
   resolveNotificationHref,
+  updateNotificationPreferences,
+  type NotificationPreferences,
   type UserNotification,
 } from '@/lib/files-api/tasks-notifications';
 import { formatDateTime } from '@/lib/formatters';
+
+const PREFERENCE_ITEMS: Array<{
+  key: keyof NotificationPreferences;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: 'emailOnMention',
+    label: '@メンション',
+    description: 'コメント内でメンションされたときにメール通知を受け取る',
+  },
+  {
+    key: 'emailOnTaskAssigned',
+    label: 'タスク割当',
+    description: '新しいタスクが割り当てられたときにメール通知を受け取る',
+  },
+  {
+    key: 'emailOnTaskResolved',
+    label: 'タスク完了・却下',
+    description: '作成したタスクが承認・差し戻し・完了されたときにメール通知を受け取る',
+  },
+  {
+    key: 'emailOnShareGranted',
+    label: '共有招待',
+    description: 'ファイルやフォルダの共有権限が付与されたときにメール通知を受け取る',
+  },
+];
 
 export function NotificationBellPopover({
   enabled = true,
@@ -27,6 +57,15 @@ export function NotificationBellPopover({
   const [loading, setLoading] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [preferences, setPreferences] = useState<NotificationPreferences | null>(
+    null
+  );
+  const [loadingPrefs, setLoadingPrefs] = useState(false);
+  const [savingPrefKey, setSavingPrefKey] = useState<
+    keyof NotificationPreferences | null
+  >(null);
+  const [savedFeedback, setSavedFeedback] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const refreshUnreadCount = useCallback(
@@ -78,9 +117,59 @@ export function NotificationBellPopover({
   }, [enabled, refreshUnreadCount]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setShowSettings(false);
+      setSavedFeedback(false);
+      return;
+    }
     void loadNotifications();
   }, [open, loadNotifications]);
+
+  const loadPreferences = useCallback(async () => {
+    setLoadingPrefs(true);
+    setError(null);
+    try {
+      const res = await getNotificationPreferences();
+      setPreferences(res.preferences);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : '通知設定の取得に失敗しました。'
+      );
+    } finally {
+      setLoadingPrefs(false);
+    }
+  }, []);
+
+  async function handleToggleSettings() {
+    const next = !showSettings;
+    setShowSettings(next);
+    setSavedFeedback(false);
+    if (next && !preferences) {
+      await loadPreferences();
+    }
+  }
+
+  async function handleTogglePreference(key: keyof NotificationPreferences) {
+    if (!preferences || savingPrefKey) return;
+    const prevValue = preferences[key];
+    const nextValue = !prevValue;
+    setPreferences({ ...preferences, [key]: nextValue });
+    setSavingPrefKey(key);
+    setSavedFeedback(false);
+    setError(null);
+    try {
+      const res = await updateNotificationPreferences({ [key]: nextValue });
+      setPreferences(res.preferences);
+      setSavedFeedback(true);
+    } catch (err) {
+      setPreferences({ ...preferences, [key]: prevValue });
+      setError(
+        err instanceof Error ? err.message : '通知設定の保存に失敗しました。'
+      );
+    } finally {
+      setSavingPrefKey(null);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -176,21 +265,40 @@ export function NotificationBellPopover({
         >
           <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2.5">
             <span className="text-xs font-semibold text-slate-900">
-              通知センター
+              {showSettings ? 'メール通知設定' : '通知センター'}
             </span>
-            <button
-              type="button"
-              disabled={markingAll || unreadCount === 0}
-              onClick={() => void handleMarkAllRead()}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.6875rem] font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40"
-            >
-              {markingAll ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <CheckCheck className="h-3 w-3" />
+            <div className="flex items-center gap-1">
+              {!showSettings && (
+                <button
+                  type="button"
+                  disabled={markingAll || unreadCount === 0}
+                  onClick={() => void handleMarkAllRead()}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.6875rem] font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40"
+                >
+                  {markingAll ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <CheckCheck className="h-3 w-3" />
+                  )}
+                  <span>すべて既読</span>
+                </button>
               )}
-              <span>すべて既読</span>
-            </button>
+              <button
+                type="button"
+                aria-label="通知設定"
+                aria-pressed={showSettings}
+                data-testid="notification-settings-toggle"
+                onClick={() => void handleToggleSettings()}
+                className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.6875rem] font-medium transition ${
+                  showSettings
+                    ? 'bg-slate-100 text-slate-900'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <Settings className="h-3 w-3" />
+                <span>{showSettings ? '一覧へ' : '通知設定'}</span>
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -199,6 +307,62 @@ export function NotificationBellPopover({
             </div>
           )}
 
+          {showSettings ? (
+            <div
+              data-testid="notification-settings-panel"
+              className="divide-y divide-slate-100"
+            >
+              {loadingPrefs || !preferences ? (
+                <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>設定を読み込み中...</span>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-1 p-3">
+                    {PREFERENCE_ITEMS.map((item) => {
+                      const checked = preferences[item.key];
+                      const isSaving = savingPrefKey === item.key;
+                      return (
+                        <label
+                          key={item.key}
+                          className="flex cursor-pointer items-start justify-between gap-3 rounded-lg px-2 py-2 transition hover:bg-slate-50"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-medium text-slate-900">
+                              {item.label}
+                            </div>
+                            <p className="text-[0.6875rem] text-slate-500">
+                              {item.description}
+                            </p>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={Boolean(savingPrefKey)}
+                            data-testid={`notif-pref-${item.key}`}
+                            onChange={() => void handleTogglePreference(item.key)}
+                            className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#5e6ad2] focus:ring-[#5e6ad2]"
+                          />
+                          {isSaving && (
+                            <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-slate-400" />
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {savedFeedback && (
+                    <div
+                      data-testid="notification-settings-saved"
+                      className="bg-emerald-50 px-3 py-1.5 text-[0.6875rem] font-medium text-emerald-700"
+                    >
+                      保存しました
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ) : (
           <div className="max-h-96 overflow-y-auto divide-y divide-slate-100">
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-500">
@@ -249,6 +413,7 @@ export function NotificationBellPopover({
               })
             )}
           </div>
+          )}
         </div>
       )}
     </div>

@@ -1,7 +1,12 @@
 import { Hono } from 'hono';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
 import { getAuthenticatedUser } from '../services/authorization';
-import type { UserNotificationType } from '../services/notifications';
+import {
+  getUserNotificationPreferences,
+  updateUserNotificationPreferences,
+  type NotificationPreferences,
+  type UserNotificationType,
+} from '../services/notifications';
 import type { OidcHonoEnv } from '../types/oidc';
 
 const DEFAULT_LIMIT = 30;
@@ -112,6 +117,60 @@ notificationRoutes.post('/read-all', async (c) => {
     ok: true,
     updatedCount: result.meta?.changes ?? 0,
   });
+});
+
+/** GET /api/notifications/preferences */
+notificationRoutes.get('/preferences', async (c) => {
+  const user = getAuthenticatedUser(c);
+  const preferences = await getUserNotificationPreferences(
+    c.env.DB,
+    user.tenantId,
+    user.id
+  );
+  return c.json({ preferences });
+});
+
+/** PATCH /api/notifications/preferences */
+notificationRoutes.patch('/preferences', async (c) => {
+  const user = getAuthenticatedUser(c);
+
+  let rawBody: unknown;
+  try {
+    rawBody = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
+    return c.json({ error: 'Request body must be a JSON object' }, 400);
+  }
+
+  const body = rawBody as Record<string, unknown>;
+  const patch: Partial<NotificationPreferences> = {};
+  const allowedKeys: Array<keyof NotificationPreferences> = [
+    'emailOnMention',
+    'emailOnTaskAssigned',
+    'emailOnTaskResolved',
+    'emailOnShareGranted',
+  ];
+
+  for (const key of allowedKeys) {
+    if (key in body && body[key] !== undefined) {
+      if (typeof body[key] !== 'boolean') {
+        return c.json({ error: `Field '${key}' must be a boolean` }, 400);
+      }
+      patch[key] = body[key];
+    }
+  }
+
+  const preferences = await updateUserNotificationPreferences(
+    c.env.DB,
+    user.tenantId,
+    user.id,
+    patch
+  );
+
+  return c.json({ preferences });
 });
 
 /** POST /api/notifications/:id/read */

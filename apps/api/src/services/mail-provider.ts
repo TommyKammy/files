@@ -11,7 +11,7 @@ import type { Env } from '../types/api';
  *   `/auth/dev-guest-mails` reader is protected by `isLocalDevBypassAllowed`.
  */
 
-export type MailKind = 'guest_invitation' | 'guest_otp';
+export type MailKind = 'guest_invitation' | 'guest_otp' | 'notification';
 
 export interface MailMessage {
   tenantId: string;
@@ -147,6 +147,8 @@ export function resolveMailProvider(env: Pick<Env, 'DB' | 'ENVIRONMENT' | 'MAIL_
     'MAIL_WEBHOOK_URL is required outside local development'
   );
 }
+
+export const createMailProvider = resolveMailProvider;
 
 export interface DevMailSinkRow {
   id: string;

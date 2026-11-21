@@ -372,17 +372,21 @@ export function registerPermissionGrantRoute(routes: Hono<OidcHonoEnv>) {
     });
 
     if (granteeType === 'user') {
-      await createUserNotification(c.env.DB, {
-        tenantId: user.tenantId,
-        userId: granteeId,
-        type: 'share_granted',
-        title: `${user.displayName ?? user.email} さんが共有権限を付与しました`,
-        body: `ロール: ${requestedRole}`,
-        targetType,
-        targetId,
-        actorId: user.id,
-        nowIso,
-      });
+      await createUserNotification(
+        c.env.DB,
+        {
+          tenantId: user.tenantId,
+          userId: granteeId,
+          type: 'share_granted',
+          title: `${user.displayName ?? user.email} さんが共有権限を付与しました`,
+          body: `ロール: ${requestedRole}`,
+          targetType,
+          targetId,
+          actorId: user.id,
+          nowIso,
+        },
+        c.env
+      );
     }
 
     return c.json(

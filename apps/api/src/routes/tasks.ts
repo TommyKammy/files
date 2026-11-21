@@ -307,17 +307,21 @@ itemTasksRoutes.post('/:itemType/:itemId/tasks', async (c) => {
     }),
   ]);
 
-  await createUserNotification(c.env.DB, {
-    tenantId: user.tenantId,
-    userId: assignee.id,
-    type: 'task_assigned',
-    title: `${user.displayName ?? user.email} さんがタスクを割り当てました`,
-    body: title,
-    targetType: rawType,
-    targetId: itemId,
-    actorId: user.id,
-    nowIso,
-  });
+  await createUserNotification(
+    c.env.DB,
+    {
+      tenantId: user.tenantId,
+      userId: assignee.id,
+      type: 'task_assigned',
+      title: `${user.displayName ?? user.email} さんがタスクを割り当てました`,
+      body: title,
+      targetType: rawType,
+      targetId: itemId,
+      actorId: user.id,
+      nowIso,
+    },
+    c.env
+  );
 
   const created = await fetchTaskById(c.env.DB, user.tenantId, taskId);
   return c.json(
@@ -516,17 +520,21 @@ taskRoutes.patch('/:taskId', async (c) => {
         : nextStatus === 'rejected'
           ? '差し戻し'
           : '完了';
-    await createUserNotification(c.env.DB, {
-      tenantId: user.tenantId,
-      userId: existing.created_by,
-      type: 'task_resolved',
-      title: `${user.displayName ?? user.email} さんがタスクを「${statusLabel}」にしました`,
-      body: existing.title,
-      targetType: existing.item_type,
-      targetId: existing.item_id,
-      actorId: user.id,
-      nowIso,
-    });
+    await createUserNotification(
+      c.env.DB,
+      {
+        tenantId: user.tenantId,
+        userId: existing.created_by,
+        type: 'task_resolved',
+        title: `${user.displayName ?? user.email} さんがタスクを「${statusLabel}」にしました`,
+        body: existing.title,
+        targetType: existing.item_type,
+        targetId: existing.item_id,
+        actorId: user.id,
+        nowIso,
+      },
+      c.env
+    );
   }
 
   const updated = await fetchTaskById(c.env.DB, user.tenantId, taskId);

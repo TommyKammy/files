@@ -386,17 +386,21 @@ itemCommentsRoutes.post('/:itemType/:itemId/comments', async (c) => {
     const actorLabel = user.displayName ?? user.email;
     await Promise.all(
       mentionedUserIds.map((mentionedUserId) =>
-        createUserNotification(c.env.DB, {
-          tenantId: user.tenantId,
-          userId: mentionedUserId,
-          type: 'mention',
-          title: `${actorLabel} さんがあなたをメンションしました`,
-          body: body.slice(0, 140),
-          targetType: rawType,
-          targetId: itemId,
-          actorId: user.id,
-          nowIso,
-        })
+        createUserNotification(
+          c.env.DB,
+          {
+            tenantId: user.tenantId,
+            userId: mentionedUserId,
+            type: 'mention',
+            title: `${actorLabel} さんがあなたをメンションしました`,
+            body: body.slice(0, 140),
+            targetType: rawType,
+            targetId: itemId,
+            actorId: user.id,
+            nowIso,
+          },
+          c.env
+        )
       )
     );
   }
