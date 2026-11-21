@@ -168,6 +168,10 @@ function SecurePreviewPage({
     pdfPage,
     setPdfPage,
     pdfNumPages,
+    pdfZoom,
+    setPdfZoom,
+    pdfRotation,
+    setPdfRotation,
     downloading,
     handleDownloadClick,
   } = useSecurePreview({
@@ -219,6 +223,10 @@ function SecurePreviewPage({
         pdfPage={pdfPage}
         pdfNumPages={pdfNumPages}
         setPdfPage={setPdfPage}
+        pdfZoom={pdfZoom}
+        setPdfZoom={setPdfZoom}
+        pdfRotation={pdfRotation}
+        setPdfRotation={setPdfRotation}
         canvasRef={canvasRef}
         signedUrl={signedUrl}
         file={previewFile}

@@ -198,3 +198,103 @@ export function isPlainTextFile(name: string, mimeType: string | null | undefine
     'sh',
   ].includes(ext);
 }
+
+const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'm4v', 'ogv'] as const;
+const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'] as const;
+const MARKDOWN_EXTENSIONS = ['md', 'markdown'] as const;
+const CODE_EXTENSIONS = [
+  'ts',
+  'tsx',
+  'js',
+  'jsx',
+  'mjs',
+  'cjs',
+  'mts',
+  'cts',
+  'json',
+  'yaml',
+  'yml',
+  'toml',
+  'xml',
+  'html',
+  'htm',
+  'svg',
+  'xhtml',
+  'css',
+  'scss',
+  'sql',
+  'py',
+  'sh',
+  'bash',
+  'zsh',
+  'rs',
+  'go',
+  'java',
+  'c',
+  'cpp',
+  'h',
+  'hpp',
+  'rb',
+  'php',
+] as const;
+
+const MEDIA_MIME_BY_EXT: Record<string, string> = {
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  m4v: 'video/mp4',
+  ogv: 'video/ogg',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  m4a: 'audio/mp4',
+  flac: 'audio/flac',
+  aac: 'audio/aac',
+};
+
+export function isVideoFile(name: string, mimeType: string | null | undefined): boolean {
+  const ext = getExtensionFromName(name);
+  const mime = (mimeType ?? '').toLowerCase();
+  if (mime.startsWith('video/')) return true;
+  return (VIDEO_EXTENSIONS as readonly string[]).includes(ext);
+}
+
+export function isAudioFile(name: string, mimeType: string | null | undefined): boolean {
+  const ext = getExtensionFromName(name);
+  const mime = (mimeType ?? '').toLowerCase();
+  if (mime.startsWith('audio/')) return true;
+  return (AUDIO_EXTENSIONS as readonly string[]).includes(ext);
+}
+
+export function isMarkdownFile(name: string, mimeType: string | null | undefined): boolean {
+  const ext = getExtensionFromName(name);
+  const mime = (mimeType ?? '').toLowerCase();
+  if (mime === 'text/markdown' || mime === 'text/x-markdown') return true;
+  return (MARKDOWN_EXTENSIONS as readonly string[]).includes(ext);
+}
+
+export function isCodeFile(name: string, mimeType: string | null | undefined): boolean {
+  const ext = getExtensionFromName(name);
+  const mime = (mimeType ?? '').toLowerCase();
+  if (
+    mime === 'application/json' ||
+    mime === 'application/xml' ||
+    mime === 'application/javascript' ||
+    mime === 'text/javascript' ||
+    mime === 'application/x-sh' ||
+    mime === 'text/css' ||
+    mime === 'text/x-python'
+  ) {
+    return true;
+  }
+  return (CODE_EXTENSIONS as readonly string[]).includes(ext);
+}
+
+export function resolveMediaMimeType(name: string, mimeType: string | null | undefined): string {
+  const trimmed = (mimeType ?? '').trim();
+  if (trimmed && trimmed.toLowerCase() !== 'application/octet-stream') {
+    return trimmed;
+  }
+  const ext = getExtensionFromName(name);
+  return MEDIA_MIME_BY_EXT[ext] ?? 'application/octet-stream';
+}

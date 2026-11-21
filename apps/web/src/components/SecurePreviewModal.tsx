@@ -62,6 +62,10 @@ export function SecurePreviewModal({
     pdfPage,
     setPdfPage,
     pdfNumPages,
+    pdfZoom,
+    setPdfZoom,
+    pdfRotation,
+    setPdfRotation,
     downloading,
     handleDownloadClick,
   } = useSecurePreview({
@@ -168,6 +172,10 @@ export function SecurePreviewModal({
           pdfPage={pdfPage}
           pdfNumPages={pdfNumPages}
           setPdfPage={setPdfPage}
+          pdfZoom={pdfZoom}
+          setPdfZoom={setPdfZoom}
+          pdfRotation={pdfRotation}
+          setPdfRotation={setPdfRotation}
           canvasRef={canvasRef}
           signedUrl={signedUrl}
           file={file}

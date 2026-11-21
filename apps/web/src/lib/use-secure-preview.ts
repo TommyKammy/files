@@ -7,19 +7,21 @@ import {
   keyboardScopes,
 } from '@/lib/keyboard-shortcuts';
 import { ApiClientError, getFileContentUrl } from '@/lib/files-api';
-import { isActiveWebFile, isPdfFile, isPlainTextFile, isSafeImageFile } from '@/lib/formatters';
+import { resolveMediaMimeType } from '@/lib/formatters';
+import {
+  PDF_BASE_SCALE,
+  PDF_ZOOM_DEFAULT,
+  type PdfRotation,
+  type PreviewKind,
+  resolvePreviewKind,
+} from '@/lib/preview-controls';
 import { fetchSingleUsePreviewBuffer } from '@/lib/single-use-preview-cache';
 import type {
   PreResolvedPreviewGrant,
   PreviewTargetFile,
 } from '@/components/SecurePreviewModal';
 
-export type PreviewKind =
-  | 'active_source'
-  | 'pdf'
-  | 'image'
-  | 'text'
-  | 'fallback';
+export type { PreviewKind };
 
 const MAX_TEXT_PREVIEW_BYTES = 512 * 1024;
 
@@ -61,19 +63,15 @@ export function useSecurePreview({
   const objectUrlRef = useRef<string | null>(null);
   const [pdfPage, setPdfPage] = useState(1);
   const [pdfNumPages, setPdfNumPages] = useState(0);
+  const [pdfZoom, setPdfZoom] = useState(PDF_ZOOM_DEFAULT);
+  const [pdfRotation, setPdfRotation] = useState<PdfRotation>(0);
   const [downloading, setDownloading] = useState(false);
 
-  const previewKind: PreviewKind =
-    safeRenderMode === 'source_text' ||
-    isActiveWebFile(file.name, file.mimeType)
-      ? 'active_source'
-      : isPdfFile(file.name, file.mimeType)
-        ? 'pdf'
-        : isSafeImageFile(file.name, file.mimeType)
-          ? 'image'
-          : isPlainTextFile(file.name, file.mimeType)
-            ? 'text'
-            : 'fallback';
+  const previewKind: PreviewKind = resolvePreviewKind(
+    file.name,
+    file.mimeType,
+    safeRenderMode
+  );
 
   useEffect(() => {
     const token = keyboardScopes.pushScope('preview');
@@ -172,6 +170,8 @@ export function useSecurePreview({
       pdfDocRef.current = null;
       setPdfPage(1);
       setPdfNumPages(0);
+      setPdfZoom(PDF_ZOOM_DEFAULT);
+      setPdfRotation(0);
 
       try {
         const resolved: PreResolvedPreviewGrant = preResolvedGrant
@@ -187,16 +187,22 @@ export function useSecurePreview({
         const credentials: RequestCredentials = resolved.url.startsWith('/')
           ? 'include'
           : 'omit';
-        const isSource =
-          resolvedRenderMode === 'source_text' ||
-          isActiveWebFile(file.name, file.mimeType);
-        const isPdf = !isSource && isPdfFile(file.name, file.mimeType);
-        const isText =
-          !isSource && !isPdf && isPlainTextFile(file.name, file.mimeType);
-        const isImage =
-          !isSource && !isPdf && !isText && isSafeImageFile(file.name, file.mimeType);
+        const resolvedKind = resolvePreviewKind(
+          file.name,
+          file.mimeType,
+          resolvedRenderMode
+        );
+        const isTextLike =
+          resolvedKind === 'active_source' ||
+          resolvedKind === 'markdown' ||
+          resolvedKind === 'code' ||
+          resolvedKind === 'text';
+        const isBlobMedia =
+          resolvedKind === 'image' ||
+          resolvedKind === 'video' ||
+          resolvedKind === 'audio';
 
-        if (isSource || isText) {
+        if (isTextLike) {
           const buf = await fetchSingleUsePreviewBuffer(resolved.url, credentials);
           if (cancelled) return;
           const sliced =
@@ -208,7 +214,7 @@ export function useSecurePreview({
             new TextDecoder('utf-8', { fatal: false }).decode(sliced)
           );
           setSignedUrl(resolved.url);
-        } else if (isPdf) {
+        } else if (resolvedKind === 'pdf') {
           const data = await fetchSingleUsePreviewBuffer(resolved.url, credentials);
           if (cancelled) return;
           setSignedUrl(resolved.url);
@@ -224,15 +230,18 @@ export function useSecurePreview({
           pdfDocRef.current = doc;
           setPdfNumPages(doc.numPages);
           setPdfPage(1);
-        } else if (isImage) {
-          // A single-use URL cannot be handed to <img src>: StrictMode/browser
-          // retries would consume the nonce twice. Fetch once (cached) and
-          // render a local object URL instead.
+        } else if (isBlobMedia) {
+          // A single-use URL cannot be handed to <img>/<video>/<audio> src:
+          // StrictMode/browser retries or range requests would consume the nonce
+          // twice. Fetch once (cached) and render a local object URL instead.
           const buf = await fetchSingleUsePreviewBuffer(resolved.url, credentials);
           if (cancelled) return;
+          if (objectUrlRef.current) {
+            URL.revokeObjectURL(objectUrlRef.current);
+          }
           const objectUrl = URL.createObjectURL(
             new Blob([buf], {
-              type: file.mimeType ?? 'application/octet-stream',
+              type: resolveMediaMimeType(file.name, file.mimeType),
             })
           );
           objectUrlRef.current = objectUrl;
@@ -269,7 +278,7 @@ export function useSecurePreview({
     const doc = pdfDocRef.current as
       | {
           getPage: (n: number) => Promise<{
-            getViewport: (opts: { scale: number }) => {
+            getViewport: (opts: { scale: number; rotation?: number }) => {
               width: number;
               height: number;
             };
@@ -300,7 +309,10 @@ export function useSecurePreview({
       .getPage(pdfPage)
       .then((page) => {
         if (cancelled || !canvasRef.current) return;
-        const viewport = page.getViewport({ scale: 1.35 });
+        const viewport = page.getViewport({
+          scale: PDF_BASE_SCALE * pdfZoom,
+          rotation: pdfRotation,
+        });
         const canvas = canvasRef.current;
         const context = canvas.getContext('2d');
         if (!context) return;
@@ -320,7 +332,7 @@ export function useSecurePreview({
       cancelled = true;
       renderTask?.cancel?.();
     };
-  }, [pdfPage, pdfNumPages, previewKind]);
+  }, [pdfPage, pdfNumPages, previewKind, pdfZoom, pdfRotation]);
 
   async function handleDownloadClick() {
     if (!canDownload || downloading) return;
@@ -356,6 +368,10 @@ export function useSecurePreview({
     pdfPage,
     setPdfPage,
     pdfNumPages,
+    pdfZoom,
+    setPdfZoom,
+    pdfRotation,
+    setPdfRotation,
     downloading,
     handleDownloadClick,
   };
