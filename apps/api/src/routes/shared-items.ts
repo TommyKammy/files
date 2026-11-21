@@ -3,15 +3,19 @@ import {
   FILE_PREVIEW_ROLE_SQL,
   getAuthenticatedUser,
   GRANTEE_MATCH_SQL,
-  resolveTargetAccess,
+  resolveUserAccessForFolders,
 } from '../services/authorization';
-import { parseRoleList } from '../services/capabilities';
+import { can, parseRoleList } from '../services/capabilities';
 import { sessionAuthMiddleware } from '../middleware/session-auth';
 import { recordGuestAccess } from '../services/guest-access-audit';
 import {
   folderPathLabel,
   loadFolderBreadcrumbMap,
 } from '../services/folder-breadcrumbs';
+import {
+  loadDirectFileRolesMap,
+  resolveBatchFileAccess,
+} from '../services/workspace-item-hydrator';
 import type { ClassificationLabel } from '../types/api';
 import type { OidcHonoEnv } from '../types/oidc';
 
@@ -135,12 +139,17 @@ sharedItemsRoutes.get('/', async (c) => {
       .map((row) => row.folder_id)
       .filter((id): id is string => Boolean(id)),
   ];
-  const breadcrumbMap = await loadFolderBreadcrumbMap(c.env.DB, user.tenantId, folderIds);
+  const fileIds = fileRows.results.map((row) => row.id);
+  const [breadcrumbMap, folderAccessMap, directFileRolesMap] = await Promise.all([
+    loadFolderBreadcrumbMap(c.env.DB, user.tenantId, folderIds),
+    resolveUserAccessForFolders(c.env.DB, user.tenantId, user.id, folderIds),
+    loadDirectFileRolesMap(c.env.DB, user.tenantId, user.id, fileIds),
+  ]);
 
   const items: SharedItemEntry[] = [];
   for (const row of folderRows.results) {
-    const access = await resolveTargetAccess(c.env.DB, user, 'folder', row.id);
-    if (!access || access.accessMode !== 'full') continue;
+    const access = folderAccessMap.get(row.id);
+    if (!access || !access.effectiveRole) continue;
     const breadcrumbs = breadcrumbMap.get(row.id) ?? [];
     items.push({
       itemType: 'folder',
@@ -164,8 +173,13 @@ sharedItemsRoutes.get('/', async (c) => {
   }
 
   for (const row of fileRows.results) {
-    const access = await resolveTargetAccess(c.env.DB, user, 'file', row.id);
-    if (!access || access.accessMode !== 'full') continue;
+    const access = resolveBatchFileAccess(
+      row.id,
+      row.folder_id,
+      folderAccessMap,
+      directFileRolesMap
+    );
+    if (!access.effectiveRole || !can(access.capabilities, 'item.preview')) continue;
     const breadcrumbs = row.folder_id
       ? breadcrumbMap.get(row.folder_id) ?? []
       : [];

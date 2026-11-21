@@ -10,6 +10,7 @@ import {
   filterFileTargetRoles,
   parseRoleList,
   synthesizeEffectiveAccess,
+  type EffectiveAccess,
 } from './capabilities';
 import {
   folderPathLabel,
@@ -169,7 +170,7 @@ async function loadPathReachableFolderIds(
  * Batch-load direct file permissions for a set of file IDs, filtering out
  * folder-only advanced roles to match `resolveTargetAccess`.
  */
-async function loadDirectFileRolesMap(
+export async function loadDirectFileRolesMap(
   db: D1Database,
   tenantId: string,
   userId: string,
@@ -204,6 +205,24 @@ async function loadDirectFileRolesMap(
   }
 
   return map;
+}
+
+/**
+ * Compose a file's effective access from its preloaded parent-folder access and
+ * direct file roles, matching `resolveTargetAccess` without extra queries.
+ */
+export function resolveBatchFileAccess(
+  fileId: string,
+  folderId: string | null,
+  folderAccessMap: ReadonlyMap<string, EffectiveAccess>,
+  directFileRolesMap: ReadonlyMap<string, readonly ResourceRole[]>
+): EffectiveAccess {
+  const folderAccess = folderId ? folderAccessMap.get(folderId) : undefined;
+  const directRoles = directFileRolesMap.get(fileId) ?? [];
+  return synthesizeEffectiveAccess([
+    ...(folderAccess?.effectiveRole ? [folderAccess.effectiveRole] : []),
+    ...directRoles,
+  ]);
 }
 
 /**
@@ -296,14 +315,12 @@ export async function hydrateWorkspaceItems<
   }
 
   for (const row of fileRows) {
-    const folderAccess = row.folder_id
-      ? folderAccessMap.get(row.folder_id)
-      : undefined;
-    const directRoles = directFileRolesMap.get(row.id) ?? [];
-    const access = synthesizeEffectiveAccess([
-      ...(folderAccess?.effectiveRole ? [folderAccess.effectiveRole] : []),
-      ...directRoles,
-    ]);
+    const access = resolveBatchFileAccess(
+      row.id,
+      row.folder_id,
+      folderAccessMap,
+      directFileRolesMap
+    );
 
     if (!can(access.capabilities, 'item.preview')) {
       continue;

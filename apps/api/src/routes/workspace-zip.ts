@@ -1,7 +1,15 @@
 import { Hono } from 'hono';
 import { buildAuditLogStmt } from '../services/audit';
-import { getAuthenticatedUser, resolveTargetAccess } from '../services/authorization';
+import {
+  getAuthenticatedUser,
+  resolveTargetAccess,
+  resolveUserAccessForFolders,
+} from '../services/authorization';
 import { can } from '../services/capabilities';
+import {
+  loadDirectFileRolesMap,
+  resolveBatchFileAccess,
+} from '../services/workspace-item-hydrator';
 import { dedupeBatchItems, WorkspaceOpError } from '../services/workspace/shared';
 import { buildZipArchive, sanitizeZipPath, type ZipEntryInput } from '../services/zip-builder';
 import type { OidcHonoEnv } from '../types/oidc';
@@ -190,15 +198,26 @@ workspaceZipRoutes.post('/download-zip', async (c) => {
         folderFiles.push(...res.results);
       }
 
-      for (const chunk of chunkArray(folderFiles, 20)) {
-        const accesses = await Promise.all(
-          chunk.map((f) => resolveTargetAccess(c.env.DB, user, 'file', f.id))
-        );
-        for (let i = 0; i < chunk.length; i++) {
-          const f = chunk[i]!;
-          const fileAccess = accesses[i];
+      if (folderFiles.length > 0) {
+        const [folderAccessMap, directFileRolesMap] = await Promise.all([
+          resolveUserAccessForFolders(c.env.DB, user.tenantId, user.id, folderIds),
+          loadDirectFileRolesMap(
+            c.env.DB,
+            user.tenantId,
+            user.id,
+            folderFiles.map((f) => f.id)
+          ),
+        ]);
+
+        for (const f of folderFiles) {
           if (seenFileIds.has(f.id) || !f.r2_object_key) continue;
-          if (!fileAccess || !can(fileAccess.capabilities, 'item.download')) {
+          const fileAccess = resolveBatchFileAccess(
+            f.id,
+            f.folder_id,
+            folderAccessMap,
+            directFileRolesMap
+          );
+          if (!can(fileAccess.capabilities, 'item.download')) {
             skippedForbiddenCount++;
             continue;
           }
