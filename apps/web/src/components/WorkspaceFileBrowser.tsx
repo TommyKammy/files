@@ -1,159 +1,75 @@
 'use client';
 
-import { Keyboard, Loader2, Route } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShellRail } from '@/components/AppShellRail';
 import { FileDropzoneUploader } from '@/components/FileDropzoneUploader';
-import { SignInCard } from '@/components/SignInCard';
 import { TosAcceptanceModal } from '@/components/TosAcceptanceModal';
-import type { InspectorTarget } from '@/components/WorkspaceInspectorDrawer';
-import { WorkspaceInspectorOverlay } from '@/components/WorkspaceInspectorOverlay';
+import { useWorkspaceRowRenderers } from '@/components/use-workspace-row-renderers';
+import { WorkspaceBannersAndTrash } from '@/components/WorkspaceBannersAndTrash';
+import { WorkspaceDragProvider } from '@/components/WorkspaceDragPortal';
 import { WorkspaceFileListSection } from '@/components/WorkspaceFileListSection';
-import { WorkspaceItemCard } from '@/components/WorkspaceItemCard';
-import { WorkspaceItemRow } from '@/components/WorkspaceItemRow';
-import { WorkspaceTrashBulkBar } from '@/components/WorkspaceTrashBulkBar';
-import { WorkspaceTrashBulkDialogs } from '@/components/WorkspaceTrashBulkDialogs';
-import {
-  WorkspaceTrashRestoreModal,
-  type TrashRestoreSuccessResult,
-} from '@/components/WorkspaceTrashRestoreModal';
-import { WorkspaceActionOverlays } from '@/components/WorkspaceActionOverlays';
-import { WorkspaceClipboardBar } from '@/components/WorkspaceClipboardBar';
-import { WorkspaceManagementModals } from '@/components/WorkspaceManagementModals';
 import { WorkspaceMainHeader } from '@/components/WorkspaceMainHeader';
-import { WorkspaceNotices } from '@/components/WorkspaceNotices';
+import { WorkspaceOverlays } from '@/components/WorkspaceOverlays';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
-import { WorkspacePermissionBanner } from '@/components/WorkspacePermissionBanner';
-import { WorkspaceFavoritesView } from '@/components/WorkspaceFavoritesView';
-import { WorkspaceMyTasksView } from '@/components/WorkspaceMyTasksView';
-import { WorkspaceRecentsView } from '@/components/WorkspaceRecentsView';
-import { WorkspaceSharedItemsView } from '@/components/WorkspaceSharedItemsView';
+import {
+  WorkspaceAuthGate,
+  WorkspaceSpecialViewShell,
+} from '@/components/WorkspaceSubViews';
+import type { DragWorkspaceItem } from '@/lib/drag-drop-controller';
 import type { InspectorTab } from '@/lib/files-api/comments-activity';
-import {
-  addFavorite,
-  buildFavoriteKey,
-  listFavorites,
-  removeFavorite,
-  touchRecentItem,
-} from '@/lib/files-api/favorites-recents';
-import { WorkspaceTrashFilters } from '@/components/WorkspaceTrashFilters';
-import { WorkspaceUtilityOverlays } from '@/components/WorkspaceUtilityOverlays';
-import {
-  guestSessionIssueFromCode,
-  type GuestSessionIssue,
-} from '@/lib/guest-collaboration';
-import { VersionHistoryModal } from '@/components/VersionHistoryModal';
-import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
-import { useWorkspaceContextMenuActions } from '@/lib/use-workspace-context-menu-actions';
-import { useWorkspacePaletteActions } from '@/lib/use-workspace-palette-actions';
-import { useFileLockActions } from '@/lib/use-file-lock-actions';
-import { useFileLocks } from '@/lib/use-file-locks';
-import {
-  getDropTargetClassName,
-  WorkspaceDragProvider,
-} from '@/components/WorkspaceDragPortal';
-import { type DragWorkspaceItem } from '@/lib/drag-drop-controller';
-import {
-  createOfficeFile,
-  type OfficeDocumentKind,
-} from '@/lib/files-api/create-office';
-import {
-  DEFAULT_WORKSPACE_QUICK_FILTER,
-  filterWorkspaceItems,
-  type WorkspaceQuickFilter,
-} from '@/lib/workspace-filter';
-import {
-  ApiClientError,
-  downloadWorkspaceZip,
-  getFileContentUrl,
-  triggerBlobDownload,
-} from '@/lib/files-api';
-import { canAccess, capabilitiesForRole } from '@/lib/capabilities';
+import type { OfficeDocumentKind } from '@/lib/files-api/create-office';
 import { IntentPrefetcher } from '@/lib/intent-prefetch';
 import {
   getWorkspaceSyncStore,
   useWorkspaceSyncSnapshot,
 } from '@/lib/sync-store';
+import {
+  getTrashEmptyState,
+  trashSortToTableSort,
+} from '@/lib/trash-view';
 import { useMarqueeSelection } from '@/lib/use-marquee-selection';
+import { useTosAcceptance } from '@/lib/use-tos-acceptance';
 import { useWorkspaceActions } from '@/lib/use-workspace-actions';
+import { useWorkspaceContextMenuActions } from '@/lib/use-workspace-context-menu-actions';
 import { useWorkspaceData } from '@/lib/use-workspace-data';
 import { useWorkspaceDialogs } from '@/lib/use-workspace-dialogs';
+import { useWorkspaceFavorites } from '@/lib/use-workspace-favorites';
 import { useWorkspaceInlineRename } from '@/lib/use-workspace-inline-rename';
+import { useWorkspaceInspectorActions } from '@/lib/use-workspace-inspector-actions';
 import { useWorkspaceKeyboard } from '@/lib/use-workspace-keyboard';
-import { useWorkspaceSelection } from '@/lib/use-workspace-selection';
-import { useWorkspaceTrashBulkActions } from '@/lib/use-workspace-trash-bulk-actions';
-import { getTrashBulkCapabilities } from '@/lib/trash-bulk';
-import { formatTrashRestoreSuccessMessage } from '@/lib/trash-restore-options';
-import { useWorkspaceUploads } from '@/lib/use-workspace-uploads';
-import { useTosAcceptance } from '@/lib/use-tos-acceptance';
-import { useWorkspaceVirtualization } from '@/lib/use-workspace-virtualization';
-import { describeWorkspaceRow } from '@/lib/workspace-row-presentation';
-import { getWorkspaceRowKey, isRowSelectable, toDragWorkspaceItem, type WorkspaceTableRow } from '@/lib/workspace-table-row';
 import {
-  DEFAULT_WORKSPACE_COLUMN_VISIBILITY,
-  loadWorkspaceColumnVisibility,
-  saveWorkspaceColumnVisibility,
-  type WorkspaceColumnVisibility,
-  type WorkspaceOptionalColumnId,
-} from '@/lib/workspace-table-columns';
+  useWorkspaceListModel,
+  useWorkspaceSelectionCapabilities,
+} from '@/lib/use-workspace-list-model';
+import { useWorkspaceLocksAndAi } from '@/lib/use-workspace-locks-and-ai';
+import { useWorkspaceNavigation } from '@/lib/use-workspace-navigation';
+import { useWorkspacePaletteActions } from '@/lib/use-workspace-palette-actions';
+import {
+  collectRowCapabilities,
+  useWorkspaceRowAccess,
+} from '@/lib/use-workspace-row-access';
+import { useWorkspaceSelection } from '@/lib/use-workspace-selection';
+import { useWorkspaceSessionEffects } from '@/lib/use-workspace-session-effects';
+import { useWorkspaceTrashRestore } from '@/lib/use-workspace-trash-restore';
+import { useWorkspaceUploads } from '@/lib/use-workspace-uploads';
 import { useWorkspaceViewPrefs } from '@/lib/use-workspace-view-prefs';
+import { useWorkspaceVirtualization } from '@/lib/use-workspace-virtualization';
+import { useWorkspaceZipDownload } from '@/lib/use-workspace-zip-download';
+import {
+  isRootCreationRestricted,
+  readFolderStructureMode,
+} from '@/lib/workspace-actions';
 import {
   getWorkspaceClipboardStore,
   useWorkspaceClipboard,
 } from '@/lib/workspace-clipboard';
 import {
-  buildContextMenuCapabilities,
-  isRootCreationRestricted,
-  readFolderStructureMode,
-  resolveContextSelection,
-  ROOT_CREATION_NOTICE,
-} from '@/lib/workspace-actions';
-import {
-  getTrashEmptyState,
-  nextTrashSortForField,
-  trashItemToWorkspaceRow,
-  trashSortToTableSort,
-} from '@/lib/trash-view';
-import {
-  sortWorkspaceFoldersAndFiles,
-  type WorkspaceSortField,
-} from '@/lib/workspace-sort-and-view';
-import type {
-  Capability,
-  FileItem,
-  FileLockInfo,
-  FolderSummary,
-  ResourceRole,
-  SearchResultItem,
-  TrashItem,
-} from '@/types/files';
-
-function collectRowCapabilities(
-  row: WorkspaceTableRow,
-  folderCapabilities: Capability[] | undefined
-): Capability[] | undefined {
-  return row.kind === 'folder'
-    ? row.folder.capabilities ?? folderCapabilities
-    : folderCapabilities;
-}
-
-function collectDragItemsForRow(
-  row: WorkspaceTableRow,
-  selectedRows: WorkspaceTableRow[],
-  selectedKeys: Set<string>,
-  isTrashView: boolean,
-  fallbackRole: ResourceRole
-): DragWorkspaceItem[] {
-  if (isTrashView || !isRowSelectable(row)) return [];
-  const rowKey = getWorkspaceRowKey(row);
-  if (selectedKeys.has(rowKey) && selectedRows.length > 0) {
-    return selectedRows
-      .filter((r) => isRowSelectable(r))
-      .map((r) => toDragWorkspaceItem(r, fallbackRole));
-  }
-  return [toDragWorkspaceItem(row, fallbackRole)];
-}
+  DEFAULT_WORKSPACE_QUICK_FILTER,
+  type WorkspaceQuickFilter,
+} from '@/lib/workspace-filter';
+import type { WorkspaceTableRow } from '@/lib/workspace-table-row';
+import type { ResourceRole } from '@/types/files';
 
 export function WorkspaceFileBrowser() {
   const router = useRouter();
@@ -169,9 +85,6 @@ export function WorkspaceFileBrowser() {
     sortBy,
     sortDir,
     viewMode,
-    setSortBy,
-    setSortDir,
-    setViewMode,
     handleSortHeaderClick,
     handleToggleViewMode,
   } = useWorkspaceViewPrefs(syncUser);
@@ -216,77 +129,19 @@ export function WorkspaceFileBrowser() {
   const [inspectorInitialTab, setInspectorInitialTab] =
     useState<InspectorTab>('details');
 
-  const [favoriteKeys, setFavoriteKeys] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (!user || isGuestUser) {
-      setFavoriteKeys(new Set());
-      return;
-    }
-    const controller = new AbortController();
-    void listFavorites(controller.signal)
-      .then((res) => {
-        setFavoriteKeys(
-          new Set(res.items.map((item) => buildFavoriteKey(item.itemType, item.id)))
-        );
-      })
-      .catch(() => {
-        // Non-blocking preload for context menu star state.
-      });
-    return () => controller.abort();
-  }, [user, isGuestUser]);
-
-  useEffect(() => {
-    if (
-      !user ||
-      !folderId ||
-      isTrashView ||
-      isSharedView ||
-      isRecentsView ||
-      isFavoritesView ||
-      isTasksView
-    ) {
-      return;
-    }
-    void touchRecentItem('folder', folderId, 'view').catch(() => {});
-  }, [user, folderId, isTrashView, isSharedView, isRecentsView, isFavoritesView, isTasksView]);
-
-  const handleToggleFavorite = useCallback(
-    async (row: WorkspaceTableRow) => {
-      const itemType = row.kind;
-      const itemId = row.kind === 'folder' ? row.folder.id : row.file.id;
-      const itemName = row.kind === 'folder' ? row.folder.name : row.file.name;
-      const key = buildFavoriteKey(itemType, itemId);
-      const currentlyFavorited = favoriteKeys.has(key);
-      try {
-        if (currentlyFavorited) {
-          await removeFavorite(itemType, itemId);
-          setFavoriteKeys((prev) => {
-            const next = new Set(prev);
-            next.delete(key);
-            return next;
-          });
-          syncStore.pushToast({
-            kind: 'info',
-            message: `「${itemName}」をお気に入りから解除しました`,
-          });
-        } else {
-          await addFavorite(itemType, itemId);
-          setFavoriteKeys((prev) => new Set(prev).add(key));
-          syncStore.pushToast({
-            kind: 'info',
-            message: `「${itemName}」をお気に入りに追加しました`,
-          });
-        }
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : 'お気に入りの更新に失敗しました'
-        );
-      }
-    },
-    [favoriteKeys, syncStore, setError]
-  );
-
+  const { handleToggleFavorite, isRowFavorited, touchRecentFile } =
+    useWorkspaceFavorites({
+      user,
+      isGuestUser,
+      folderId,
+      isTrashView,
+      isSharedView,
+      isRecentsView,
+      isFavoritesView,
+      isTasksView,
+      syncStore,
+      setError,
+    });
 
   const currentFolder = isTrashView ? null : directory.folder;
   const effectiveRole: ResourceRole = isTrashView
@@ -312,19 +167,14 @@ export function WorkspaceFileBrowser() {
     getTrashEmptyState(trash.filters, trash.items.length) ===
       'filtered-empty';
 
-  // Keyboard navigation, selection, inline rename, picker, and help overlay state
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [selectionAnchorKey, setSelectionAnchorKey] = useState<string | null>(null);
   const [quickFilter, setQuickFilter] = useState<WorkspaceQuickFilter>(
     DEFAULT_WORKSPACE_QUICK_FILTER
   );
-  const [createOfficeModal, setCreateOfficeModal] = useState<{
-    kind: OfficeDocumentKind;
-    name: string;
-    submitting: boolean;
-    error: string | null;
-  } | null>(null);
+  const [createOfficeKind, setCreateOfficeKind] =
+    useState<OfficeDocumentKind | null>(null);
 
   useEffect(() => () => prefetcher.cancel(), [prefetcher]);
 
@@ -339,28 +189,6 @@ export function WorkspaceFileBrowser() {
     setBackgroundMenu(null);
   }, [folderId, isTrashView]);
 
-  // Idle-time warm-up ONLY of static pdfjs-dist runtime chunk (NEVER calls /content-url)
-  useEffect(() => {
-    if (snapshot.authStatus !== 'authenticated' || !user) return;
-    const w = window as Window & {
-      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
-      cancelIdleCallback?: (id: number) => void;
-    };
-    if (typeof w.requestIdleCallback === 'function') {
-      const idleId = w.requestIdleCallback(
-        () => prefetcher.warmPdfPreviewRuntime(),
-        { timeout: 2500 }
-      );
-      return () => w.cancelIdleCallback?.(idleId);
-    }
-    const timer = window.setTimeout(
-      () => prefetcher.warmPdfPreviewRuntime(),
-      1200
-    );
-    return () => window.clearTimeout(timer);
-  }, [snapshot.authStatus, user, prefetcher]);
-
-  // Fail-closed handler for instant SCIM suspension, permission revocation, and share revocation
   const clipboardStore = getWorkspaceClipboardStore();
   const clipboardState = useWorkspaceClipboard();
   const [contextMenu, setContextMenu] = useState<{
@@ -379,173 +207,40 @@ export function WorkspaceFileBrowser() {
     items: DragWorkspaceItem[];
     modeHint: 'move' | 'copy';
   } | null>(null);
-  const [trashRestoreTarget, setTrashRestoreTarget] =
-    useState<TrashItem | null>(null);
-  const fileLocks = useFileLocks(syncStore);
-  const [localLockOverrides, setLocalLockOverrides] = useState<
-    Record<string, FileLockInfo | null>
-  >({});
-  useEffect(() => {
-    setLocalLockOverrides({});
-  }, [fileLocks]);
-  const handleLockChanged = useCallback(
-    (fileId: string, lock: FileLockInfo | null) => {
-      setLocalLockOverrides((prev) => ({ ...prev, [fileId]: lock }));
-    },
-    []
-  );
-  const getEffectiveFileLock = useCallback(
-    (fileId: string): FileLockInfo | null => {
-      if (Object.prototype.hasOwnProperty.call(localLockOverrides, fileId)) {
-        return localLockOverrides[fileId] ?? null;
-      }
-      return fileLocks[fileId] ?? null;
-    },
-    [fileLocks, localLockOverrides]
-  );
-  const contextMenuFile =
-    contextMenu?.row?.kind === 'file' ? contextMenu.row.file : null;
-  const contextMenuFileLock = contextMenuFile
-    ? getEffectiveFileLock(contextMenuFile.id)
-    : null;
-  const { toggleLock: toggleContextMenuFileLock } = useFileLockActions({
-    fileId: contextMenuFile?.id ?? null,
-    initialLock: contextMenuFileLock,
-    syncStore,
-    onLockChanged: handleLockChanged,
-  });
+
   const trashTableSort = trashSortToTableSort(trash.filters.sort);
   const listSortBy = isTrashView ? trashTableSort.sortBy : sortBy;
   const listSortDir = isTrashView ? trashTableSort.sortDir : sortDir;
-  const [columnVisibility, setColumnVisibility] =
-    useState<WorkspaceColumnVisibility>(DEFAULT_WORKSPACE_COLUMN_VISIBILITY);
 
-  useEffect(() => {
-    setColumnVisibility(loadWorkspaceColumnVisibility());
-  }, []);
-
-  function handleToggleColumn(columnId: WorkspaceOptionalColumnId) {
-    setColumnVisibility((prev) => {
-      const next = { ...prev, [columnId]: !prev[columnId] };
-      saveWorkspaceColumnVisibility(next);
-      return next;
-    });
-  }
-
-  useEffect(() => {
-    clipboardStore.setScope(
-      user ? { tenantId: user.tenantId, id: user.id } : null
-    );
-  }, [clipboardStore, user]);
-
-  useEffect(() => {
-    return syncStore.subscribeSecurityRevocations((event) => {
-      if (
-        event.kind === 'user.suspended' ||
-        event.kind === 'session.revoked' ||
-        event.kind === 'tenant.sessions_revoked'
-      ) {
-        clipboardStore.purge();
-        setInspectorOpen(false);
-        setContextMenu(null);
-        setBackgroundMenu(null);
-        setMoveCopyModal(null);
-        setPreviewTarget(null);
-        setActiveModal(null);
-        setInlineRename(null);
-        setClassificationPicker(null);
-        setShortcutsHelpOpen(false);
-        setSelectedKeys(new Set());
-        setError(
-          event.kind === 'user.suspended'
-            ? 'アカウント停止またはセッション失効のためワークスペースキャッシュを消去しました。'
-            : '管理者による強制サインアウトのためワークスペースキャッシュを消去しました。'
-        );
-        return;
-      }
-
-      if (event.kind === 'permission.revoke') {
-        setPreviewTarget((prev) => {
-          if (!prev) return null;
-          setError(
-            'アクセス権限が取り消されたためプレビューを安全に閉じました。'
-          );
-          return null;
-        });
-        setActiveModal((prev) =>
-          prev && (prev.kind === 'share' || prev.kind === 'permissions')
-            ? null
-            : prev
-        );
-        return;
-      }
-
-      if (event.kind === 'shared_link.revoke') {
-        setActiveModal((prev) => (prev?.kind === 'share' ? null : prev));
-      }
-    });
-  }, [syncStore, clipboardStore]);
-
-  async function handleDownloadFile(fileId: string) {
-    try {
-      const res = await getFileContentUrl(fileId, 'download');
-      window.open(res.url, '_blank', 'noopener,noreferrer');
-    } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : 'ダウンロードリンクの取得に失敗しました'
-      );
-    }
-  }
-
-  function handleSearchSelect(item: SearchResultItem) {
-    if (item.folderId && item.folderId !== folderId) {
-      router.push(`/workspace?folderId=${encodeURIComponent(item.folderId)}`);
-    }
-    openFileOrEditor({ id: item.id });
-  }
-
-  const currentCapabilities = isPathOnly
-    ? directory.capabilities ?? (['folder.traverse'] as Capability[])
-    : directory.capabilities ?? capabilitiesForRole(effectiveRole);
-  const currentAccess = {
-    capabilities: currentCapabilities,
+  const {
+    currentCapabilities,
+    canPreviewCurrentFolder,
+    canDownloadCurrentFolder,
+    canCreateFolder,
+    canRenameCurrentFolder,
+    canManageCurrentFolderPerms,
+    canInviteCurrentFolder,
+    canShareCurrentFolder,
+    canManageCurrentFolderLinks,
+    canUploadNew,
+    canUploadVersion,
+    canClassifyCurrentFolder,
+    canInspectCurrentFolder,
+    canRenameRow,
+    canDeleteRow,
+    canShareRow,
+    canManageLinksRow,
+    canClassifyRow,
+    canEditRow,
+  } = useWorkspaceRowAccess({
+    currentFolder,
+    directoryCapabilities: directory.capabilities,
     effectiveRole,
-  };
-  const canPreviewCurrentFolder =
-    !currentFolder || canAccess(currentAccess, 'item.preview');
-  const canDownloadCurrentFolder =
-    !currentFolder || canAccess(currentAccess, 'item.download');
-  const canCreateFolder =
-    !currentFolder || canAccess(currentAccess, 'folder.create');
-  const canRenameCurrentFolder =
-    !currentFolder || canAccess(currentAccess, 'folder.rename');
-  const canDeleteCurrentFolder =
-    !currentFolder || canAccess(currentAccess, 'folder.delete');
-  const canManageCurrentFolderPerms = currentFolder
-    ? user?.role === 'sys_admin' ||
-      canAccess(currentAccess, 'permission.manage')
-    : false;
-  const canInviteCurrentFolder = currentFolder
-    ? canAccess(currentAccess, 'permission.invite')
-    : false;
-  const canShareCurrentFolder = currentFolder
-    ? canAccess(currentAccess, 'share_link.create')
-    : false;
-  const canManageCurrentFolderLinks = currentFolder
-    ? canAccess(currentAccess, 'share_link.manage')
-    : false;
-  const canUploadNew = currentFolder
-    ? canAccess(currentAccess, 'item.upload_new')
-    : false;
-  const canUploadVersion = currentFolder
-    ? canAccess(currentAccess, 'item.upload_version')
-    : false;
-  const canClassifyCurrentFolder = currentFolder
-    ? canAccess(currentAccess, 'classification.edit')
-    : false;
-  const canInspectCurrentFolder = canPreviewCurrentFolder;
+    isPathOnly,
+    isTrashView,
+    user,
+  });
+
   const showRoleBanner =
     !isTrashView &&
     !isPathOnly &&
@@ -571,51 +266,18 @@ export function WorkspaceFileBrowser() {
     (isPrivilegedAdmin ||
       trash.deleters.length + (trash.hasUnknownDeleter ? 1 : 0) > 1);
 
-  const handleListSort = useCallback(
-    (field: WorkspaceSortField) => {
-      if (!isTrashView) {
-        handleSortHeaderClick(field);
-        return;
-      }
-      const nextSort = nextTrashSortForField(trash.filters.sort, field);
-      if (nextSort) {
-        void trash.applyFilters({ sort: nextSort });
-      }
-    },
-    [isTrashView, handleSortHeaderClick, trash]
-  );
-
-  const { folders: sortedFolders, files: sortedFiles } = useMemo(
-    () =>
-      isTrashView
-        ? sortWorkspaceFoldersAndFiles({
-            folders,
-            files: visibleFiles,
-            sortBy,
-            sortDir,
-            isTrashView: true,
-          })
-        : filterWorkspaceItems({
-            folders,
-            files: visibleFiles,
-            filter: quickFilter,
-          }),
-    [folders, visibleFiles, sortBy, sortDir, isTrashView, quickFilter]
-  );
-
-  const rows = useMemo<WorkspaceTableRow[]>(
-    () =>
-      isTrashView
-        ? trash.items.map(trashItemToWorkspaceRow)
-        : [
-            ...sortedFolders.map((folder) => ({
-              kind: 'folder' as const,
-              folder,
-            })),
-            ...sortedFiles.map((file) => ({ kind: 'file' as const, file })),
-          ],
-    [isTrashView, trash.items, sortedFolders, sortedFiles]
-  );
+  const { handleListSort, sortedFiles, rows } = useWorkspaceListModel({
+    isTrashView,
+    folders,
+    visibleFiles,
+    sortBy,
+    sortDir,
+    quickFilter,
+    trashItems: trash.items,
+    trashSort: trash.filters.sort,
+    applyTrashFilters: trash.applyFilters,
+    handleSortHeaderClick,
+  });
 
   const {
     orderedRowKeys,
@@ -636,41 +298,30 @@ export function WorkspaceFileBrowser() {
     setSelectionAnchorKey,
   });
 
-  const [trashConflictPolicy, setTrashConflictPolicy] = useState<
-    'fail' | 'rename'
-  >('rename');
-  const selectedTrashItems = useMemo<TrashItem[]>(
-    () =>
-      isTrashView
-        ? selectedRows.map((row) =>
-            row.kind === 'folder'
-              ? (row.folder as TrashItem)
-              : (row.file as TrashItem)
-          )
-        : [],
-    [isTrashView, selectedRows]
-  );
-  const selectedTrashCapabilities = useMemo(
-    () => getTrashBulkCapabilities(selectedTrashItems, user),
-    [selectedTrashItems, user]
-  );
-  const currentTrashCapabilities = useMemo(
-    () => getTrashBulkCapabilities(trash.items, user),
-    [trash.items, user]
-  );
-  const trashBulk = useWorkspaceTrashBulkActions({
+  const {
+    trashConflictPolicy,
+    setTrashConflictPolicy,
+    trashRestoreTarget,
+    setTrashRestoreTarget,
+    selectedTrashCapabilities,
+    currentTrashCapabilities,
+    trashBulk,
+    requestRestoreTrashFolder,
+    requestRestoreTrashFile,
+    handleTrashRestoreSuccess,
+  } = useWorkspaceTrashRestore({
+    isTrashView,
+    selectedRows,
+    trash,
+    user,
     syncStore,
-    selectedItems: selectedTrashItems,
-    allItems: trash.items,
-    removeTrashItem: trash.removeItem,
-    reloadTrash: trash.retry,
-    resetTrashView: trash.clearFilters,
     setSelectedKeys,
+    setSelectionAnchorKey,
+    setError,
   });
 
   const {
     GRID_COLUMNS,
-    gridRows,
     virtualWindow,
     visibleRows,
     visibleGridRows,
@@ -690,7 +341,6 @@ export function WorkspaceFileBrowser() {
     setPreviewTarget,
     previewableFiles,
     previewFileIndex,
-    openPreviewForFile,
     handleNavigatePreview,
     activeModal,
     setActiveModal,
@@ -727,192 +377,58 @@ export function WorkspaceFileBrowser() {
     virtualWindow,
   });
 
-  const inspectorTarget = useMemo<InspectorTarget | null>(() => {
-    if (isTrashView) return null;
-    const candidate = focusedRow ?? selectedRows[0] ?? null;
-    if (candidate) {
-      return candidate.kind === 'folder'
-        ? { kind: 'folder', folder: candidate.folder }
-        : { kind: 'file', file: candidate.file };
-    }
-    return currentFolder ? { kind: 'folder', folder: currentFolder } : null;
-  }, [isTrashView, focusedRow, selectedRows, currentFolder]);
+  const {
+    inlineRename,
+    setInlineRename,
+    inlineInputRef,
+    inlineCommittedRef,
+    startInlineRename,
+    commitInlineRename,
+  } = useWorkspaceInlineRename({
+    isTrashView,
+    canEditRow,
+    syncStore,
+    virtualWindow,
+    folders,
+    files: visibleFiles,
+    effectiveRole,
+    setFocusedRowKey,
+    setError,
+  });
 
-  function handleOpenInspectorShare(target: InspectorTarget) {
-    const targetIsFolder = target.kind === 'folder';
-    const targetEffectiveRole = targetIsFolder
-      ? target.folder.effectiveRole ?? effectiveRole
-      : effectiveRole;
-    const targetCaps = targetIsFolder
-      ? target.folder.capabilities ?? currentCapabilities
-      : currentCapabilities;
-    setActiveModal({
-      kind: 'share',
-      targetType: target.kind,
-      targetId: targetIsFolder ? target.folder.id : target.file.id,
-      targetName: targetIsFolder ? target.folder.name : target.file.name,
-      classification: targetIsFolder
-        ? target.folder.classification
-        : target.file.classification,
-      canEdit: canAccess(
-        { capabilities: targetCaps, effectiveRole: targetEffectiveRole },
-        'share_link.create'
-      ),
-      canManageLinks: canAccess(
-        { capabilities: targetCaps, effectiveRole: targetEffectiveRole },
-        'share_link.manage'
-      ),
-      policy: snapshot.policy,
-    });
-  }
+  const { columnVisibility, handleToggleColumn } = useWorkspaceSessionEffects({
+    authStatus: snapshot.authStatus,
+    user,
+    prefetcher,
+    syncStore,
+    clipboardStore,
+    setInspectorOpen,
+    setContextMenu,
+    setBackgroundMenu,
+    setMoveCopyModal,
+    setPreviewTarget,
+    setActiveModal,
+    setInlineRename,
+    setClassificationPicker,
+    setShortcutsHelpOpen,
+    setSelectedKeys,
+    setError,
+  });
 
-  function handleOpenInspectorPermissions(target: InspectorTarget) {
-    const targetIsFolder = target.kind === 'folder';
-    const targetEffectiveRole = targetIsFolder
-      ? target.folder.effectiveRole ?? effectiveRole
-      : effectiveRole;
-    setActiveModal({
-      kind: 'permissions',
-      targetType: target.kind,
-      targetId: targetIsFolder ? target.folder.id : target.file.id,
-      targetName: targetIsFolder ? target.folder.name : target.file.name,
-      effectiveRole: targetEffectiveRole,
-      targetCapabilities: targetIsFolder
-        ? target.folder.capabilities ?? currentCapabilities
-        : currentCapabilities,
-    });
-  }
-
-  const rowAccess = useCallback(
-    (row: WorkspaceTableRow) => ({
-      capabilities: collectRowCapabilities(row, directory.capabilities),
-      effectiveRole:
-        row.kind === 'folder'
-          ? row.folder.effectiveRole ?? effectiveRole
-          : effectiveRole,
-    }),
-    [directory.capabilities, effectiveRole]
-  );
-
-  const canRenameRow = useCallback(
-    (row: WorkspaceTableRow): boolean => {
-      if (isTrashView || !isRowSelectable(row)) return false;
-      return canAccess(
-        rowAccess(row),
-        row.kind === 'folder' ? 'folder.rename' : 'item.rename'
-      );
-    },
-    [isTrashView, rowAccess]
-  );
-
-  const canDeleteRow = useCallback(
-    (row: WorkspaceTableRow): boolean => {
-      if (isTrashView || !isRowSelectable(row)) return false;
-      return canAccess(
-        rowAccess(row),
-        row.kind === 'folder' ? 'folder.delete' : 'item.delete'
-      );
-    },
-    [isTrashView, rowAccess]
-  );
-
-  const canShareRow = useCallback(
-    (row: WorkspaceTableRow): boolean => {
-      if (isTrashView || !isRowSelectable(row)) return false;
-      return canAccess(rowAccess(row), 'share_link.create');
-    },
-    [isTrashView, rowAccess]
-  );
-
-  const canManageLinksRow = useCallback(
-    (row: WorkspaceTableRow): boolean => {
-      if (isTrashView || !isRowSelectable(row)) return false;
-      return canAccess(rowAccess(row), 'share_link.manage');
-    },
-    [isTrashView, rowAccess]
-  );
-
-  const canClassifyRow = useCallback(
-    (row: WorkspaceTableRow): boolean => {
-      if (isTrashView || row.kind !== 'file' || !isRowSelectable(row)) {
-        return false;
-      }
-      return canAccess(rowAccess(row), 'classification.edit');
-    },
-    [isTrashView, rowAccess]
-  );
-
-  // Compatibility alias used by hooks that gate inline rename only.
-  const canEditRow = canRenameRow;
-
-  const requestRestoreTrashFolder = useCallback(
-    (folder: FolderSummary) => {
-      const target = trash.items.find(
-        (candidate) => candidate.type === 'folder' && candidate.id === folder.id
-      );
-      if (!target) {
-        setError('復元対象の情報を取得できませんでした');
-        return;
-      }
-      setTrashRestoreTarget(target);
-    },
-    [trash.items, setError]
-  );
-
-  const requestRestoreTrashFile = useCallback(
-    (file: FileItem) => {
-      const target = trash.items.find(
-        (candidate) => candidate.type === 'file' && candidate.id === file.id
-      );
-      if (!target) {
-        setError('復元対象の情報を取得できませんでした');
-        return;
-      }
-      setTrashRestoreTarget(target);
-    },
-    [trash.items, setError]
-  );
-
-  const handleTrashRestoreSuccess = useCallback(
-    (result: TrashRestoreSuccessResult) => {
-      const target = trashRestoreTarget;
-      if (target) {
-        trash.removeItem(target.type, target.id);
-      }
-      for (const ancestorId of result.restoredAncestorIds) {
-        trash.removeItem('folder', ancestorId);
-      }
-
-      if (result.file) {
-        syncStore.upsertFileInCache(result.file);
-      }
-      if (result.folder) {
-        syncStore.upsertFolderInCache(result.folder);
-      }
-
-      const refreshIds = new Set<string | null>(result.affectedFolderIds);
-      refreshIds.add(result.destination.id);
-      for (const folderId of refreshIds) {
-        void syncStore
-          .ensureDirectoryLoaded(folderId, { force: true })
-          .catch(() => undefined);
-      }
-
-      syncStore.pushToast({
-        kind: 'info',
-        message: formatTrashRestoreSuccessMessage({
-          itemName: target?.name ?? result.restoredName,
-          destinationPath: result.destination.path,
-          restoredName: result.restoredName,
-          restoredAncestorCount: result.restoredAncestorIds.length,
-        }),
-      });
-      setTrashRestoreTarget(null);
-      setSelectedKeys(new Set());
-      setSelectionAnchorKey(null);
-    },
-    [setSelectionAnchorKey, syncStore, trash, trashRestoreTarget]
-  );
+  const {
+    inspectorTarget,
+    handleOpenInspectorShare,
+    handleOpenInspectorPermissions,
+  } = useWorkspaceInspectorActions({
+    isTrashView,
+    focusedRow,
+    selectedRows,
+    currentFolder,
+    effectiveRole,
+    currentCapabilities,
+    policy: snapshot.policy,
+    setActiveModal,
+  });
 
   const {
     resolveRowRole,
@@ -957,302 +473,81 @@ export function WorkspaceFileBrowser() {
     onRequestRestoreFile: requestRestoreTrashFile,
   });
 
-  const selectionCapabilities = useMemo(
-    () =>
-      buildContextMenuCapabilities({
-        targets: selectedRows,
-        primaryRow: selectedRows[0] ?? null,
-        currentFolderId: folderId,
-        folderRole: effectiveRole,
-        folderCapabilities: directory.capabilities,
-        isPrivilegedAdmin,
-        isSysAdmin,
-        folderStructureMode,
-        hasClipboardItems: Boolean(
-          clipboardState && clipboardState.items.length > 0
-        ),
-        clipboardHasFiles: Boolean(
-          clipboardState?.items.some((item) => item.type === 'file')
-        ),
-        resolveRowRole,
-        resolveRowCapabilities: (row) =>
-          collectRowCapabilities(row, directory.capabilities),
-      }),
-    [
+  const selectionCapabilities = useWorkspaceSelectionCapabilities({
+    selectedRows,
+    folderId,
+    effectiveRole,
+    directoryCapabilities: directory.capabilities,
+    isPrivilegedAdmin,
+    isSysAdmin,
+    folderStructureMode,
+    clipboardItems: clipboardState?.items,
+    resolveRowRole,
+    collectRowCapabilities,
+  });
+
+  const { downloadingZip, canDownloadSelection, handleDownloadZip } =
+    useWorkspaceZipDownload({
       selectedRows,
-      folderId,
-      effectiveRole,
-      directory.capabilities,
-      isPrivilegedAdmin,
-      isSysAdmin,
-      folderStructureMode,
-      clipboardState,
+      directoryCapabilities: directory.capabilities,
       resolveRowRole,
-    ]
-  );
-
-  const [downloadingZip, setDownloadingZip] = useState(false);
-
-  const canDownloadSelection = useMemo(
-    () =>
-      selectedRows.length > 0 &&
-      selectedRows.every((row) =>
-        canAccess(
-          {
-            capabilities: collectRowCapabilities(row, directory.capabilities),
-            effectiveRole: resolveRowRole(row),
-          },
-          'item.download'
-        )
-      ),
-    [selectedRows, directory.capabilities, resolveRowRole]
-  );
-
-  const handleDownloadZip = useCallback(async () => {
-    if (downloadingZip || selectedRows.length === 0 || !canDownloadSelection) return;
-    setDownloadingZip(true);
-    setError(null);
-    try {
-      const { blob, filename } = await downloadWorkspaceZip({
-        items: selectedRows.map((row) => ({
-          type: row.kind,
-          id: row.kind === 'folder' ? row.folder.id : row.file.id,
-        })),
-      });
-      triggerBlobDownload(blob, filename);
-    } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : 'ZIPダウンロードに失敗しました'
-      );
-    } finally {
-      setDownloadingZip(false);
-    }
-  }, [downloadingZip, selectedRows, canDownloadSelection, setError]);
-
-  const openFileOrEditor = useCallback(
-    (file: { id: string; capabilities?: Capability[] }) => {
-      const access = {
-        capabilities: file.capabilities ?? directory.capabilities,
-        effectiveRole,
-      };
-      if (!canAccess(access, 'item.preview')) {
-        setError(
-          '現在のロールではファイルのプレビュー・ダウンロードを開けません。投稿専用 (Uploader) の場合、アップロードしたファイルは一覧に表示されません。'
-        );
-        return;
-      }
-      void touchRecentItem('file', file.id, 'view').catch(() => {});
-      window.open(
-        `/workspace/file/${encodeURIComponent(file.id)}`,
-        '_blank'
-      );
-    },
-    [directory.capabilities, effectiveRole, setError]
-  );
-
-  const openRow = useCallback(
-    (row: WorkspaceTableRow) => {
-      if (isTrashView) return;
-      if (row.kind === 'folder') {
-        router.push(`/workspace?folderId=${encodeURIComponent(row.folder.id)}`);
-        return;
-      }
-      openFileOrEditor(row.file);
-    },
-    [isTrashView, router, openFileOrEditor]
-  );
-
-  /**
-   * Google Drive-compatible right-click normalization: right-clicking outside the
-   * current selection selects that row first so the menu target and the visible
-   * selection never disagree.
-   */
-  const openRowContextMenu = useCallback(
-    (event: React.MouseEvent, row: WorkspaceTableRow) => {
-      if (isTrashView) return;
-      event.preventDefault();
-      const rowKey = getWorkspaceRowKey(row);
-      setFocusedRowKey(rowKey);
-      const resolved = resolveContextSelection(selectedKeys, rowKey);
-      if (resolved.changed) {
-        setSelectedKeys(resolved.selectedKeys);
-        setSelectionAnchorKey(resolved.anchorKey);
-      }
-      setBackgroundMenu(null);
-      const current = event.currentTarget;
-      const trigger =
-        current instanceof HTMLElement
-          ? current.matches('button')
-            ? current
-            : current.querySelector<HTMLElement>('[data-row-name-trigger="true"]') ??
-              current
-          : null;
-      setContextMenu({ x: event.clientX, y: event.clientY, row, trigger });
-    },
-    [isTrashView, selectedKeys]
-  );
-
-  const clearSelection = useCallback(() => {
-    setSelectedKeys(new Set());
-    setSelectionAnchorKey(null);
-    setFocusedRowKey(null);
-  }, []);
+      collectRowCapabilities,
+      setError,
+    });
 
   const {
-    inlineRename,
-    setInlineRename,
-    inlineInputRef,
-    inlineCommittedRef,
-    startInlineRename,
-    commitInlineRename,
-  } = useWorkspaceInlineRename({
+    handleDownloadFile,
+    openFileOrEditor,
+    handleSearchSelect,
+    openRow,
+    openRowContextMenu,
+    clearSelection,
+    navigateToParentFolder,
+    openCreateFolderModal,
+    handleBackgroundContextMenu,
+    handleBackgroundEmptyClick,
+  } = useWorkspaceNavigation({
+    router,
+    folderId,
     isTrashView,
-    canEditRow,
-    syncStore,
-    virtualWindow,
-    folders,
-    files: visibleFiles,
+    currentFolder,
+    breadcrumbs,
+    directoryCapabilities: directory.capabilities,
     effectiveRole,
+    rootCreationRestricted,
+    selectedKeys,
+    touchRecentFile,
+    setSelectedKeys,
+    setSelectionAnchorKey,
     setFocusedRowKey,
+    setContextMenu,
+    setBackgroundMenu,
+    setFolderNameInput,
+    setFolderClassInput,
+    setActiveModal,
     setError,
   });
 
-  const handleApproveSingleAi = useCallback(
-    (file: FileItem): { ok: boolean; error?: string } => {
-      if (!canClassifyCurrentFolder && !isPrivilegedAdmin) {
-        const message = 'AI分類提案を承認する権限がありません';
-        setError(message);
-        return { ok: false, error: message };
-      }
-      const res = syncStore.optimisticUpdateFileClassification(
-        file,
-        { acceptSuggestion: true },
-        { effectiveRole, isPrivilegedAdmin }
-      );
-      if (!res.ok) {
-        setError(res.error ?? 'AI分類を承認できませんでした');
-      }
-      return res;
-    },
-    [canClassifyCurrentFolder, isPrivilegedAdmin, syncStore, effectiveRole]
-  );
+  const contextMenuFile =
+    contextMenu?.row?.kind === 'file' ? contextMenu.row.file : null;
 
-  const handleBulkApproveAi = useCallback(() => {
-    const candidates = selectedRows
-      .filter((r): r is { kind: 'file'; file: FileItem } => r.kind === 'file')
-      .map((r) => r.file)
-      .filter((f) => f.ai_suggested_label != null);
-    if (candidates.length === 0) return;
-    if (!canClassifyCurrentFolder && !isPrivilegedAdmin) {
-      setError('AI分類提案を承認する権限がありません');
-      return;
-    }
-
-    let firstError: string | null = null;
-    for (const file of candidates) {
-      if (!file.ai_suggested_label) continue;
-      const res = syncStore.optimisticUpdateFileClassification(
-        file,
-        { acceptSuggestion: true },
-        { effectiveRole, isPrivilegedAdmin }
-      );
-      if (!res.ok && !firstError) {
-        firstError = res.error ?? '一部のAI分類を承認できませんでした';
-      }
-    }
-    if (firstError) setError(firstError);
-    setSelectedKeys(new Set());
-  }, [
-    selectedRows,
+  const {
+    handleLockChanged,
+    getEffectiveFileLock,
+    contextMenuFileLock,
+    toggleContextMenuFileLock,
+    handleApproveSingleAi,
+    handleBulkApproveAi,
+  } = useWorkspaceLocksAndAi({
+    syncStore,
+    contextMenuFile,
     canClassifyCurrentFolder,
     isPrivilegedAdmin,
-    syncStore,
     effectiveRole,
-  ]);
-
-  const navigateToParentFolder = useCallback(() => {
-    if (isTrashView) return;
-    if (currentFolder?.parent_id) {
-      router.push(
-        `/workspace?folderId=${encodeURIComponent(currentFolder.parent_id)}`
-      );
-      return;
-    }
-    if (breadcrumbs.length > 1) {
-      const parentCrumb = breadcrumbs[breadcrumbs.length - 2];
-      if (parentCrumb) {
-        router.push(`/workspace?folderId=${encodeURIComponent(parentCrumb.id)}`);
-        return;
-      }
-    }
-    if (folderId) {
-      router.push('/workspace');
-    }
-  }, [isTrashView, currentFolder, breadcrumbs, folderId, router]);
-
-  const openCreateFolderModal = useCallback(() => {
-    if (rootCreationRestricted) {
-      setError(ROOT_CREATION_NOTICE);
-      return;
-    }
-    setFolderNameInput('');
-    setFolderClassInput(
-      currentFolder?.classification === 'confidential'
-        ? 'confidential'
-        : 'internal'
-    );
-    setActiveModal({ kind: 'createFolder', parentId: folderId ?? null });
-  }, [
-    currentFolder?.classification,
-    folderId,
-    rootCreationRestricted,
+    selectedRows,
+    setSelectedKeys,
     setError,
-  ]);
-
-  const handleBackgroundContextMenu = useCallback(
-    (event: React.MouseEvent) => {
-      if (isTrashView) return;
-      const target = event.target;
-      if (
-        target instanceof Element &&
-        target.closest(
-          '[data-row-index], thead, th, button, a, input, select, textarea, [role="menu"], [role="checkbox"], [data-marquee-ignore="true"]'
-        )
-      ) {
-        return;
-      }
-      event.preventDefault();
-      setContextMenu(null);
-      setBackgroundMenu({
-        x: event.clientX,
-        y: event.clientY,
-        trigger:
-          event.target instanceof Element
-            ? event.target.closest<HTMLElement>('[data-workspace-table="true"]')
-            : null,
-      });
-    },
-    [isTrashView]
-  );
-
-  const handleBackgroundEmptyClick = useCallback(
-    (event: React.MouseEvent) => {
-      if (isTrashView) return;
-      const target = event.target;
-      if (
-        target instanceof Element &&
-        target.closest(
-          '[data-row-index], thead, th, button, a, input, select, textarea, [role="menu"], [data-marquee-ignore="true"]'
-        )
-      ) {
-        return;
-      }
-      clearSelection();
-    },
-    [isTrashView, clearSelection]
-  );
+  });
 
   const marquee = useMarqueeSelection({
     containerRef: virtualWindow.containerRef,
@@ -1396,169 +691,77 @@ export function WorkspaceFileBrowser() {
     setShortcutsHelpOpen,
   });
 
-  if (!authChecked) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#efeff1] text-sm text-slate-500">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin text-blue-600" />
-        セッションを確認中...
-      </div>
-    );
-  }
+  const { createRenderers } = useWorkspaceRowRenderers({
+    isTrashView,
+    effectiveRole,
+    focusedRowKey,
+    selectedKeys,
+    selectedRows,
+    clipboardState,
+    isCutPending: (kind, id) => clipboardStore.isCutPending(kind, id),
+    inlineRename,
+    inlineInputRef,
+    inlineCommittedRef,
+    contextMenuRow: contextMenu?.row ?? null,
+    prefetcher,
+    canClassifyCurrentFolder,
+    canDownloadCurrentFolder,
+    isPrivilegedAdmin,
+    columnVisibility,
+    getEffectiveFileLock,
+    selectRowCheckbox,
+    selectRowFromPointer,
+    openRow,
+    openRowContextMenu,
+    handleRestoreFolder,
+    handleRestoreFile,
+    handleDownloadFile,
+    setInlineRename,
+    commitInlineRename,
+    setFocusedRowKey,
+    onFileUpdated: trash.updateFile,
+    setError,
+  });
 
-  const sessionIssue: GuestSessionIssue | null = snapshot.sessionError
-    ? guestSessionIssueFromCode(
-        snapshot.sessionError.code ?? null,
-        snapshot.sessionError.userType
-      )
-    : null;
-
-  if (!user) {
-    const forcedSignOut = snapshot.sessionError;
-    if (forcedSignOut?.code === 'SESSION_REVOKED_BY_ADMIN') {
-      return (
-        <SignInCard
-          title="セッションが管理者によって失効されました"
-          description={
-            forcedSignOut.message ||
-            '管理者が強制サインアウトを実行しました。安全のため再度サインインしてください。'
-          }
-          returnTo="/workspace"
-          onSignedIn={(signedIn) => {
-            void syncStore.adoptAuthenticatedUser(signedIn);
-          }}
-        />
-      );
-    }
-    if (sessionIssue) {
-      return (
-        <SignInCard
-          title="外部ゲストの再サインインが必要です"
-          description="セッションが失効したため、ワークスペースの内容を安全に破棄しました。原因を確認し、外部ゲストサインインから認証コードを再取得してください。"
-          returnTo="/workspace"
-          guestIssue={sessionIssue}
-          onSignedIn={(signedIn) => {
-            void syncStore.adoptAuthenticatedUser(signedIn);
-          }}
-        />
-      );
-    }
+  if (!authChecked || !user) {
     return (
-      <SignInCard
-        title="Files ワークスペースへサインイン"
-        description="組織の SSO (OIDC) セッションが必要です。認証後、自動的にワークスペースへ戻ります。"
-        returnTo="/workspace"
-        onSignedIn={(signedIn) => {
-          void syncStore.adoptAuthenticatedUser(signedIn);
-        }}
+      <WorkspaceAuthGate
+        authChecked={authChecked}
+        user={user}
+        sessionError={snapshot.sessionError}
+        syncStore={syncStore}
       />
     );
   }
 
+  const openFolderRoute = (targetFolderId: string) =>
+    router.push(`/workspace?folderId=${encodeURIComponent(targetFolderId)}`);
+
   if (isRecentsView || isFavoritesView || isTasksView) {
     return (
-      <div className="flex min-h-screen bg-[#efeff1] text-[#111214]">
-        <AppShellRail
-          user={user}
-          activeView={
-            isTasksView ? 'tasks' : isRecentsView ? 'recents' : 'favorites'
-          }
-          activeFolderId={null}
-          onSelectResult={handleSearchSelect}
-          onSelectFolder={(targetFolderId) =>
-            router.push(`/workspace?folderId=${encodeURIComponent(targetFolderId)}`)
-          }
-        />
-        <main
-          id="workspace-main"
-          tabIndex={-1}
-          className="mb-2 mr-2 mt-2 min-w-0 flex-1 space-y-4 rounded-2xl border border-[#e7e7ea] bg-[#f9f9fa] px-5 py-4 lg:px-7"
-        >
-          {isTasksView ? (
-            <WorkspaceMyTasksView
-              onOpenFolder={(targetFolderId) =>
-                router.push(
-                  `/workspace?folderId=${encodeURIComponent(targetFolderId)}`
-                )
-              }
-              onOpenFile={(fileId) => {
-                void touchRecentItem('file', fileId, 'view').catch(() => {});
-                window.open(
-                  `/workspace/file/${encodeURIComponent(fileId)}`,
-                  '_blank'
-                );
-              }}
-            />
-          ) : isRecentsView ? (
-            <WorkspaceRecentsView
-              onOpenFolder={(targetFolderId) =>
-                router.push(
-                  `/workspace?folderId=${encodeURIComponent(targetFolderId)}`
-                )
-              }
-              onOpenFile={(fileId) => {
-                void touchRecentItem('file', fileId, 'view').catch(() => {});
-                window.open(
-                  `/workspace/file/${encodeURIComponent(fileId)}`,
-                  '_blank'
-                );
-              }}
-            />
-          ) : (
-            <WorkspaceFavoritesView
-              onOpenFolder={(targetFolderId) =>
-                router.push(
-                  `/workspace?folderId=${encodeURIComponent(targetFolderId)}`
-                )
-              }
-              onOpenFile={(fileId) => {
-                void touchRecentItem('file', fileId, 'view').catch(() => {});
-                window.open(
-                  `/workspace/file/${encodeURIComponent(fileId)}`,
-                  '_blank'
-                );
-              }}
-            />
-          )}
-        </main>
-      </div>
+      <WorkspaceSpecialViewShell
+        user={user}
+        viewKind={
+          isTasksView ? 'tasks' : isRecentsView ? 'recents' : 'favorites'
+        }
+        isGuestUser={isGuestUser}
+        onSelectResult={handleSearchSelect}
+        onOpenFolder={openFolderRoute}
+        onTouchRecentFile={touchRecentFile}
+      />
     );
   }
 
   if (isSharedView) {
     return (
-      <div className="flex min-h-screen bg-[#efeff1] text-[#111214]">
-        <AppShellRail
-          user={user}
-          activeView="shared"
-          activeFolderId={null}
-          onSelectResult={handleSearchSelect}
-          onSelectFolder={(targetFolderId) =>
-            router.push(`/workspace?folderId=${encodeURIComponent(targetFolderId)}`)
-          }
-        />
-        <main
-          id="workspace-main"
-          tabIndex={-1}
-          className="mb-2 mr-2 mt-2 min-w-0 flex-1 space-y-4 rounded-2xl border border-[#e7e7ea] bg-[#f9f9fa] px-5 py-4 lg:px-7"
-        >
-          <WorkspaceSharedItemsView
-            isGuest={isGuestUser}
-            externalOrg={user.externalOrg ?? null}
-            expiresAt={user.expiresAt ?? null}
-            onOpenFolder={(targetFolderId) =>
-              router.push(
-                `/workspace?folderId=${encodeURIComponent(targetFolderId)}`
-              )
-            }
-            onOpenFile={(fileId) =>
-              window.open(
-                `/workspace/file/${encodeURIComponent(fileId)}`,
-                '_blank'
-              )
-            }
-          />
-        </main>
-      </div>
+      <WorkspaceSpecialViewShell
+        user={user}
+        viewKind="shared"
+        isGuestUser={isGuestUser}
+        onSelectResult={handleSearchSelect}
+        onOpenFolder={openFolderRoute}
+        onTouchRecentFile={touchRecentFile}
+      />
     );
   }
 
@@ -1571,775 +774,465 @@ export function WorkspaceFileBrowser() {
       onDropMove={handleDragDropMove}
     >
       {(dragCtx) => {
-        function handleCardCheckboxClick(
-          row: WorkspaceTableRow,
-          rowKey: string,
-          e: React.MouseEvent<HTMLButtonElement>
-        ) {
-          selectRowCheckbox(e, row, rowKey);
-        }
-
-        function handleCardPointerDown(
-          row: WorkspaceTableRow,
-          e: React.PointerEvent<HTMLElement>
-        ) {
-          const dragItems = collectDragItemsForRow(
-            row,
-            selectedRows,
-            selectedKeys,
-            isTrashView,
-            effectiveRole
-          );
-          if (dragItems.length > 0) {
-            dragCtx.startPointerDragCandidate(e, dragItems);
-          }
-        }
-
-        function renderGridRowCard(row: WorkspaceTableRow, globalIdx: number) {
-          const {
-            rowKey,
-            file,
-            folder,
-            isPendingUpload,
-            isCut,
-            isDropEligible,
-          } = describeWorkspaceRow({
-            row,
-            isTrashView,
-            clipboardState,
-            isCutPending: (kind, id) => clipboardStore.isCutPending(kind, id),
-          });
-          const dropClass =
-            folder && dragCtx.isDragging && isDropEligible
-              ? getDropTargetClassName(folder.id, dragCtx.hoveredTarget)
-              : '';
-
-          return (
-            <WorkspaceItemCard
-              key={rowKey}
-              row={row}
-              globalIdx={globalIdx}
-              isFocused={focusedRowKey === rowKey}
-              isSelected={selectedKeys.has(rowKey)}
-              rowSelectable={isRowSelectable(row)}
-              isTrashView={isTrashView}
-              isInlineRenaming={inlineRename?.rowKey === rowKey}
-              isPendingUpload={isPendingUpload}
-              isCut={isCut}
-              lock={file ? getEffectiveFileLock(file.id) : null}
-              isContextMenuOpen={
-                contextMenu?.row
-                  ? getWorkspaceRowKey(contextMenu.row) === rowKey
-                  : false
-              }
-              dropClass={dropClass}
-              inlineRename={inlineRename}
-              inlineInputRef={inlineInputRef}
-              inlineCommittedRef={inlineCommittedRef}
-              prefetcher={prefetcher}
-              onCheckboxClick={(e) =>
-                handleCardCheckboxClick(row, rowKey, e)
-              }
-              onPointerDown={(e) => handleCardPointerDown(row, e)}
-              onSelectRow={selectRowFromPointer}
-              onOpenRow={openRow}
-              onOpenContextMenu={openRowContextMenu}
-              onRestoreFolder={handleRestoreFolder}
-              onRestoreFile={handleRestoreFile}
-              onSetInlineRename={setInlineRename}
-              onCommitInlineRename={commitInlineRename}
-              onFocusRow={setFocusedRowKey}
-            />
-          );
-        }
-
-        function renderTableRow(
-          row: WorkspaceTableRow,
-          globalIdx: number
-        ) {
-
-                    const {
-                      rowKey,
-                      file,
-                      folder,
-                      isPendingUpload,
-                      isCut,
-                      isDropEligible,
-                    } = describeWorkspaceRow({
-                      row,
-                      isTrashView,
-                      clipboardState,
-                      isCutPending: (kind, id) =>
-                        clipboardStore.isCutPending(kind, id),
-                    });
-                    const dropClass =
-                      folder && dragCtx.isDragging && isDropEligible
-                        ? getDropTargetClassName(
-                            folder.id,
-                            dragCtx.hoveredTarget
-                          )
-                        : '';
-
-                    return (
-                      <WorkspaceItemRow
-                        key={rowKey}
-                        row={row}
-                        globalIdx={globalIdx}
-                        isFocused={focusedRowKey === rowKey}
-                        isSelected={selectedKeys.has(rowKey)}
-                        rowSelectable={isRowSelectable(row)}
-                        isTrashView={isTrashView}
-                        isInlineRenaming={inlineRename?.rowKey === rowKey}
-                        isContextMenuOpen={
-                          contextMenu?.row
-                            ? getWorkspaceRowKey(contextMenu.row) === rowKey
-                            : false
-                        }
-                        isCut={isCut}
-                        lock={file ? getEffectiveFileLock(file.id) : null}
-                        dropClass={dropClass}
-                        inlineRename={inlineRename}
-                        inlineInputRef={inlineInputRef}
-                        inlineCommittedRef={inlineCommittedRef}
-                        prefetcher={prefetcher}
-                        effectiveRole={effectiveRole}
-                        canClassify={canClassifyCurrentFolder}
-                        canDownloadCurrentFolder={canDownloadCurrentFolder}
-                        isPrivilegedAdmin={isPrivilegedAdmin}
-                        columnVisibility={columnVisibility}
-                        onCheckboxClick={(e) =>
-                          handleCardCheckboxClick(row, rowKey, e)
-                        }
-                        onPointerDown={(e) =>
-                          handleCardPointerDown(row, e)
-                        }
-                        onSelectRow={selectRowFromPointer}
-                        onOpenRow={openRow}
-                        onOpenContextMenu={openRowContextMenu}
-                        onRestoreFolder={handleRestoreFolder}
-                        onRestoreFile={handleRestoreFile}
-                        onDownloadFile={handleDownloadFile}
-                        onSetInlineRename={setInlineRename}
-                        onCommitInlineRename={commitInlineRename}
-                        onFocusRow={setFocusedRowKey}
-                        onFileUpdated={trash.updateFile}
-                        onError={setError}
-                      />
-                    );
-        }
+        const { renderGridRowCard, renderTableRow } = createRenderers(dragCtx);
 
         return (
           <div className="flex min-h-screen bg-[#efeff1] text-[#111214]">
-          {tosGate.blocked && (
-            <TosAcceptanceModal
-              tos={tosGate.status}
-              branding={tosGate.branding}
-              accepting={tosGate.accepting}
-              error={tosGate.error}
-              onAccept={() => void tosGate.accept()}
+            {tosGate.blocked && (
+              <TosAcceptanceModal
+                tos={tosGate.status}
+                branding={tosGate.branding}
+                accepting={tosGate.accepting}
+                error={tosGate.error}
+                onAccept={() => void tosGate.accept()}
+              />
+            )}
+            <a
+              href="#workspace-main"
+              className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-[#111214] focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#5e6ad2]"
+            >
+              メインコンテンツへスキップ
+            </a>
+            <AppShellRail
+              user={user}
+              activeView={isTrashView ? 'trash' : 'workspace'}
+              activeFolderId={isTrashView ? null : folderId}
+              onSelectResult={handleSearchSelect}
+              onSelectFolder={openFolderRoute}
+              workspaceActions={workspaceActions}
             />
-          )}
-          <a
-            href="#workspace-main"
-            className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-[#111214] focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#5e6ad2]"
-          >
-            メインコンテンツへスキップ
-          </a>
-          <AppShellRail
-            user={user}
-            activeView={isTrashView ? 'trash' : 'workspace'}
-            activeFolderId={isTrashView ? null : folderId}
-            onSelectResult={handleSearchSelect}
-            onSelectFolder={(targetFolderId) =>
-              router.push(`/workspace?folderId=${encodeURIComponent(targetFolderId)}`)
-            }
-            workspaceActions={workspaceActions}
-          />
 
-          <main
-            id="workspace-main"
-            tabIndex={-1}
-            className="mb-2 mr-2 mt-2 min-w-0 flex-1 space-y-4 rounded-2xl border border-[#e7e7ea] bg-[#f9f9fa] px-5 py-4 lg:px-7"
-          >
-        {!isTrashView && (
-          <h1 className="sr-only">{currentFolder?.name ?? 'マイファイル'}</h1>
-        )}
-        <WorkspaceMainHeader
-          isTrashView={isTrashView}
-          accessMode={accessMode}
-          folderId={folderId}
-          breadcrumbs={breadcrumbs}
-          currentFolder={currentFolder}
-          effectiveRole={effectiveRole}
-          nextCursor={nextCursor}
-          sortBy={listSortBy}
-          sortDir={listSortDir}
-          sortDrainStatus="idle"
-          selectedRows={selectedRows}
-          canCreateFolder={canCreateFolder && !rootCreationRestricted}
-          canCreateOfficeDoc={
-            Boolean(folderId) && (canCreateFolder || canUploadNew)
-          }
-          canRenameCurrentFolder={canRenameCurrentFolder}
-          canShareCurrentFolder={canShareCurrentFolder}
-          canManageCurrentFolderPerms={canManageCurrentFolderPerms}
-          canInviteCurrentFolder={canInviteCurrentFolder}
-          canInspectCurrentFolder={canInspectCurrentFolder}
-          isPrivilegedAdmin={isPrivilegedAdmin}
-          canCopySelection={selectionCapabilities.canCopy}
-          canCutSelection={selectionCapabilities.canCut}
-          canDuplicateSelection={selectionCapabilities.canDuplicate}
-          canMoveCopySelection={selectionCapabilities.canMoveCopy}
-          canClassifySelection={selectionCapabilities.canClassify}
-          canTrashSelection={selectionCapabilities.canTrash}
-          canDownloadSelection={canDownloadSelection}
-          downloadingZip={downloadingZip}
-          viewMode={viewMode}
-          inspectorOpen={inspectorOpen}
-          rootCreationRestricted={rootCreationRestricted}
-          quickFilter={quickFilter}
-          onQuickFilterChange={setQuickFilter}
-          onClearQuickFilter={() =>
-            setQuickFilter(DEFAULT_WORKSPACE_QUICK_FILTER)
-          }
-          onNewFolder={openCreateFolderModal}
-          onCreateOfficeDoc={(kind) =>
-            setCreateOfficeModal({
-              kind,
-              name: '',
-              submitting: false,
-              error: null,
-            })
-          }
-          onTogglePin={handleTogglePin}
-          onOpenFileRequest={() => {
-            if (!currentFolder) return;
-            setActiveModal({
-              kind: 'fileRequest',
-              folderId: currentFolder.id,
-              folderName: currentFolder.name,
-              canEdit: canRenameCurrentFolder,
-            });
-          }}
-          onOpenShare={() => {
-            if (!currentFolder) return;
-            setActiveModal({
-              kind: 'share',
-              targetType: 'folder',
-              targetId: currentFolder.id,
-              targetName: currentFolder.name,
-              classification: currentFolder.classification,
-              canEdit: canShareCurrentFolder,
-              canManageLinks: canManageCurrentFolderLinks,
-              policy: snapshot.policy,
-            });
-          }}
-          onOpenPermissions={() => {
-            if (!currentFolder) return;
-            setActiveModal({
-              kind: 'permissions',
-              targetType: 'folder',
-              targetId: currentFolder.id,
-              targetName: currentFolder.name,
-              effectiveRole,
-              targetCapabilities: currentCapabilities,
-            });
-          }}
-          onToggleViewMode={handleToggleViewMode}
-          onToggleInspector={() => setInspectorOpen((prev) => !prev)}
-          onOpenShortcuts={() => setShortcutsHelpOpen(true)}
-          onCopy={() => handleCopyTargets(selectedRows)}
-          onCut={() => handleCutTargets(selectedRows)}
-          onDuplicate={() => handleDuplicateTargets(selectedRows)}
-          onMoveCopy={() => handleOpenMoveCopyModal(selectedRows, 'move')}
-          onBulkApproveAi={handleBulkApproveAi}
-          onClassify={openClassificationPickerFromTarget}
-          onTrash={trashSelectedOrFocused}
-          onDownloadZip={() => {
-            void handleDownloadZip();
-          }}
-          onClearSelection={() => setSelectedKeys(new Set())}
-        />
+            <main
+              id="workspace-main"
+              tabIndex={-1}
+              className="mb-2 mr-2 mt-2 min-w-0 flex-1 space-y-4 rounded-2xl border border-[#e7e7ea] bg-[#f9f9fa] px-5 py-4 lg:px-7"
+            >
+              {!isTrashView && (
+                <h1 className="sr-only">
+                  {currentFolder?.name ?? 'マイファイル'}
+                </h1>
+              )}
+              <WorkspaceMainHeader
+                isTrashView={isTrashView}
+                accessMode={accessMode}
+                folderId={folderId}
+                breadcrumbs={breadcrumbs}
+                currentFolder={currentFolder}
+                effectiveRole={effectiveRole}
+                nextCursor={nextCursor}
+                sortBy={listSortBy}
+                sortDir={listSortDir}
+                sortDrainStatus="idle"
+                selectedRows={selectedRows}
+                canCreateFolder={canCreateFolder && !rootCreationRestricted}
+                canCreateOfficeDoc={
+                  Boolean(folderId) && (canCreateFolder || canUploadNew)
+                }
+                canRenameCurrentFolder={canRenameCurrentFolder}
+                canShareCurrentFolder={canShareCurrentFolder}
+                canManageCurrentFolderPerms={canManageCurrentFolderPerms}
+                canInviteCurrentFolder={canInviteCurrentFolder}
+                canInspectCurrentFolder={canInspectCurrentFolder}
+                isPrivilegedAdmin={isPrivilegedAdmin}
+                canCopySelection={selectionCapabilities.canCopy}
+                canCutSelection={selectionCapabilities.canCut}
+                canDuplicateSelection={selectionCapabilities.canDuplicate}
+                canMoveCopySelection={selectionCapabilities.canMoveCopy}
+                canClassifySelection={selectionCapabilities.canClassify}
+                canTrashSelection={selectionCapabilities.canTrash}
+                canDownloadSelection={canDownloadSelection}
+                downloadingZip={downloadingZip}
+                viewMode={viewMode}
+                inspectorOpen={inspectorOpen}
+                rootCreationRestricted={rootCreationRestricted}
+                quickFilter={quickFilter}
+                onQuickFilterChange={setQuickFilter}
+                onClearQuickFilter={() =>
+                  setQuickFilter(DEFAULT_WORKSPACE_QUICK_FILTER)
+                }
+                onNewFolder={openCreateFolderModal}
+                onCreateOfficeDoc={(kind) => setCreateOfficeKind(kind)}
+                onTogglePin={handleTogglePin}
+                onOpenFileRequest={() => {
+                  if (!currentFolder) return;
+                  setActiveModal({
+                    kind: 'fileRequest',
+                    folderId: currentFolder.id,
+                    folderName: currentFolder.name,
+                    canEdit: canRenameCurrentFolder,
+                  });
+                }}
+                onOpenShare={() => {
+                  if (!currentFolder) return;
+                  setActiveModal({
+                    kind: 'share',
+                    targetType: 'folder',
+                    targetId: currentFolder.id,
+                    targetName: currentFolder.name,
+                    classification: currentFolder.classification,
+                    canEdit: canShareCurrentFolder,
+                    canManageLinks: canManageCurrentFolderLinks,
+                    policy: snapshot.policy,
+                  });
+                }}
+                onOpenPermissions={() => {
+                  if (!currentFolder) return;
+                  setActiveModal({
+                    kind: 'permissions',
+                    targetType: 'folder',
+                    targetId: currentFolder.id,
+                    targetName: currentFolder.name,
+                    effectiveRole,
+                    targetCapabilities: currentCapabilities,
+                  });
+                }}
+                onToggleViewMode={handleToggleViewMode}
+                onToggleInspector={() => setInspectorOpen((prev) => !prev)}
+                onOpenShortcuts={() => setShortcutsHelpOpen(true)}
+                onCopy={() => handleCopyTargets(selectedRows)}
+                onCut={() => handleCutTargets(selectedRows)}
+                onDuplicate={() => handleDuplicateTargets(selectedRows)}
+                onMoveCopy={() =>
+                  handleOpenMoveCopyModal(selectedRows, 'move')
+                }
+                onBulkApproveAi={handleBulkApproveAi}
+                onClassify={openClassificationPickerFromTarget}
+                onTrash={trashSelectedOrFocused}
+                onDownloadZip={() => {
+                  void handleDownloadZip();
+                }}
+                onClearSelection={() => setSelectedKeys(new Set())}
+              />
 
-        {isTrashView && (
-          <WorkspaceTrashBulkBar
-            selectedCount={selectedRows.length}
-            restorableCount={selectedTrashCapabilities.restorableCount}
-            purgableCount={selectedTrashCapabilities.purgableCount}
-            hasTrashItems={
-              trash.loaded &&
-              (trash.items.length > 0 || trash.hasMore || trashFilterActive)
-            }
-            busyAction={trashBulk.busyAction}
-            conflictPolicy={trashConflictPolicy}
-            onConflictPolicyChange={setTrashConflictPolicy}
-            onRestore={() => {
-              void trashBulk.requestRestore(trashConflictPolicy);
-            }}
-            onPurge={trashBulk.requestPurge}
-            onEmpty={() =>
-              trashBulk.requestEmpty(currentTrashCapabilities.purgableCount)
-            }
-            onClearSelection={() => {
-              setSelectedKeys(new Set());
-              setSelectionAnchorKey(null);
-            }}
-          />
-        )}
-
-        {isTrashView && (
-          <WorkspaceTrashFilters
-            filters={trash.filters}
-            deleters={trash.deleters}
-            hasUnknownDeleter={trash.hasUnknownDeleter}
-            showDeleterFilter={showTrashDeleterFilter}
-            loading={trash.loading}
-            onChange={(patch) => {
-              void trash.applyFilters(patch);
-            }}
-            onClear={() => {
-              void trash.clearFilters();
-            }}
-          />
-        )}
-
-        <WorkspaceNotices
-          activeDirectoryNotice={snapshot.activeDirectoryNotice}
-          error={error}
-          onDismissNotice={() => syncStore.clearActiveDirectoryNotice()}
-        />
-
-        {isPathOnly && (
-          <div
-            role="status"
-            data-testid="path-only-banner"
-            className="flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-[0.75rem] leading-relaxed text-sky-900"
-          >
-            <Route className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
-            <div>
-              <p className="font-semibold">
-                途中階層 (パス専用): アクセス可能な子孫フォルダへ移動するための経路表示です。ファイル一覧・アップロード・編集は許可されていません。
-              </p>
-              <p className="mt-0.5 text-[0.6875rem] text-sky-800">
-                下のフォルダから共有されたターゲットへ移動してください。
-              </p>
-            </div>
-          </div>
-        )}
-
-        {showRoleBanner && (
-          <WorkspacePermissionBanner
-            role={effectiveRole}
-            capabilities={directory.capabilities}
-            guest={
-              isGuestUser
-                ? {
-                    externalOrg: user.externalOrg ?? null,
-                    expiresAt: user.expiresAt ?? null,
-                  }
-                : null
-            }
-          />
-        )}
-
-        <WorkspacePinnedFolders
-          isTrashView={isTrashView}
-          folderId={folderId}
-          pinnedFolders={pinnedFolders}
-          revalidating={snapshot.revalidating}
-          dragCtx={dragCtx}
-          prefetcher={prefetcher}
-          onOpenFolder={(targetFolderId) =>
-            router.push(
-              `/workspace?folderId=${encodeURIComponent(targetFolderId)}`
-            )
-          }
-        />
-
-        {!isTrashView && currentFolder && canUploadNew && (
-          <FileDropzoneUploader
-            folderId={currentFolder.id}
-            canUploadVersion={canUploadVersion}
-            onRegisterEnqueueFiles={(fn) => {
-              pasteEnqueueFilesRef.current = fn;
-            }}
-          />
-        )}
-
-        <div className="sr-only" aria-live="polite" aria-atomic="true">
-          {selectedRows.length > 0
-            ? `${selectedRows.length} 件選択中`
-            : '選択なし'}
-        </div>
-
-        <WorkspaceFileListSection
-          viewMode={viewMode}
-          isInitialLoading={isInitialLoading}
-          isTrashView={isTrashView}
-          pathOnly={isPathOnly}
-          folderId={folderId}
-          uploadOnly={!isTrashView && effectiveRole === 'uploader'}
-          rowCount={rows.length}
-          visibleRows={visibleRows}
-          visibleGridRows={visibleGridRows}
-          virtualWindow={virtualWindow}
-          gridColumns={GRID_COLUMNS}
-          selectableRowKeys={selectableRowKeys}
-          selectedRowCount={selectedRows.length}
-          sortBy={listSortBy}
-          sortDir={listSortDir}
-          columnVisibility={columnVisibility}
-          nextCursor={nextCursor}
-          loadingMore={loadingMore}
-          trashError={trashError}
-          trashFilterActive={trashFilterActive}
-          rootCreationRestricted={rootCreationRestricted}
-          marqueeSurfaceRef={marqueeSurfaceRef}
-          containerRef={virtualWindow.containerRef}
-          onMarqueePointerDown={marquee.onPointerDown}
-          onBackgroundContextMenu={handleBackgroundContextMenu}
-          onBackgroundEmptyClick={handleBackgroundEmptyClick}
-          onToggleSelectAll={() => {
-            if (selectedRows.length === selectableRowKeys.length) {
-              setSelectedKeys(new Set());
-            } else {
-              setSelectedKeys(new Set(selectableRowKeys));
-            }
-          }}
-          onSort={handleListSort}
-          onToggleColumn={handleToggleColumn}
-          onLoadMore={handleLoadMore}
-          onRetryTrash={() => {
-            void trash.retry();
-          }}
-          onClearTrashFilters={() => {
-            void trash.clearFilters();
-          }}
-          registerScrollContainer={dragCtx.registerScrollContainer}
-          renderCard={renderGridRowCard}
-          renderRow={renderTableRow}
-        />
-      </main>
-
-      <input
-        ref={backgroundFileInputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          enqueueBackgroundUpload(e.target.files, 'files');
-          e.target.value = '';
-        }}
-      />
-      <input
-        ref={backgroundFolderInputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          enqueueBackgroundUpload(e.target.files, 'folder');
-          e.target.value = '';
-        }}
-      />
-
-      {marquee.overlay}
-
-      <WorkspaceInspectorOverlay
-        lock={
-          inspectorTarget?.kind === 'file'
-            ? getEffectiveFileLock(inspectorTarget.file.id)
-            : null
-        }
-        currentUserId={user?.id ?? null}
-        isPrivilegedAdmin={isPrivilegedAdmin}
-        initialTab={inspectorInitialTab}
-        open={inspectorOpen}
-        isTrashView={isTrashView}
-        target={inspectorTarget}
-        breadcrumbs={breadcrumbs}
-        effectiveRole={effectiveRole}
-        capabilities={directory.capabilities}
-        syncStore={syncStore}
-        onLockChanged={handleLockChanged}
-        onClose={() => {
-          setInspectorOpen(false);
-          setInspectorInitialTab('details');
-        }}
-        onPreview={openFileOrEditor}
-        onDownload={handleDownloadFile}
-        onOpenVersionHistory={openVersionHistoryForFile}
-        onOpenClassification={(file) =>
-          setClassificationPicker({ mode: 'single', file })
-        }
-        onOpenShare={handleOpenInspectorShare}
-        onOpenPermissions={handleOpenInspectorPermissions}
-        onApproveAi={handleApproveSingleAi}
-      />
-
-      <WorkspaceUtilityOverlays
-        previewTarget={previewTarget}
-        previewCanNavigatePrev={previewFileIndex > 0}
-        previewCanNavigateNext={
-          previewFileIndex >= 0 &&
-          previewFileIndex < previewableFiles.length - 1
-        }
-        classificationPicker={classificationPicker}
-        shortcutsHelpOpen={shortcutsHelpOpen}
-        onNavigatePreview={handleNavigatePreview}
-        onClosePreview={() => setPreviewTarget(null)}
-        onSelectClassification={handleApplyPickedClassification}
-        onCloseClassification={() => setClassificationPicker(null)}
-        onCloseShortcuts={() => setShortcutsHelpOpen(false)}
-      />
-
-      <WorkspaceActionOverlays
-        contextMenu={
-          contextMenu?.row
-            ? {
-                row: contextMenu.row,
-                x: contextMenu.x,
-                y: contextMenu.y,
-                trigger: contextMenu.trigger,
-              }
-            : null
-        }
-        backgroundMenu={backgroundMenu}
-        moveCopyModal={moveCopyModal}
-        isTrashView={isTrashView}
-        selectedRows={selectedRows}
-        folderId={folderId ?? null}
-        effectiveRole={effectiveRole}
-        folderCapabilities={directory.capabilities}
-        currentFolder={currentFolder}
-        viewMode={viewMode}
-        canCreateFolder={canCreateFolder && !rootCreationRestricted}
-        canUploadNew={canUploadNew}
-        canPaste={selectionCapabilities.canPaste}
-        isPrivilegedAdmin={isPrivilegedAdmin}
-        isSysAdmin={isSysAdmin}
-        folderStructureMode={folderStructureMode}
-        clipboardState={clipboardState}
-        resolveRowRole={resolveRowRole}
-        user={user}
-        syncStore={syncStore}
-        isTargetLocked={Boolean(contextMenuFileLock)}
-        isTargetFavorited={
-          contextMenu?.row
-            ? favoriteKeys.has(
-                buildFavoriteKey(
-                  contextMenu.row.kind,
-                  contextMenu.row.kind === 'folder'
-                    ? contextMenu.row.folder.id
-                    : contextMenu.row.file.id
-                )
-              )
-            : false
-        }
-        onToggleLock={(row) => {
-          if (row.kind === 'file') {
-            void toggleContextMenuFileLock();
-          }
-        }}
-        onToggleFavorite={(row) => {
-          void handleToggleFavorite(row);
-        }}
-        onOpenActivity={(row) => {
-          const key =
-            row.kind === 'folder'
-              ? `folder:${row.folder.id}`
-              : `file:${row.file.id}`;
-          setSelectedKeys(new Set([key]));
-          setFocusedRowKey(key);
-          setInspectorInitialTab('activity');
-          setInspectorOpen(true);
-        }}
-        onContextAction={handleContextMenuAction}
-        onCloseContextMenu={() => setContextMenu(null)}
-        onBackgroundAction={handleBackgroundMenuAction}
-        onCloseBackgroundMenu={() => setBackgroundMenu(null)}
-        onCloseMoveCopy={() => setMoveCopyModal(null)}
-        onMoveCopySuccess={() => {
-          setSelectedKeys(new Set());
-          setSelectionAnchorKey(null);
-        }}
-      />
-
-      {!isTrashView &&
-        clipboardState &&
-        clipboardState.items.length > 0 && (
-          <WorkspaceClipboardBar
-            mode={clipboardState.mode}
-            itemCount={clipboardState.items.length}
-            onPaste={() => handlePasteClipboard()}
-            onClear={() => clipboardStore.clear()}
-          />
-        )}
-
-      <WorkspaceTrashBulkDialogs
-        confirmState={trashBulk.confirmState}
-        resultState={trashBulk.resultState}
-        busy={trashBulk.isBusy}
-        onConfirm={() => {
-          void trashBulk.confirmPendingAction();
-        }}
-        onCancel={trashBulk.cancelConfirm}
-        onCloseResult={trashBulk.closeResult}
-      />
-
-      {trashRestoreTarget && (
-        <WorkspaceTrashRestoreModal
-          item={trashRestoreTarget}
-          isSysAdmin={isSysAdmin}
-          folderStructureMode={folderStructureMode}
-          syncStore={syncStore}
-          onClose={() => setTrashRestoreTarget(null)}
-          onSuccess={handleTrashRestoreSuccess}
-        />
-      )}
-
-      <WorkspaceManagementModals
-        activeModal={activeModal}
-        folderNameInput={folderNameInput}
-        folderClassInput={folderClassInput}
-        modalSubmitting={modalSubmitting}
-        onClose={() => setActiveModal(null)}
-        onSubmit={handleCreateOrRenameSubmit}
-        onFolderNameChange={setFolderNameInput}
-        onFolderClassChange={setFolderClassInput}
-      />
-
-      {versionHistoryTarget && (
-        <VersionHistoryModal
-          file={versionHistoryTarget.target}
-          effectiveRole={effectiveRole}
-          capabilities={directory.capabilities}
-          canDownload={canDownloadCurrentFolder}
-          returnFocus={versionHistoryTarget.returnFocus}
-          onFileUpdated={(file) => syncStore.upsertFileInCache(file)}
-          onRestored={(result) => {
-            const nextLabel = result.version
-              ? `v${result.version.versionNum}`
-              : result.file?.current_version_num
-                ? `v${result.file.current_version_num}`
-                : '新しいバージョン';
-            syncStore.pushToast(
-              {
-                kind: 'info',
-                message: `v${result.restoredFromVersionNum} を復元しました。${nextLabel} として現在版を更新しました。`,
-              },
-              10_000
-            );
-          }}
-          onClose={() => setVersionHistoryTarget(null)}
-        />
-      )}
-
-      <WorkspaceToastStack
-        toasts={snapshot.toasts}
-        canUndo={snapshot.canUndo}
-        onUndo={() => void syncStore.undoLatest()}
-        onDismiss={(id) => syncStore.dismissToast(id)}
-      />
-
-      {createOfficeModal && folderId && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="新規Officeドキュメント作成"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-        >
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (!createOfficeModal.name.trim() || createOfficeModal.submitting) {
-                return;
-              }
-              setCreateOfficeModal((prev) =>
-                prev ? { ...prev, submitting: true, error: null } : null
-              );
-              try {
-                const res = await createOfficeFile({
-                  folderId,
-                  name: createOfficeModal.name.trim(),
-                  kind: createOfficeModal.kind,
-                });
-                syncStore.upsertFileInCache(res.file);
-                void syncStore
-                  .ensureDirectoryLoaded(folderId, { force: true })
-                  .catch(() => undefined);
-                setCreateOfficeModal(null);
-                router.push(`/workspace/file/${encodeURIComponent(res.file.id)}`);
-              } catch (err) {
-                setCreateOfficeModal((prev) =>
-                  prev
+              <WorkspaceBannersAndTrash
+                isTrashView={isTrashView}
+                isPathOnly={isPathOnly}
+                showRoleBanner={showRoleBanner}
+                effectiveRole={effectiveRole}
+                directoryCapabilities={directory.capabilities}
+                guestInfo={
+                  isGuestUser
                     ? {
-                        ...prev,
-                        submitting: false,
-                        error:
-                          err instanceof Error
-                            ? err.message
-                            : 'ドキュメントの作成に失敗しました',
+                        externalOrg: user.externalOrg ?? null,
+                        expiresAt: user.expiresAt ?? null,
                       }
                     : null
-                );
-              }
-            }}
-            className="w-full max-w-md rounded-xl border border-[#e1e1e4] bg-white p-5 shadow-xl"
-          >
-            <h2 className="text-sm font-semibold text-[#111214]">
-              新規{' '}
-              {createOfficeModal.kind === 'docx'
-                ? 'Word (.docx)'
-                : createOfficeModal.kind === 'xlsx'
-                  ? 'Excel (.xlsx)'
-                  : 'PowerPoint (.pptx)'}{' '}
-              ドキュメントを作成
-            </h2>
-            <p className="mt-1 text-xs text-[#6b6f76]">
-              ドキュメント名を入力してください（拡張子は自動で補完されます）。
-            </p>
-            <input
-              type="text"
-              autoFocus
-              value={createOfficeModal.name}
-              onChange={(e) =>
-                setCreateOfficeModal((prev) =>
-                  prev ? { ...prev, name: e.target.value, error: null } : null
-                )
-              }
-              placeholder={`例: 新規ドキュメント.${createOfficeModal.kind}`}
-              className="mt-3 w-full rounded-lg border border-[#d6d7dc] px-3 py-2 text-sm text-[#111214] focus:border-[#5e6ad2] focus:outline-none"
-            />
-            {createOfficeModal.error && (
-              <p className="mt-2 text-xs text-red-600" role="alert">
-                {createOfficeModal.error}
-              </p>
-            )}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                disabled={createOfficeModal.submitting}
-                onClick={() => setCreateOfficeModal(null)}
-                className="rounded-lg border border-[#e1e1e4] bg-white px-3 py-1.5 text-xs font-medium text-[#3c3f46] hover:bg-[#f4f4f6]"
-              >
-                キャンセル
-              </button>
-              <button
-                type="submit"
-                disabled={
-                  createOfficeModal.submitting ||
-                  !createOfficeModal.name.trim()
                 }
-                className="rounded-lg bg-[#5e6ad2] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#4f5ac2] disabled:opacity-50"
-              >
-                {createOfficeModal.submitting ? '作成中...' : '作成して開く'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+                trashBulkBar={{
+                  selectedCount: selectedRows.length,
+                  restorableCount: selectedTrashCapabilities.restorableCount,
+                  purgableCount: selectedTrashCapabilities.purgableCount,
+                  hasTrashItems:
+                    trash.loaded &&
+                    (trash.items.length > 0 ||
+                      trash.hasMore ||
+                      trashFilterActive),
+                  busyAction: trashBulk.busyAction,
+                  conflictPolicy: trashConflictPolicy,
+                  onConflictPolicyChange: setTrashConflictPolicy,
+                  onRestore: () => {
+                    void trashBulk.requestRestore(trashConflictPolicy);
+                  },
+                  onPurge: trashBulk.requestPurge,
+                  onEmpty: () =>
+                    trashBulk.requestEmpty(
+                      currentTrashCapabilities.purgableCount
+                    ),
+                  onClearSelection: () => {
+                    setSelectedKeys(new Set());
+                    setSelectionAnchorKey(null);
+                  },
+                }}
+                trashFilters={{
+                  filters: trash.filters,
+                  deleters: trash.deleters,
+                  hasUnknownDeleter: trash.hasUnknownDeleter,
+                  showDeleterFilter: showTrashDeleterFilter,
+                  loading: trash.loading,
+                  onChange: (patch) => {
+                    void trash.applyFilters(patch);
+                  },
+                  onClear: () => {
+                    void trash.clearFilters();
+                  },
+                }}
+                notices={{
+                  activeDirectoryNotice: snapshot.activeDirectoryNotice,
+                  error,
+                  onDismissNotice: () => syncStore.clearActiveDirectoryNotice(),
+                }}
+              />
 
-        </div>
+              <WorkspacePinnedFolders
+                isTrashView={isTrashView}
+                folderId={folderId}
+                pinnedFolders={pinnedFolders}
+                revalidating={snapshot.revalidating}
+                dragCtx={dragCtx}
+                prefetcher={prefetcher}
+                onOpenFolder={openFolderRoute}
+              />
+
+              {!isTrashView && currentFolder && canUploadNew && (
+                <FileDropzoneUploader
+                  folderId={currentFolder.id}
+                  canUploadVersion={canUploadVersion}
+                  onRegisterEnqueueFiles={(fn) => {
+                    pasteEnqueueFilesRef.current = fn;
+                  }}
+                />
+              )}
+
+              <div className="sr-only" aria-live="polite" aria-atomic="true">
+                {selectedRows.length > 0
+                  ? `${selectedRows.length} 件選択中`
+                  : '選択なし'}
+              </div>
+
+              <WorkspaceFileListSection
+                viewMode={viewMode}
+                isInitialLoading={isInitialLoading}
+                isTrashView={isTrashView}
+                pathOnly={isPathOnly}
+                folderId={folderId}
+                uploadOnly={!isTrashView && effectiveRole === 'uploader'}
+                rowCount={rows.length}
+                visibleRows={visibleRows}
+                visibleGridRows={visibleGridRows}
+                virtualWindow={virtualWindow}
+                gridColumns={GRID_COLUMNS}
+                selectableRowKeys={selectableRowKeys}
+                selectedRowCount={selectedRows.length}
+                sortBy={listSortBy}
+                sortDir={listSortDir}
+                columnVisibility={columnVisibility}
+                nextCursor={nextCursor}
+                loadingMore={loadingMore}
+                trashError={trashError}
+                trashFilterActive={trashFilterActive}
+                rootCreationRestricted={rootCreationRestricted}
+                marqueeSurfaceRef={marqueeSurfaceRef}
+                containerRef={virtualWindow.containerRef}
+                onMarqueePointerDown={marquee.onPointerDown}
+                onBackgroundContextMenu={handleBackgroundContextMenu}
+                onBackgroundEmptyClick={handleBackgroundEmptyClick}
+                onToggleSelectAll={() => {
+                  if (selectedRows.length === selectableRowKeys.length) {
+                    setSelectedKeys(new Set());
+                  } else {
+                    setSelectedKeys(new Set(selectableRowKeys));
+                  }
+                }}
+                onSort={handleListSort}
+                onToggleColumn={handleToggleColumn}
+                onLoadMore={handleLoadMore}
+                onRetryTrash={() => {
+                  void trash.retry();
+                }}
+                onClearTrashFilters={() => {
+                  void trash.clearFilters();
+                }}
+                registerScrollContainer={dragCtx.registerScrollContainer}
+                renderCard={renderGridRowCard}
+                renderRow={renderTableRow}
+              />
+            </main>
+
+            <input
+              ref={backgroundFileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                enqueueBackgroundUpload(e.target.files, 'files');
+                e.target.value = '';
+              }}
+            />
+            <input
+              ref={backgroundFolderInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                enqueueBackgroundUpload(e.target.files, 'folder');
+                e.target.value = '';
+              }}
+            />
+
+            {marquee.overlay}
+
+            <WorkspaceOverlays
+              syncStore={syncStore}
+              inspector={{
+                lock:
+                  inspectorTarget?.kind === 'file'
+                    ? getEffectiveFileLock(inspectorTarget.file.id)
+                    : null,
+                currentUserId: user?.id ?? null,
+                isPrivilegedAdmin,
+                initialTab: inspectorInitialTab,
+                open: inspectorOpen,
+                isTrashView,
+                target: inspectorTarget,
+                breadcrumbs,
+                effectiveRole,
+                capabilities: directory.capabilities,
+                syncStore,
+                onLockChanged: handleLockChanged,
+                onClose: () => {
+                  setInspectorOpen(false);
+                  setInspectorInitialTab('details');
+                },
+                onPreview: openFileOrEditor,
+                onDownload: handleDownloadFile,
+                onOpenVersionHistory: openVersionHistoryForFile,
+                onOpenClassification: (file) =>
+                  setClassificationPicker({ mode: 'single', file }),
+                onOpenShare: handleOpenInspectorShare,
+                onOpenPermissions: handleOpenInspectorPermissions,
+                onApproveAi: handleApproveSingleAi,
+              }}
+              utility={{
+                previewTarget,
+                previewCanNavigatePrev: previewFileIndex > 0,
+                previewCanNavigateNext:
+                  previewFileIndex >= 0 &&
+                  previewFileIndex < previewableFiles.length - 1,
+                classificationPicker,
+                shortcutsHelpOpen,
+                onNavigatePreview: handleNavigatePreview,
+                onClosePreview: () => setPreviewTarget(null),
+                onSelectClassification: handleApplyPickedClassification,
+                onCloseClassification: () => setClassificationPicker(null),
+                onCloseShortcuts: () => setShortcutsHelpOpen(false),
+              }}
+              actions={{
+                contextMenu: contextMenu?.row
+                  ? {
+                      row: contextMenu.row,
+                      x: contextMenu.x,
+                      y: contextMenu.y,
+                      trigger: contextMenu.trigger,
+                    }
+                  : null,
+                backgroundMenu,
+                moveCopyModal,
+                isTrashView,
+                selectedRows,
+                folderId: folderId ?? null,
+                effectiveRole,
+                folderCapabilities: directory.capabilities,
+                currentFolder,
+                viewMode,
+                canCreateFolder: canCreateFolder && !rootCreationRestricted,
+                canUploadNew,
+                canPaste: selectionCapabilities.canPaste,
+                isPrivilegedAdmin,
+                isSysAdmin,
+                folderStructureMode,
+                clipboardState,
+                resolveRowRole,
+                user,
+                syncStore,
+                isTargetLocked: Boolean(contextMenuFileLock),
+                isTargetFavorited: isRowFavorited(contextMenu?.row),
+                onToggleLock: (row) => {
+                  if (row.kind === 'file') {
+                    void toggleContextMenuFileLock();
+                  }
+                },
+                onToggleFavorite: (row) => {
+                  void handleToggleFavorite(row);
+                },
+                onOpenActivity: (row) => {
+                  const key =
+                    row.kind === 'folder'
+                      ? `folder:${row.folder.id}`
+                      : `file:${row.file.id}`;
+                  setSelectedKeys(new Set([key]));
+                  setFocusedRowKey(key);
+                  setInspectorInitialTab('activity');
+                  setInspectorOpen(true);
+                },
+                onContextAction: handleContextMenuAction,
+                onCloseContextMenu: () => setContextMenu(null),
+                onBackgroundAction: handleBackgroundMenuAction,
+                onCloseBackgroundMenu: () => setBackgroundMenu(null),
+                onCloseMoveCopy: () => setMoveCopyModal(null),
+                onMoveCopySuccess: () => {
+                  setSelectedKeys(new Set());
+                  setSelectionAnchorKey(null);
+                },
+              }}
+              clipboardBar={
+                !isTrashView &&
+                clipboardState &&
+                clipboardState.items.length > 0
+                  ? {
+                      mode: clipboardState.mode,
+                      itemCount: clipboardState.items.length,
+                      onPaste: () => handlePasteClipboard(),
+                      onClear: () => clipboardStore.clear(),
+                    }
+                  : null
+              }
+              trashBulkDialogs={{
+                confirmState: trashBulk.confirmState,
+                resultState: trashBulk.resultState,
+                busy: trashBulk.isBusy,
+                onConfirm: () => {
+                  void trashBulk.confirmPendingAction();
+                },
+                onCancel: trashBulk.cancelConfirm,
+                onCloseResult: trashBulk.closeResult,
+              }}
+              trashRestoreModal={
+                trashRestoreTarget
+                  ? {
+                      item: trashRestoreTarget,
+                      isSysAdmin,
+                      folderStructureMode,
+                      syncStore,
+                      onClose: () => setTrashRestoreTarget(null),
+                      onSuccess: handleTrashRestoreSuccess,
+                    }
+                  : null
+              }
+              managementModals={{
+                activeModal,
+                folderNameInput,
+                folderClassInput,
+                modalSubmitting,
+                onClose: () => setActiveModal(null),
+                onSubmit: handleCreateOrRenameSubmit,
+                onFolderNameChange: setFolderNameInput,
+                onFolderClassChange: setFolderClassInput,
+              }}
+              versionHistory={
+                versionHistoryTarget
+                  ? {
+                      file: versionHistoryTarget.target,
+                      effectiveRole,
+                      capabilities: directory.capabilities,
+                      canDownload: canDownloadCurrentFolder,
+                      returnFocus: versionHistoryTarget.returnFocus,
+                      onClose: () => setVersionHistoryTarget(null),
+                    }
+                  : null
+              }
+              toastStack={{
+                toasts: snapshot.toasts,
+                canUndo: snapshot.canUndo,
+                onUndo: () => void syncStore.undoLatest(),
+                onDismiss: (id) => syncStore.dismissToast(id),
+              }}
+              createOffice={{
+                kind: createOfficeKind,
+                folderId,
+                onClose: () => setCreateOfficeKind(null),
+              }}
+            />
+          </div>
         );
       }}
     </WorkspaceDragProvider>
