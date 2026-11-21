@@ -1,4 +1,8 @@
 import type {
+  WorkspaceSortDirection,
+  WorkspaceSortField,
+} from '@/lib/workspace-sort-and-view';
+import type {
   SyncDeltaItem,
   AuthUser,
   BootstrapResponse,
@@ -20,8 +24,22 @@ export interface DirectorySyncContext {
   outbox: MutationOutbox;
   fetchBootstrapFn: (signal?: AbortSignal) => Promise<BootstrapResponse>;
   fetchDeltaFn: (sinceSeq: number, limit?: number, signal?: AbortSignal) => Promise<import('@/types/files').SyncDeltaResponse>;
-  fetchRootFoldersFn: (cursor?: string | null, signal?: AbortSignal) => Promise<{ folders: FolderSummary[]; nextCursor: string | null }>;
-  fetchFolderChildrenFn: (folderId: string, cursor?: string | null, limit?: number, options?: { includeBreadcrumbs?: boolean; signal?: AbortSignal }) => Promise<FolderChildrenResponse>;
+  fetchRootFoldersFn: (
+    cursor?: string | null,
+    signal?: AbortSignal,
+    options?: { sortBy?: WorkspaceSortField; sortDir?: WorkspaceSortDirection }
+  ) => Promise<{ folders: FolderSummary[]; nextCursor: string | null }>;
+  fetchFolderChildrenFn: (
+    folderId: string,
+    cursor?: string | null,
+    limit?: number,
+    options?: {
+      includeBreadcrumbs?: boolean;
+      signal?: AbortSignal;
+      sortBy?: WorkspaceSortField;
+      sortDir?: WorkspaceSortDirection;
+    }
+  ) => Promise<FolderChildrenResponse>;
   readHintFn: () => SyncScopeHint | null;
   writeHintFn: (user: AuthUser | null) => void;
   now: () => number;
@@ -59,7 +77,16 @@ export interface DirectorySyncContext {
   reportSessionError?: (err: unknown) => void;
   startRealtime: () => void;
   syncDelta: () => Promise<void>;
-  ensureDirectoryLoaded: (folderId: string | null, options?: { force?: boolean; signal?: AbortSignal; isPrefetch?: boolean }) => Promise<void>;
+  ensureDirectoryLoaded: (
+    folderId: string | null,
+    options?: {
+      force?: boolean;
+      signal?: AbortSignal;
+      isPrefetch?: boolean;
+      sortBy?: WorkspaceSortField;
+      sortDir?: WorkspaceSortDirection;
+    }
+  ) => Promise<void>;
 }
 
 function dirKeyForFolder(folderId: string | null): string {
@@ -300,13 +327,26 @@ function isUnauthorizedError(err: unknown): boolean {
   export async function ensureDirectoryLoaded(
   ctx: DirectorySyncContext,
   folderId: string | null,
-  options?: { force?: boolean; signal?: AbortSignal; isPrefetch?: boolean }
+  options?: {
+    force?: boolean;
+    signal?: AbortSignal;
+    isPrefetch?: boolean;
+    sortBy?: WorkspaceSortField;
+    sortDir?: WorkspaceSortDirection;
+  }
 ): Promise<void> {
     const dirKey = dirKeyForFolder(folderId);
     const cached = ctx.directoriesByKey.get(dirKey);
+    const sortBy = options?.sortBy ?? cached?.sortBy ?? 'name';
+    const sortDir = options?.sortDir ?? cached?.sortDir ?? 'asc';
+    const sortChanged =
+      Boolean(cached) &&
+      ((cached!.sortBy ?? 'name') !== sortBy ||
+        (cached!.sortDir ?? 'asc') !== sortDir);
 
     if (
       !options?.force &&
+      !sortChanged &&
       cached &&
       !cached.stale &&
       (ctx.now() - cached.revalidatedAt < DEFAULT_SWR_TTL_MS ||
@@ -318,7 +358,14 @@ function isUnauthorizedError(err: unknown): boolean {
 
     const existingReq = ctx.inFlightDirs.get(dirKey);
     if (existingReq) {
-      return existingReq;
+      await existingReq;
+      const afterCached = ctx.directoriesByKey.get(dirKey);
+      if (
+        (afterCached?.sortBy ?? 'name') === sortBy &&
+        (afterCached?.sortDir ?? 'asc') === sortDir
+      ) {
+        return;
+      }
     }
 
     let run: Promise<void> | null = null;
@@ -330,7 +377,10 @@ function isUnauthorizedError(err: unknown): boolean {
       try {
         const nowMs = ctx.now();
         if (folderId === null) {
-          const rootsRes = await ctx.fetchRootFoldersFn(null, options?.signal);
+          const rootsRes = await ctx.fetchRootFoldersFn(null, options?.signal, {
+            sortBy,
+            sortDir,
+          });
           for (const f of rootsRes.folders) {
             ctx.foldersById.set(f.id, f);
           }
@@ -344,6 +394,8 @@ function isUnauthorizedError(err: unknown): boolean {
             folderIds: ctx.rootFolderIds,
             fileIds: [],
             nextCursor: rootsRes.nextCursor,
+            sortBy,
+            sortDir,
             breadcrumbs: [],
             lastAccessedAt: nowMs,
             revalidatedAt: nowMs,
@@ -353,6 +405,8 @@ function isUnauthorizedError(err: unknown): boolean {
           const res = await ctx.fetchFolderChildrenFn(folderId, null, 50, {
             includeBreadcrumbs: true,
             signal: options?.signal,
+            sortBy,
+            sortDir,
           });
           const pathOnly = res.accessMode === 'path';
           // Path-only access must never keep stale cached files from a
@@ -384,6 +438,8 @@ function isUnauthorizedError(err: unknown): boolean {
             folderIds: res.folders.map((f) => f.id),
             fileIds: pathOnly ? [] : res.files.map((fl) => fl.id),
             nextCursor: res.nextCursor,
+            sortBy,
+            sortDir,
             breadcrumbs: res.breadcrumbs ?? cached?.breadcrumbs ?? [],
             lastAccessedAt: nowMs,
             revalidatedAt: nowMs,
@@ -421,7 +477,8 @@ function isUnauthorizedError(err: unknown): boolean {
 
   export async function loadMoreDirectory(
   ctx: DirectorySyncContext,
-  folderId: string | null
+  folderId: string | null,
+  options?: { sortBy?: WorkspaceSortField; sortDir?: WorkspaceSortDirection }
 ): Promise<void> {
     const dirKey = dirKeyForFolder(folderId);
     const existingReq = ctx.inFlightLoadMore.get(dirKey);
@@ -432,14 +489,26 @@ function isUnauthorizedError(err: unknown): boolean {
     const initial = ctx.directoriesByKey.get(dirKey);
     const requestedCursor = initial?.nextCursor ?? null;
     if (!requestedCursor) return;
+    const sortBy = options?.sortBy ?? initial?.sortBy ?? 'name';
+    const sortDir = options?.sortDir ?? initial?.sortDir ?? 'asc';
 
     let run: Promise<void> | null = null;
     run = (async () => {
       try {
         if (folderId === null) {
-          const res = await ctx.fetchRootFoldersFn(requestedCursor);
+          const res = await ctx.fetchRootFoldersFn(requestedCursor, undefined, {
+            sortBy,
+            sortDir,
+          });
           const latest = ctx.directoriesByKey.get(ROOT_DIR_KEY);
-          if (!latest || latest.nextCursor !== requestedCursor) return;
+          if (
+            !latest ||
+            latest.nextCursor !== requestedCursor ||
+            (latest.sortBy ?? 'name') !== sortBy ||
+            (latest.sortDir ?? 'asc') !== sortDir
+          ) {
+            return;
+          }
 
           const nowMs = ctx.now();
           for (const f of res.folders) {
@@ -461,9 +530,18 @@ function isUnauthorizedError(err: unknown): boolean {
         } else {
           const res = await ctx.fetchFolderChildrenFn(folderId, requestedCursor, 50, {
             includeBreadcrumbs: false,
+            sortBy,
+            sortDir,
           });
           const latest = ctx.directoriesByKey.get(dirKey);
-          if (!latest || latest.nextCursor !== requestedCursor) return;
+          if (
+            !latest ||
+            latest.nextCursor !== requestedCursor ||
+            (latest.sortBy ?? 'name') !== sortBy ||
+            (latest.sortDir ?? 'asc') !== sortDir
+          ) {
+            return;
+          }
 
           const nowMs = ctx.now();
           for (const f of res.folders) ctx.foldersById.set(f.id, f);

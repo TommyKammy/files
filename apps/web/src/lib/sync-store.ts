@@ -104,6 +104,10 @@ import {
   type RealtimeContext,
 } from '@/lib/sync-store/realtime';
 import type {
+  WorkspaceSortDirection,
+  WorkspaceSortField,
+} from '@/lib/workspace-sort-and-view';
+import type {
   AuthUser,
   BootstrapResponse,
   ClassificationLabel,
@@ -171,11 +175,17 @@ export interface SyncStoreDeps {
     folderId: string,
     cursor?: string | null,
     limit?: number,
-    options?: { includeBreadcrumbs?: boolean; signal?: AbortSignal }
+    options?: {
+      includeBreadcrumbs?: boolean;
+      signal?: AbortSignal;
+      sortBy?: WorkspaceSortField;
+      sortDir?: WorkspaceSortDirection;
+    }
   ) => Promise<FolderChildrenResponse>;
   fetchRootFolders?: (
     cursor?: string | null,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: { sortBy?: WorkspaceSortField; sortDir?: WorkspaceSortDirection }
   ) => Promise<{ folders: FolderSummary[]; nextCursor: string | null }>;
   readScopeHint?: () => SyncScopeHint | null;
   writeScopeHint?: (user: AuthUser | null) => void;
@@ -248,11 +258,17 @@ export class WorkspaceSyncStore {
     folderId: string,
     cursor?: string | null,
     limit?: number,
-    options?: { includeBreadcrumbs?: boolean; signal?: AbortSignal }
+    options?: {
+      includeBreadcrumbs?: boolean;
+      signal?: AbortSignal;
+      sortBy?: WorkspaceSortField;
+      sortDir?: WorkspaceSortDirection;
+    }
   ) => Promise<FolderChildrenResponse>;
   private readonly fetchRootFoldersFn: (
     cursor?: string | null,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: { sortBy?: WorkspaceSortField; sortDir?: WorkspaceSortDirection }
   ) => Promise<{ folders: FolderSummary[]; nextCursor: string | null }>;
   private readonly readHintFn: () => SyncScopeHint | null;
   private readonly writeHintFn: (user: AuthUser | null) => void;
@@ -793,13 +809,22 @@ export class WorkspaceSyncStore {
    */
   async ensureDirectoryLoaded(
     folderId: string | null,
-    options?: { force?: boolean; signal?: AbortSignal; isPrefetch?: boolean }
+    options?: {
+      force?: boolean;
+      signal?: AbortSignal;
+      isPrefetch?: boolean;
+      sortBy?: WorkspaceSortField;
+      sortDir?: WorkspaceSortDirection;
+    }
   ): Promise<void> {
     return ensureDirectoryLoaded(this.directorySyncContext(), folderId, options);
   }
 
-  async loadMoreDirectory(folderId: string | null): Promise<void> {
-    return loadMoreDirectory(this.directorySyncContext(), folderId);
+  async loadMoreDirectory(
+    folderId: string | null,
+    options?: { sortBy?: WorkspaceSortField; sortDir?: WorkspaceSortDirection }
+  ): Promise<void> {
+    return loadMoreDirectory(this.directorySyncContext(), folderId, options);
   }
 
   upsertFileInCache(file: FileItem): void {

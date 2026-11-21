@@ -5,15 +5,23 @@ import { ApiClientError } from '@/lib/files-api';
 import type { WorkspaceSyncStore } from '@/lib/sync-store';
 import { useWorkspaceDirectory } from '@/lib/sync-store';
 import { useWorkspaceTrash } from '@/lib/use-workspace-trash';
+import type {
+  WorkspaceSortDirection,
+  WorkspaceSortField,
+} from '@/lib/workspace-sort-and-view';
 
 export function useWorkspaceData({
   folderId,
   isTrashView,
   syncStore,
+  sortBy = 'name',
+  sortDir = 'asc',
 }: {
   folderId: string | null;
   isTrashView: boolean;
   syncStore: WorkspaceSyncStore;
+  sortBy?: WorkspaceSortField;
+  sortDir?: WorkspaceSortDirection;
 }) {
   const { snapshot, directory, pinnedFolders } = useWorkspaceDirectory(
     isTrashView ? null : folderId
@@ -39,7 +47,7 @@ export function useWorkspaceData({
       const hydrated = await syncStore.hydrateFromScopeHint();
       if (!cancelled && hydrated && !isTrashView) {
         void syncStore
-          .ensureDirectoryLoaded(folderId)
+          .ensureDirectoryLoaded(folderId, { sortBy, sortDir })
           .catch(() => undefined);
       }
       await syncStore.bootstrap();
@@ -63,6 +71,8 @@ export function useWorkspaceData({
         } else {
           await syncStore.ensureDirectoryLoaded(folderId, {
             force: options?.force,
+            sortBy,
+            sortDir,
           });
         }
       } catch (err) {
@@ -80,6 +90,8 @@ export function useWorkspaceData({
       isTrashView,
       syncStore,
       folderId,
+      sortBy,
+      sortDir,
       trash.loadTrash,
     ]
   );
@@ -98,7 +110,7 @@ export function useWorkspaceData({
     }
     setDirectoryLoadingMore(true);
     try {
-      await syncStore.loadMoreDirectory(folderId);
+      await syncStore.loadMoreDirectory(folderId, { sortBy, sortDir });
     } catch (err) {
       setErrorCode(err instanceof ApiClientError ? err.code ?? null : null);
       setError(

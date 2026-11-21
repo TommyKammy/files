@@ -62,6 +62,8 @@ export function WorkspaceActionOverlays({
   resolveRowRole,
   user,
   syncStore,
+  isTargetLocked = false,
+  onToggleLock,
   onContextAction,
   onCloseContextMenu,
   onBackgroundAction,
@@ -89,6 +91,8 @@ export function WorkspaceActionOverlays({
   resolveRowRole: (row: ContextRowTarget) => ResourceRole;
   user: AuthUser | null;
   syncStore: WorkspaceSyncStore;
+  isTargetLocked?: boolean;
+  onToggleLock?: (row: ContextRowTarget) => void;
   onContextAction: (
     action: ContextMenuActionId,
     row: ContextRowTarget,
@@ -137,7 +141,9 @@ export function WorkspaceActionOverlays({
             primaryRow={contextMenu.row}
             capabilities={capabilities}
             clipboardCount={clip?.items.length ?? 0}
+            isTargetLocked={isTargetLocked}
             returnFocus={contextMenu.trigger}
+            onToggleLock={onToggleLock}
             onAction={(action) =>
               onContextAction(
                 action,

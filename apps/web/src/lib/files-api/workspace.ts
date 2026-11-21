@@ -35,24 +35,38 @@ import {
   parseContentDispositionFilename,
 } from './core';
 import { buildTrashQueryString } from '@/lib/trash-view';
+import type {
+  WorkspaceSortDirection,
+  WorkspaceSortField,
+} from '@/lib/workspace-sort-and-view';
 
 export function listRootFolders(
   cursor?: string | null,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: { sortBy?: WorkspaceSortField; sortDir?: WorkspaceSortDirection }
 ): Promise<{
   folders: FolderSummary[];
   capabilities?: Capability[];
   nextCursor: string | null;
 }> {
-  const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
-  return apiFetch(`/api/folders/roots${qs}`, { signal });
+  const params = new URLSearchParams();
+  if (cursor) params.set('cursor', cursor);
+  if (options?.sortBy) params.set('sortBy', options.sortBy);
+  if (options?.sortDir) params.set('sortDir', options.sortDir);
+  const qs = params.toString();
+  return apiFetch(`/api/folders/roots${qs ? `?${qs}` : ''}`, { signal });
 }
 
 export function listFolderChildren(
   folderId: string,
   cursor?: string | null,
   limit = 50,
-  options?: { includeBreadcrumbs?: boolean; signal?: AbortSignal }
+  options?: {
+    includeBreadcrumbs?: boolean;
+    signal?: AbortSignal;
+    sortBy?: WorkspaceSortField;
+    sortDir?: WorkspaceSortDirection;
+  }
 ): Promise<FolderChildrenResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (cursor) {
@@ -60,6 +74,8 @@ export function listFolderChildren(
   } else if (options?.includeBreadcrumbs !== false) {
     params.set('include', 'breadcrumbs');
   }
+  if (options?.sortBy) params.set('sortBy', options.sortBy);
+  if (options?.sortDir) params.set('sortDir', options.sortDir);
   return apiFetch(`/api/folders/${encodeURIComponent(folderId)}/children?${params.toString()}`, {
     signal: options?.signal,
   });

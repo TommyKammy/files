@@ -22,7 +22,10 @@ export function WorkspaceInspectorOverlay({
   effectiveRole,
   capabilities,
   lock,
+  currentUserId,
+  isPrivilegedAdmin = false,
   syncStore,
+  onLockChanged,
   onClose,
   onPreview,
   onDownload,
@@ -39,7 +42,10 @@ export function WorkspaceInspectorOverlay({
   effectiveRole: ResourceRole;
   capabilities?: Capability[];
   lock?: FileLockInfo | null;
+  currentUserId?: string | null;
+  isPrivilegedAdmin?: boolean;
   syncStore: WorkspaceSyncStore;
+  onLockChanged?: (fileId: string, lock: FileLockInfo | null) => void;
   onClose: () => void;
   onPreview: (file: FileItem) => void;
   onDownload: (fileId: string) => void;
@@ -82,9 +88,11 @@ export function WorkspaceInspectorOverlay({
       canManagePerms={canAccess(access, 'permission.manage')}
       canInvitePerms={canAccess(access, 'permission.invite')}
       canVersionHistory={canAccess(access, 'item.preview')}
-      isPrivilegedAdmin={false}
+      currentUserId={currentUserId}
+      isPrivilegedAdmin={isPrivilegedAdmin}
       lock={lock}
       syncStore={syncStore}
+      onLockChanged={onLockChanged}
       onClose={onClose}
       onPreview={onPreview}
       onDownload={onDownload}

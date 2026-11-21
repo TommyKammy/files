@@ -21,10 +21,7 @@ import {
 import { WorkspaceActionOverlays } from '@/components/WorkspaceActionOverlays';
 import { WorkspaceClipboardBar } from '@/components/WorkspaceClipboardBar';
 import { WorkspaceManagementModals } from '@/components/WorkspaceManagementModals';
-import {
-  WorkspaceMainHeader,
-  type SortDrainStatus,
-} from '@/components/WorkspaceMainHeader';
+import { WorkspaceMainHeader } from '@/components/WorkspaceMainHeader';
 import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
 import { WorkspacePermissionBanner } from '@/components/WorkspacePermissionBanner';
@@ -39,6 +36,7 @@ import { VersionHistoryModal } from '@/components/VersionHistoryModal';
 import { WorkspaceToastStack } from '@/components/WorkspaceToastStack';
 import { useWorkspaceContextMenuActions } from '@/lib/use-workspace-context-menu-actions';
 import { useWorkspacePaletteActions } from '@/lib/use-workspace-palette-actions';
+import { useFileLockActions } from '@/lib/use-file-lock-actions';
 import { useFileLocks } from '@/lib/use-file-locks';
 import {
   getDropTargetClassName,
@@ -53,7 +51,10 @@ import {
 } from '@/lib/files-api';
 import { canAccess, capabilitiesForRole } from '@/lib/capabilities';
 import { IntentPrefetcher } from '@/lib/intent-prefetch';
-import { getWorkspaceSyncStore } from '@/lib/sync-store';
+import {
+  getWorkspaceSyncStore,
+  useWorkspaceSyncSnapshot,
+} from '@/lib/sync-store';
 import { useMarqueeSelection } from '@/lib/use-marquee-selection';
 import { useWorkspaceActions } from '@/lib/use-workspace-actions';
 import { useWorkspaceData } from '@/lib/use-workspace-data';
@@ -94,6 +95,7 @@ import {
 import type {
   Capability,
   FileItem,
+  FileLockInfo,
   FolderSummary,
   ResourceRole,
   SearchResultItem,
@@ -135,6 +137,17 @@ export function WorkspaceFileBrowser() {
   const isTrashView = viewParam === 'trash';
 
   const syncStore = getWorkspaceSyncStore();
+  const { user: syncUser } = useWorkspaceSyncSnapshot();
+  const {
+    sortBy,
+    sortDir,
+    viewMode,
+    setSortBy,
+    setSortDir,
+    setViewMode,
+    handleSortHeaderClick,
+    handleToggleViewMode,
+  } = useWorkspaceViewPrefs(syncUser);
   const {
     snapshot,
     directory,
@@ -151,7 +164,7 @@ export function WorkspaceFileBrowser() {
     nextCursor,
     loadActiveView,
     handleLoadMore,
-  } = useWorkspaceData({ folderId, isTrashView, syncStore });
+  } = useWorkspaceData({ folderId, isTrashView, syncStore, sortBy, sortDir });
 
   const tosGate = useTosAcceptance({
     bootstrapStatus: snapshot.tosStatus ?? null,
@@ -256,22 +269,41 @@ export function WorkspaceFileBrowser() {
   const [trashRestoreTarget, setTrashRestoreTarget] =
     useState<TrashItem | null>(null);
   const fileLocks = useFileLocks(syncStore);
-  const {
-    sortBy,
-    sortDir,
-    viewMode,
-    setSortBy,
-    setSortDir,
-    setViewMode,
-    handleSortHeaderClick,
-    handleToggleViewMode,
-  } = useWorkspaceViewPrefs(user);
+  const [localLockOverrides, setLocalLockOverrides] = useState<
+    Record<string, FileLockInfo | null>
+  >({});
+  useEffect(() => {
+    setLocalLockOverrides({});
+  }, [fileLocks]);
+  const handleLockChanged = useCallback(
+    (fileId: string, lock: FileLockInfo | null) => {
+      setLocalLockOverrides((prev) => ({ ...prev, [fileId]: lock }));
+    },
+    []
+  );
+  const getEffectiveFileLock = useCallback(
+    (fileId: string): FileLockInfo | null => {
+      if (Object.prototype.hasOwnProperty.call(localLockOverrides, fileId)) {
+        return localLockOverrides[fileId] ?? null;
+      }
+      return fileLocks[fileId] ?? null;
+    },
+    [fileLocks, localLockOverrides]
+  );
+  const contextMenuFile =
+    contextMenu?.row?.kind === 'file' ? contextMenu.row.file : null;
+  const contextMenuFileLock = contextMenuFile
+    ? getEffectiveFileLock(contextMenuFile.id)
+    : null;
+  const { toggleLock: toggleContextMenuFileLock } = useFileLockActions({
+    fileId: contextMenuFile?.id ?? null,
+    initialLock: contextMenuFileLock,
+    syncStore,
+    onLockChanged: handleLockChanged,
+  });
   const trashTableSort = trashSortToTableSort(trash.filters.sort);
   const listSortBy = isTrashView ? trashTableSort.sortBy : sortBy;
   const listSortDir = isTrashView ? trashTableSort.sortDir : sortDir;
-  const sortDrainErrorKeyRef = useRef<string | null>(null);
-  const [sortDrainStatus, setSortDrainStatus] = useState<SortDrainStatus>('idle');
-  const [sortDrainRetryToken, setSortDrainRetryToken] = useState(0);
 
   useEffect(() => {
     clipboardStore.setScope(
@@ -426,72 +458,17 @@ export function WorkspaceFileBrowser() {
     [isTrashView, handleSortHeaderClick, trash]
   );
 
-  const handleRetrySortDrain = useCallback(() => {
-    sortDrainErrorKeyRef.current = null;
-    setSortDrainRetryToken((token) => token + 1);
-  }, []);
-
-  // Background catch-up when sorting an incomplete multi-page folder off default name ASC
-  useEffect(() => {
-    const needsDrain =
-      !isTrashView &&
-      Boolean(user) &&
-      snapshot.authStatus === 'authenticated' &&
-      Boolean(nextCursor) &&
-      (sortBy !== 'name' || sortDir !== 'asc');
-    if (!needsDrain || !nextCursor) {
-      setSortDrainStatus('idle');
-      return;
-    }
-    const drainKey = `${folderId ?? '__ROOT__'}:${nextCursor}:${sortDrainRetryToken}`;
-    if (sortDrainErrorKeyRef.current === drainKey) {
-      setSortDrainStatus('error');
-      return;
-    }
-    let cancelled = false;
-    setSortDrainStatus('syncing');
-    void syncStore
-      .loadMoreDirectory(folderId)
-      .then(() => {
-        if (cancelled) return;
-        const afterCursor = syncStore.getDirectoryView(folderId).nextCursor;
-        if (!afterCursor) {
-          setSortDrainStatus('idle');
-        } else if (afterCursor === nextCursor) {
-          sortDrainErrorKeyRef.current = drainKey;
-          setSortDrainStatus('error');
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          sortDrainErrorKeyRef.current = drainKey;
-          setSortDrainStatus('error');
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    isTrashView,
-    user,
-    snapshot.authStatus,
-    folderId,
-    nextCursor,
-    sortBy,
-    sortDir,
-    sortDrainRetryToken,
-    syncStore,
-  ]);
-
   const { folders: sortedFolders, files: sortedFiles } = useMemo(
     () =>
-      sortWorkspaceFoldersAndFiles({
-        folders,
-        files: visibleFiles,
-        sortBy,
-        sortDir,
-        isTrashView,
-      }),
+      isTrashView
+        ? sortWorkspaceFoldersAndFiles({
+            folders,
+            files: visibleFiles,
+            sortBy,
+            sortDir,
+            isTrashView: true,
+          })
+        : { folders, files: visibleFiles },
     [folders, visibleFiles, sortBy, sortDir, isTrashView]
   );
 
@@ -1444,7 +1421,7 @@ export function WorkspaceFileBrowser() {
               isInlineRenaming={inlineRename?.rowKey === rowKey}
               isPendingUpload={isPendingUpload}
               isCut={isCut}
-              lock={file ? fileLocks[file.id] ?? null : null}
+              lock={file ? getEffectiveFileLock(file.id) : null}
               isContextMenuOpen={
                 contextMenu?.row
                   ? getWorkspaceRowKey(contextMenu.row) === rowKey
@@ -1514,7 +1491,7 @@ export function WorkspaceFileBrowser() {
                             : false
                         }
                         isCut={isCut}
-                        lock={file ? fileLocks[file.id] ?? null : null}
+                        lock={file ? getEffectiveFileLock(file.id) : null}
                         dropClass={dropClass}
                         inlineRename={inlineRename}
                         inlineInputRef={inlineInputRef}
@@ -1591,8 +1568,7 @@ export function WorkspaceFileBrowser() {
           nextCursor={nextCursor}
           sortBy={listSortBy}
           sortDir={listSortDir}
-          sortDrainStatus={sortDrainStatus}
-          onRetrySortDrain={handleRetrySortDrain}
+          sortDrainStatus="idle"
           selectedRows={selectedRows}
           canCreateFolder={canCreateFolder && !rootCreationRestricted}
           canRenameCurrentFolder={canRenameCurrentFolder}
@@ -1847,9 +1823,11 @@ export function WorkspaceFileBrowser() {
       <WorkspaceInspectorOverlay
         lock={
           inspectorTarget?.kind === 'file'
-            ? fileLocks[inspectorTarget.file.id] ?? null
+            ? getEffectiveFileLock(inspectorTarget.file.id)
             : null
         }
+        currentUserId={user?.id ?? null}
+        isPrivilegedAdmin={isPrivilegedAdmin}
         open={inspectorOpen}
         isTrashView={isTrashView}
         target={inspectorTarget}
@@ -1857,6 +1835,7 @@ export function WorkspaceFileBrowser() {
         effectiveRole={effectiveRole}
         capabilities={directory.capabilities}
         syncStore={syncStore}
+        onLockChanged={handleLockChanged}
         onClose={() => setInspectorOpen(false)}
         onPreview={openFileOrEditor}
         onDownload={handleDownloadFile}
@@ -1915,6 +1894,12 @@ export function WorkspaceFileBrowser() {
         resolveRowRole={resolveRowRole}
         user={user}
         syncStore={syncStore}
+        isTargetLocked={Boolean(contextMenuFileLock)}
+        onToggleLock={(row) => {
+          if (row.kind === 'file') {
+            void toggleContextMenuFileLock();
+          }
+        }}
         onContextAction={handleContextMenuAction}
         onCloseContextMenu={() => setContextMenu(null)}
         onBackgroundAction={handleBackgroundMenuAction}

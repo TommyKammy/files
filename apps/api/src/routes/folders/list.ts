@@ -32,9 +32,12 @@ import {
   ChildFileRow,
   FILE_CHILD_COLS,
   FOLDER_CHILD_COLS,
+  buildSortSql,
   decodeCursor,
   encodeCursor,
+  extractSortVal,
   handleFolderError,
+  parseFolderSort,
   parseLimit,
 } from './shared';
 
@@ -43,27 +46,41 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
   routes.get('/roots', async (c) => {
     const user = getAuthenticatedUser(c);
     const limit = parseLimit(c.req.query('limit'));
+    const { sortBy, sortDir } = parseFolderSort(
+      c.req.query('sortBy'),
+      c.req.query('sortDir')
+    );
     const rawCursor = c.req.query('cursor');
     const cursor = decodeCursor(rawCursor);
     if (rawCursor && !cursor) {
       return c.json({ error: 'Invalid pagination cursor' }, 400);
     }
+    if (
+      cursor &&
+      ((cursor.sortBy && cursor.sortBy !== sortBy) ||
+        (cursor.sortDir && cursor.sortDir !== sortDir))
+    ) {
+      return c.json({ error: 'Cursor sort parameters do not match request' }, 400);
+    }
 
+    const effectiveSortBy = sortBy === 'size_bytes' ? 'name' : sortBy;
+    const sortSql = buildSortSql(effectiveSortBy, sortDir, 'f');
+    const cursorSortVal = cursor?.sortVal ?? cursor?.name;
     const hasPinnedKeyset =
       cursor?.isPinned !== undefined &&
-      cursor?.name !== undefined &&
+      cursorSortVal !== undefined &&
       cursor?.id !== undefined;
     const hasLegacyKeyset =
-      !hasPinnedKeyset && cursor?.name !== undefined && cursor?.id !== undefined;
+      !hasPinnedKeyset && cursorSortVal !== undefined && cursor?.id !== undefined;
     const cursorSql = hasPinnedKeyset
-      ? 'AND (f.is_pinned < ? OR (f.is_pinned = ? AND (f.name, f.id) > (?, ?)))'
+      ? `AND (f.is_pinned < ? OR (f.is_pinned = ? AND ${sortSql.keysetTuple}))`
       : hasLegacyKeyset
-        ? 'AND (f.name, f.id) > (?, ?)'
+        ? `AND ${sortSql.keysetTuple}`
         : '';
     const cursorBindings = hasPinnedKeyset
-      ? [cursor!.isPinned!, cursor!.isPinned!, cursor!.name!, cursor!.id!]
+      ? [cursor!.isPinned!, cursor!.isPinned!, cursorSortVal!, cursor!.id!]
       : hasLegacyKeyset
-        ? [cursor!.name!, cursor!.id!]
+        ? [cursorSortVal!, cursor!.id!]
         : [];
 
     const rows = await c.env.DB.prepare(
@@ -81,7 +98,7 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
           AND (p.id IS NOT NULL OR ${reachablePathSql('f')})
           ${cursorSql}
         GROUP BY f.id
-        ORDER BY f.is_pinned DESC, f.name ASC, f.id ASC
+        ORDER BY f.is_pinned DESC, ${sortSql.orderByClause}
         LIMIT ?`
     )
       .bind(
@@ -150,7 +167,9 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
           ? encodeCursor({
               phase: 'folders',
               isPinned: last.is_pinned ? 1 : 0,
-              name: last.name,
+              sortBy,
+              sortDir,
+              sortVal: extractSortVal(last, effectiveSortBy),
               id: last.id,
             })
           : null,
@@ -225,11 +244,29 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
     const user = getAuthenticatedUser(c);
     const folderId = c.req.param('id');
     const limit = parseLimit(c.req.query('limit'));
+    const { sortBy, sortDir } = parseFolderSort(
+      c.req.query('sortBy'),
+      c.req.query('sortDir')
+    );
     const rawCursor = c.req.query('cursor');
     const cursor = decodeCursor(rawCursor);
     if (rawCursor && !cursor) {
       return c.json({ error: 'Invalid pagination cursor' }, 400);
     }
+    if (
+      cursor &&
+      ((cursor.sortBy && cursor.sortBy !== sortBy) ||
+        (cursor.sortDir && cursor.sortDir !== sortDir))
+    ) {
+      return c.json({ error: 'Cursor sort parameters do not match request' }, 400);
+    }
+
+    const folderSortBy = sortBy === 'size_bytes' ? 'name' : sortBy;
+    const folderSortDir = sortBy === 'size_bytes' ? 'asc' : sortDir;
+    const folderSortSql = buildSortSql(folderSortBy, folderSortDir);
+    const pathFolderSortSql = buildSortSql(folderSortBy, folderSortDir, 'c');
+    const fileSortSql = buildSortSql(sortBy, sortDir);
+    const cursorSortVal = cursor?.sortVal ?? cursor?.name;
 
     const access = await resolveTargetAccess(c.env.DB, user, 'folder', folderId);
     if (!access || access.deletedAt !== null) {
@@ -299,7 +336,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
       // Only direct children that lead to an authorized descendant are listed;
       // sibling folders and every file stay hidden.
       if (!cursor || cursor.phase === 'folders') {
-        const hasKeyset = cursor?.name !== undefined && cursor?.id !== undefined;
+        const hasKeyset = cursorSortVal !== undefined && cursor?.id !== undefined;
         const folderRows = await c.env.DB.prepare(
           `SELECT ${FOLDER_CHILD_COLS}
              FROM folders c
@@ -307,8 +344,8 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
               AND c.parent_id = ?
               AND c.deleted_at IS NULL
               AND ${reachablePathSql('c')}
-              ${hasKeyset ? 'AND (c.name, c.id) > (?, ?)' : ''}
-            ORDER BY c.name ASC, c.id ASC
+              ${hasKeyset ? `AND ${pathFolderSortSql.keysetTuple}` : ''}
+            ORDER BY ${pathFolderSortSql.orderByClause}
             LIMIT ?`
         )
           .bind(
@@ -320,7 +357,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
             user.id,
             user.id,
             user.id,
-            ...(hasKeyset ? [cursor!.name!, cursor!.id!] : []),
+            ...(hasKeyset ? [cursorSortVal!, cursor!.id!] : []),
             limit + 1
           )
           .all<FolderRow>();
@@ -336,7 +373,9 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
           const last = folders[folders.length - 1];
           nextCursor = encodeCursor({
             phase: 'folders',
-            name: last.name,
+            sortBy,
+            sortDir,
+            sortVal: extractSortVal(last, folderSortBy),
             id: last.id,
           });
         }
@@ -355,21 +394,21 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
     }
 
     if (!cursor || cursor.phase === 'folders') {
-      const hasKeyset = cursor?.name !== undefined && cursor?.id !== undefined;
+      const hasKeyset = cursorSortVal !== undefined && cursor?.id !== undefined;
       const folderRows = await c.env.DB.prepare(
         `SELECT ${FOLDER_CHILD_COLS}
            FROM folders
           WHERE tenant_id = ?
             AND parent_id = ?
             AND deleted_at IS NULL
-            ${hasKeyset ? 'AND (name, id) > (?, ?)' : ''}
-          ORDER BY name ASC, id ASC
+            ${hasKeyset ? `AND ${folderSortSql.keysetTuple}` : ''}
+          ORDER BY ${folderSortSql.orderByClause}
           LIMIT ?`
       )
         .bind(
           user.tenantId,
           folderId,
-          ...(hasKeyset ? [cursor!.name!, cursor!.id!] : []),
+          ...(hasKeyset ? [cursorSortVal!, cursor!.id!] : []),
           limit + 1
         )
         .all<FolderRow>();
@@ -382,7 +421,13 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
           access
         );
         const last = folders[folders.length - 1];
-        nextCursor = encodeCursor({ phase: 'folders', name: last.name, id: last.id });
+        nextCursor = encodeCursor({
+          phase: 'folders',
+          sortBy,
+          sortDir,
+          sortVal: extractSortVal(last, folderSortBy),
+          id: last.id,
+        });
         return c.json({
           folder,
           accessMode: access.accessMode,
@@ -425,7 +470,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
           .bind(user.tenantId, folderId)
           .first<{ hit: number }>();
         if (hasAnyFile) {
-          nextCursor = encodeCursor({ phase: 'files' });
+          nextCursor = encodeCursor({ phase: 'files', sortBy, sortDir });
         }
         return c.json({
           folder,
@@ -446,7 +491,7 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
             AND folder_id = ?
             AND deleted_at IS NULL
             AND upload_state = 'active'
-          ORDER BY name ASC, id ASC
+          ORDER BY ${fileSortSql.orderByClause}
           LIMIT ?`
       )
         .bind(user.tenantId, folderId, remaining + 1)
@@ -456,10 +501,16 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
       files.push(...fileRows.results.slice(0, remaining));
       if (hasMoreFiles && files.length > 0) {
         const lastFile = files[files.length - 1];
-        nextCursor = encodeCursor({ phase: 'files', name: lastFile.name, id: lastFile.id });
+        nextCursor = encodeCursor({
+          phase: 'files',
+          sortBy,
+          sortDir,
+          sortVal: extractSortVal(lastFile, sortBy),
+          id: lastFile.id,
+        });
       }
     } else if (canSeeFiles) {
-      const hasKeyset = cursor.name !== undefined && cursor.id !== undefined;
+      const hasKeyset = cursorSortVal !== undefined && cursor.id !== undefined;
       const fileRows = await c.env.DB.prepare(
         `SELECT ${FILE_CHILD_COLS}
            FROM files
@@ -467,14 +518,14 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
             AND folder_id = ?
             AND deleted_at IS NULL
             AND upload_state = 'active'
-            ${hasKeyset ? 'AND (name, id) > (?, ?)' : ''}
-          ORDER BY name ASC, id ASC
+            ${hasKeyset ? `AND ${fileSortSql.keysetTuple}` : ''}
+          ORDER BY ${fileSortSql.orderByClause}
           LIMIT ?`
       )
         .bind(
           user.tenantId,
           folderId,
-          ...(hasKeyset ? [cursor.name!, cursor.id!] : []),
+          ...(hasKeyset ? [cursorSortVal!, cursor.id!] : []),
           limit + 1
         )
         .all<ChildFileRow>();
@@ -483,7 +534,13 @@ export function registerFolderChildrenRoutes(routes: Hono<OidcHonoEnv>) {
       files.push(...fileRows.results.slice(0, limit));
       if (hasMoreFiles && files.length > 0) {
         const lastFile = files[files.length - 1];
-        nextCursor = encodeCursor({ phase: 'files', name: lastFile.name, id: lastFile.id });
+        nextCursor = encodeCursor({
+          phase: 'files',
+          sortBy,
+          sortDir,
+          sortVal: extractSortVal(lastFile, sortBy),
+          id: lastFile.id,
+        });
       }
     }
 

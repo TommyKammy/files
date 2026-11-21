@@ -881,3 +881,141 @@ test('loadMoreDirectory ignores stale response if directory was force-refreshed 
     ['r-fresh']
   );
 });
+
+test('syncStore propagates sortBy/sortDir to root and child fetches and refetches page 1 when sort changes', async () => {
+  const folderId = 'sort-dir-1';
+  const parentFolder = makeFolder(folderId, { name: 'SortedFolder' });
+  const rootA = makeFolder('root-a', { name: 'Alpha' });
+  const rootZ = makeFolder('root-z', { name: 'Zulu' });
+  const fileSmall = makeFile('f-small', folderId, { name: 'small.txt', size_bytes: 100 });
+  const fileBig = makeFile('f-big', folderId, { name: 'big.txt', size_bytes: 5000 });
+
+  const rootCalls: Array<{ cursor: string | null | undefined; sortBy?: string; sortDir?: string }> = [];
+  const childCalls: Array<{
+    folderId: string;
+    cursor: string | null | undefined;
+    sortBy?: string;
+    sortDir?: string;
+  }> = [];
+
+  const store = new WorkspaceSyncStore({
+    persistence: new MemorySyncPersistence(),
+    fetchBootstrap: async () => ({
+      user: makeUser(),
+      policy: makePolicy(),
+      currentSeq: 1,
+      purgedBeforeSeq: 0,
+      rootFolders: [rootA],
+      pinnedFolders: [],
+    }),
+    fetchDelta: async () => ({
+      currentSeq: 1,
+      purgedBeforeSeq: 0,
+      resetRequired: false,
+      hasMore: false,
+      nextSeq: 1,
+      changes: [],
+    }),
+    fetchRootFolders: async (cursor, _signal, options) => {
+      rootCalls.push({ cursor, sortBy: options?.sortBy, sortDir: options?.sortDir });
+      if (options?.sortBy === 'name' && options?.sortDir === 'desc') {
+        return {
+          folders: cursor ? [rootA] : [rootZ],
+          nextCursor: cursor ? null : 'root-desc-p2',
+        };
+      }
+      return {
+        folders: [rootA, rootZ],
+        nextCursor: null,
+      };
+    },
+    fetchFolderChildren: async (id, cursor, _limit, options) => {
+      childCalls.push({
+        folderId: id,
+        cursor,
+        sortBy: options?.sortBy,
+        sortDir: options?.sortDir,
+      });
+      if (options?.sortBy === 'size_bytes' && options?.sortDir === 'desc') {
+        return {
+          folder: parentFolder,
+          effectiveRole: 'editor',
+          folders: [],
+          files: cursor ? [fileSmall] : [fileBig],
+          breadcrumbs: [{ id: folderId, name: 'SortedFolder', classification: 'internal', depth: 0 }],
+          nextCursor: cursor ? null : 'child-size-p2',
+        };
+      }
+      return {
+        folder: parentFolder,
+        effectiveRole: 'editor',
+        folders: [],
+        files: [fileSmall, fileBig],
+        breadcrumbs: [{ id: folderId, name: 'SortedFolder', classification: 'internal', depth: 0 }],
+        nextCursor: null,
+      };
+    },
+    enableRealtime: false,
+  });
+
+  await store.bootstrap();
+
+  // Root: initial load is name/asc from bootstrap, changing to name/desc must refetch page 1
+  await store.ensureDirectoryLoaded(null, { sortBy: 'name', sortDir: 'desc' });
+  assert.equal(rootCalls.length, 1);
+  assert.deepEqual(rootCalls[0], { cursor: null, sortBy: 'name', sortDir: 'desc' });
+  assert.deepEqual(
+    store.getDirectoryView(null).folders.map((f) => f.id),
+    ['root-z']
+  );
+
+  // Root: loadMoreDirectory inherits/forwards sortBy/sortDir
+  await store.loadMoreDirectory(null, { sortBy: 'name', sortDir: 'desc' });
+  assert.equal(rootCalls.length, 2);
+  assert.deepEqual(rootCalls[1], { cursor: 'root-desc-p2', sortBy: 'name', sortDir: 'desc' });
+  assert.deepEqual(
+    store.getDirectoryView(null).folders.map((f) => f.id),
+    ['root-z', 'root-a']
+  );
+
+  // Child: load default name/asc
+  await store.ensureDirectoryLoaded(folderId, { sortBy: 'name', sortDir: 'asc' });
+  assert.deepEqual(childCalls[0], {
+    folderId,
+    cursor: null,
+    sortBy: 'name',
+    sortDir: 'asc',
+  });
+
+  // Child: same sort within SWR TTL hits cache (no extra fetch)
+  await store.ensureDirectoryLoaded(folderId, { sortBy: 'name', sortDir: 'asc' });
+  assert.equal(childCalls.length, 1);
+
+  // Child: changing sortBy to size_bytes/desc bypasses SWR TTL and fetches page 1
+  await store.ensureDirectoryLoaded(folderId, { sortBy: 'size_bytes', sortDir: 'desc' });
+  assert.equal(childCalls.length, 2);
+  assert.deepEqual(childCalls[1], {
+    folderId,
+    cursor: null,
+    sortBy: 'size_bytes',
+    sortDir: 'desc',
+  });
+  assert.deepEqual(
+    store.getDirectoryView(folderId).files.map((f) => f.id),
+    ['f-big']
+  );
+
+  // Child: loadMoreDirectory forwards size_bytes/desc
+  await store.loadMoreDirectory(folderId, { sortBy: 'size_bytes', sortDir: 'desc' });
+  assert.equal(childCalls.length, 3);
+  assert.deepEqual(childCalls[2], {
+    folderId,
+    cursor: 'child-size-p2',
+    sortBy: 'size_bytes',
+    sortDir: 'desc',
+  });
+  assert.deepEqual(
+    store.getDirectoryView(folderId).files.map((f) => f.id),
+    ['f-big', 'f-small']
+  );
+});

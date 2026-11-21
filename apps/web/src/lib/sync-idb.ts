@@ -1,4 +1,8 @@
 import type {
+  WorkspaceSortDirection,
+  WorkspaceSortField,
+} from '@/lib/workspace-sort-and-view';
+import type {
   AccessMode,
   AuthUser,
   BreadcrumbItem,
@@ -48,6 +52,8 @@ export interface PersistedDirectoryRecord {
   folderIds: string[];
   fileIds: string[];
   nextCursor: string | null;
+  sortBy?: WorkspaceSortField;
+  sortDir?: WorkspaceSortDirection;
   breadcrumbs: BreadcrumbItem[];
   lastAccessedAt: number;
   revalidatedAt: number;
