@@ -16,6 +16,9 @@ export interface OidcEnv extends Env {
   /** 管理者ロールに対応付ける値（カンマ区切り）。Okta: グループ名 / Entra ID: グループ Object ID または App Role 値 */
   ADMIN_GROUPS?: string;
   SEC_ADMIN_GROUPS?: string;
+  /** Cloudflare Turnstile (公開ファイルリクエスト保護) */
+  TURNSTILE_SITE_KEY?: string;
+  TURNSTILE_SECRET_KEY?: string; // wrangler secret
 }
 
 export type OidcHonoEnv = {
