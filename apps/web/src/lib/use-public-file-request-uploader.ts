@@ -58,7 +58,13 @@ export function usePublicFileRequestUploader({ token }: { token: string }) {
   }, [token]);
 
   useEffect(() => {
-    if (!usesTurnstileWidget || !turnstileSiteKey || !turnstileContainerRef.current) {
+    if (
+      loading ||
+      loadError ||
+      !usesTurnstileWidget ||
+      !turnstileSiteKey ||
+      !turnstileContainerRef.current
+    ) {
       turnstileControllerRef.current = null;
       return;
     }
@@ -79,11 +85,12 @@ export function usePublicFileRequestUploader({ token }: { token: string }) {
       }
       setTurnstileToken('');
     };
-  }, [usesTurnstileWidget, turnstileSiteKey, turnstileMountSeq]);
+  }, [loading, loadError, usesTurnstileWidget, turnstileSiteKey, turnstileMountSeq]);
 
   function retryTurnstile() {
-    if (turnstileControllerRef.current?.getWidgetId() !== null) {
-      turnstileControllerRef.current?.reset();
+    const controller = turnstileControllerRef.current;
+    if (controller && controller.getWidgetId() !== null) {
+      controller.reset();
       return;
     }
     setTurnstileToken('');
