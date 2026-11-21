@@ -34,7 +34,8 @@ export type AdminContentTab =
   | 'root-folders'
   | 'trash'
   | 'file-requests'
-  | 'ai-classification';
+  | 'ai-classification'
+  | 'metadata-templates';
 
 export type AdminUsersTab = 'members' | 'groups' | 'guests' | 'delegations';
 
@@ -222,6 +223,18 @@ export const ADMIN_CONSOLE_TABS: Record<
         'Workers AI が提案した機密区分をレビューし、承認・上書きを実行します。',
       capabilities: ['admin.content.unlock'],
       ownedApiPrefixes: ['/api/admin/ai-suggestions'],
+    },
+    {
+      id: 'metadata-templates',
+      section: 'content',
+      label: 'メタデータテンプレート',
+      summary:
+        'ファイル・フォルダ用のカスタムメタデータテンプレートとフィールド定義を管理します。',
+      capabilities: ['admin.policies.edit'],
+      ownedApiPrefixes: [
+        '/api/metadata-templates',
+        '/api/admin/metadata-templates',
+      ],
     },
   ],
   users: [
@@ -507,6 +520,7 @@ export type AdminSectionChunkId =
   | 'admin-file-requests'
   | 'admin-trash'
   | 'admin-root-folders'
+  | 'admin-metadata-templates'
   | 'admin-members'
   | 'admin-groups'
   | 'admin-guests'
@@ -536,6 +550,7 @@ const ADMIN_TAB_PRELOAD_CHUNKS: Record<
       'admin-file-requests',
       'admin-trash',
       'admin-root-folders',
+      'admin-metadata-templates',
     ],
     users: [
       'admin-members',
@@ -563,6 +578,7 @@ const ADMIN_TAB_PRELOAD_CHUNKS: Record<
     trash: ['admin-trash'],
     'file-requests': ['admin-file-requests'],
     'ai-classification': ['ai-suggestion-queue'],
+    'metadata-templates': ['admin-metadata-templates'],
   },
   users: {
     members: ['admin-members'],
@@ -634,6 +650,7 @@ export function getAdminTabFetchPlan(
         case 'root-folders':
         case 'trash':
         case 'file-requests':
+        case 'metadata-templates':
           return fetchPlan({ completesImmediately: true });
         case 'ai-classification':
           return fetchPlan({ aiSuggestions: true });

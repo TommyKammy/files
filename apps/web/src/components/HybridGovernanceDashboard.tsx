@@ -25,6 +25,7 @@ import {
   canViewAdminConsoleSection,
   getAdminConsoleNavItem,
   getVisibleAdminNavItems,
+  isAdminConsoleRole,
   type AdminConsoleSection,
 } from '@/lib/admin-console-nav';
 import type { AdminSectionFetchPlan } from '@/lib/admin-console-nav';
@@ -103,6 +104,10 @@ const loadAdminRootFolders = () =>
   import('@/components/admin/AdminRootFoldersSection').then(
     (m) => m.AdminRootFoldersSection
   );
+const loadAdminMetadataTemplates = () =>
+  import('@/components/admin/AdminMetadataTemplatesSection').then(
+    (m) => m.AdminMetadataTemplatesSection
+  );
 const loadAdminScimTokens = () =>
   import('@/components/admin/AdminScimTokensSection').then(
     (m) => m.AdminScimTokensSection
@@ -145,6 +150,7 @@ const AdminMembersSection = dynamic(loadAdminMembers);
 const AdminPermissionAuditSection = dynamic(loadAdminPermissionAudit);
 const AdminReportsSection = dynamic(loadAdminReports);
 const AdminRootFoldersSection = dynamic(loadAdminRootFolders);
+const AdminMetadataTemplatesSection = dynamic(loadAdminMetadataTemplates);
 const AdminScimTokensSection = dynamic(loadAdminScimTokens);
 const AdminSessionsSection = dynamic(loadAdminSessions);
 const AdminTrashSection = dynamic(loadAdminTrash);
@@ -169,6 +175,7 @@ const ADMIN_SECTION_PRELOADERS: Record<
   'admin-file-requests': loadAdminFileRequests,
   'admin-trash': loadAdminTrash,
   'admin-root-folders': loadAdminRootFolders,
+  'admin-metadata-templates': loadAdminMetadataTemplates,
   'admin-members': loadAdminMembers,
   'admin-groups': loadAdminGroups,
   'admin-guests': loadAdminGuests,
@@ -483,6 +490,9 @@ export function HybridGovernanceDashboard({
         onShowAuditLogs={handleShowRootFolderAudit}
       />
     );
+
+  const metadataTemplatesPanel =
+    isAdminConsoleRole(user?.role) && <AdminMetadataTemplatesSection />;
 
   const renderAccessControlPanel = (
     topicFilter:
@@ -802,6 +812,7 @@ export function HybridGovernanceDashboard({
               {fileRequestsPanel}
               {trashPanel}
               {rootFoldersPanel}
+              {metadataTemplatesPanel}
             </>
           );
         case 'users':
@@ -843,6 +854,8 @@ export function HybridGovernanceDashboard({
           return fileRequestsPanel;
         case 'ai-classification':
           return aiClassificationPanel;
+        case 'metadata-templates':
+          return metadataTemplatesPanel;
         default:
           return null;
       }

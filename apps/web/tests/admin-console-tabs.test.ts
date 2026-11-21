@@ -117,6 +117,7 @@ test('ADMIN_CONSOLE_TABS defines every section and preserves id/label order', ()
     'trash',
     'file-requests',
     'ai-classification',
+    'metadata-templates',
   ]);
   assert.deepEqual(
     ADMIN_CONSOLE_TABS.content.map((tab) => tab.label),
@@ -126,6 +127,7 @@ test('ADMIN_CONSOLE_TABS defines every section and preserves id/label order', ()
       'ゴミ箱',
       'ファイルリクエスト',
       'AI 分類レビュー',
+      'メタデータテンプレート',
     ]
   );
   assert.deepEqual(tabIds('users'), [
@@ -806,6 +808,7 @@ test('getAdminTabPreloadChunkIds keeps the integrated /admin view tab-scoped', (
     'admin-file-requests',
     'admin-trash',
     'admin-root-folders',
+    'admin-metadata-templates',
   ]);
   assert.deepEqual(getAdminTabPreloadChunkIds('all', 'users'), [
     'admin-members',
@@ -838,7 +841,7 @@ test('getAdminTabPreloadChunkIds keeps the integrated /admin view tab-scoped', (
       getAdminTabPreloadChunkIds('all', tab.id)
     )
   );
-  assert.equal(allChunks.size, 22);
+  assert.equal(allChunks.size, 23);
   for (const tab of ADMIN_CONSOLE_TABS.all) {
     const chunks = getAdminTabPreloadChunkIds('all', tab.id);
     assert.ok(chunks.length > 0, tab.id);
