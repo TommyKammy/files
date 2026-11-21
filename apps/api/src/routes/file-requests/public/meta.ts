@@ -16,6 +16,9 @@ export function registerPublicFileRequestMetaRoute(routes: Hono<OidcHonoEnv>) {
     const fr = loaded.fileRequest;
     const runtimeEnv = c.env as FileRequestRuntimeEnv;
     const branding = await loadTenantBranding(c.env.DB, fr.tenant_id);
+    const turnstileEnabled = Boolean(runtimeEnv.TURNSTILE_SECRET_KEY);
+    const trimmedSiteKey = runtimeEnv.TURNSTILE_SITE_KEY?.trim() || null;
+    const turnstileSiteKey = turnstileEnabled ? trimmedSiteKey : null;
 
     return c.json({
       title: fr.title,
@@ -24,7 +27,8 @@ export function registerPublicFileRequestMetaRoute(routes: Hono<OidcHonoEnv>) {
       maxFileSizeBytes: fr.max_file_size_bytes,
       allowedExtensions: parseAllowedExtensionsJson(fr.allowed_extensions),
       expiresAt: fr.expires_at,
-      turnstileEnabled: Boolean(runtimeEnv.TURNSTILE_SECRET_KEY),
+      turnstileEnabled,
+      turnstileSiteKey,
       branding,
     });
   });

@@ -20,6 +20,11 @@ export function PublicFileRequestUploader({ token }: { token: string }) {
     setSubmitterEmail,
     turnstileToken,
     setTurnstileToken,
+    turnstileStatus,
+    turnstileError,
+    usesTurnstileWidget,
+    turnstileContainerRef,
+    retryTurnstile,
     dragging,
     setDragging,
     submissions,
@@ -122,10 +127,41 @@ export function PublicFileRequestUploader({ token }: { token: string }) {
               />
             </label>
 
-            {meta.turnstileEnabled && (
+            {meta.turnstileEnabled && usesTurnstileWidget && (
+              <div className="space-y-1.5 text-xs">
+                <div className="font-medium text-slate-700">
+                  ロボット対策認証 (Turnstile)
+                </div>
+                <div
+                  ref={turnstileContainerRef}
+                  data-testid="turnstile-widget-container"
+                  className="min-h-[65px]"
+                />
+                {turnstileStatus === 'loading' && (
+                  <p className="text-[0.6875rem] text-slate-500">
+                    認証ウィジェットを読み込み中...
+                  </p>
+                )}
+                {turnstileError && (
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[0.6875rem] text-red-700">
+                    <span>{turnstileError}</span>
+                    <button
+                      type="button"
+                      onClick={retryTurnstile}
+                      className="shrink-0 font-semibold text-red-800 underline hover:no-underline"
+                    >
+                      再試行
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Local/dev fallback only when TURNSTILE_SECRET_KEY is enabled without TURNSTILE_SITE_KEY */}
+            {meta.turnstileEnabled && !usesTurnstileWidget && (
               <label className="block text-xs">
                 <span className="font-medium text-slate-700">
-                  Turnstile 認証トークン
+                  Turnstile 認証トークン (ローカル開発用フォールバック)
                 </span>
                 <input
                   id="turnstile-token"
@@ -136,7 +172,7 @@ export function PublicFileRequestUploader({ token }: { token: string }) {
                   required
                   value={turnstileToken}
                   onChange={(e) => setTurnstileToken(e.target.value)}
-                  placeholder="Cloudflare Turnstile verification token"
+                  placeholder="TURNSTILE_SITE_KEY 未設定時の開発用トークン"
                   className="mt-1 w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs text-slate-900"
                 />
               </label>

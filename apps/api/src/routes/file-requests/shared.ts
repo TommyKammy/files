@@ -62,6 +62,7 @@ export interface SubmissionGrantPayload {
 
 export type FileRequestRuntimeEnv = OidcEnv & {
   TURNSTILE_SECRET_KEY?: string;
+  TURNSTILE_SITE_KEY?: string;
   FILE_REQUEST_RATE_LIMIT_PER_MIN?: string;
 };
 

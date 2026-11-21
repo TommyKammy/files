@@ -809,6 +809,7 @@ export interface PublicFileRequestMeta {
   allowedExtensions: string[] | null;
   expiresAt: string | null;
   turnstileEnabled: boolean;
+  turnstileSiteKey?: string | null;
   branding?: TenantBranding;
 }
 

@@ -6,6 +6,7 @@ import type { OidcEnv } from '../src/types/oidc';
 
 type TestEnvWithFr = OidcEnv & {
   TURNSTILE_SECRET_KEY?: string;
+  TURNSTILE_SITE_KEY?: string;
   FILE_REQUEST_RATE_LIMIT_PER_MIN?: string;
 };
 
@@ -418,5 +419,60 @@ describe('External File Requests / Blind Dropbox API (TOM-16)', () => {
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+
+  it('returns turnstileSiteKey on public metadata only when Turnstile is enabled and configured', async () => {
+    const createRes = await app.fetch(
+      new Request('http://127.0.0.1:8787/api/file-requests', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ folderId: 'fr-folder-int', title: 'Turnstile Meta Test' }),
+      }),
+      buildTestEnv()
+    );
+    expect(createRes.status).toBe(201);
+    const { token } = (await createRes.json()) as { token: string };
+
+    // Disabled when TURNSTILE_SECRET_KEY is absent, even if TURNSTILE_SITE_KEY is set
+    const disabledRes = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/fr/${token}`),
+      buildTestEnv({ TURNSTILE_SITE_KEY: '0x4AAAAAAATestSiteKey' })
+    );
+    expect(disabledRes.status).toBe(200);
+    const disabledJson = (await disabledRes.json()) as {
+      turnstileEnabled: boolean;
+      turnstileSiteKey: string | null;
+    };
+    expect(disabledJson.turnstileEnabled).toBe(false);
+    expect(disabledJson.turnstileSiteKey).toBeNull();
+
+    // Enabled without site key -> null fallback
+    const noSiteKeyRes = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/fr/${token}`),
+      buildTestEnv({ TURNSTILE_SECRET_KEY: 'ts-secret-test' })
+    );
+    expect(noSiteKeyRes.status).toBe(200);
+    const noSiteKeyJson = (await noSiteKeyRes.json()) as {
+      turnstileEnabled: boolean;
+      turnstileSiteKey: string | null;
+    };
+    expect(noSiteKeyJson.turnstileEnabled).toBe(true);
+    expect(noSiteKeyJson.turnstileSiteKey).toBeNull();
+
+    // Enabled with site key -> returns trimmed site key
+    const enabledRes = await app.fetch(
+      new Request(`http://127.0.0.1:8787/api/fr/${token}`),
+      buildTestEnv({
+        TURNSTILE_SECRET_KEY: 'ts-secret-test',
+        TURNSTILE_SITE_KEY: ' 0x4AAAAAAATestSiteKey ',
+      })
+    );
+    expect(enabledRes.status).toBe(200);
+    const enabledJson = (await enabledRes.json()) as {
+      turnstileEnabled: boolean;
+      turnstileSiteKey: string | null;
+    };
+    expect(enabledJson.turnstileEnabled).toBe(true);
+    expect(enabledJson.turnstileSiteKey).toBe('0x4AAAAAAATestSiteKey');
   });
 });
