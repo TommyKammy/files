@@ -47,6 +47,7 @@ export interface DirectorySyncContext {
   filesById: Map<string, FileItem>;
   directoriesByKey: Map<string, PersistedDirectoryRecord>;
   inFlightDirs: Map<string, Promise<void>>;
+  inFlightLoadMore: Map<string, Promise<void>>;
 
   resetMemoryOnly: () => void;
   invalidateAllCachedDirectories: () => void;
@@ -308,7 +309,8 @@ function isUnauthorizedError(err: unknown): boolean {
       !options?.force &&
       cached &&
       !cached.stale &&
-      ctx.now() - cached.revalidatedAt < DEFAULT_SWR_TTL_MS
+      (ctx.now() - cached.revalidatedAt < DEFAULT_SWR_TTL_MS ||
+        (options?.isPrefetch && ctx.inFlightLoadMore.has(dirKey)))
     ) {
       cached.lastAccessedAt = ctx.now();
       return;
@@ -422,57 +424,91 @@ function isUnauthorizedError(err: unknown): boolean {
   folderId: string | null
 ): Promise<void> {
     const dirKey = dirKeyForFolder(folderId);
-    const current = ctx.directoriesByKey.get(dirKey);
-    if (!current?.nextCursor) return;
-
-    const nowMs = ctx.now();
-    if (folderId === null) {
-      const res = await ctx.fetchRootFoldersFn(current.nextCursor);
-      for (const f of res.folders) {
-        ctx.foldersById.set(f.id, f);
-      }
-      const nextIds = [...current.folderIds];
-      for (const f of res.folders) {
-        if (!nextIds.includes(f.id)) nextIds.push(f.id);
-      }
-      ctx.rootFolderIds = nextIds;
-      ctx.rootNextCursor = res.nextCursor;
-      ctx.directoriesByKey.set(ROOT_DIR_KEY, {
-        ...current,
-        folderIds: nextIds,
-        nextCursor: res.nextCursor,
-        lastAccessedAt: nowMs,
-      });
-    } else {
-      const res = await ctx.fetchFolderChildrenFn(folderId, current.nextCursor, 50, {
-        includeBreadcrumbs: false,
-      });
-      for (const f of res.folders) ctx.foldersById.set(f.id, f);
-      for (const fl of res.files) ctx.filesById.set(fl.id, fl);
-
-      const nextFolderIds = [...current.folderIds];
-      for (const f of res.folders) {
-        if (!nextFolderIds.includes(f.id)) nextFolderIds.push(f.id);
-      }
-      const pathOnly = (res.accessMode ?? current.accessMode) === 'path';
-      const nextFileIds = [...current.fileIds];
-      if (!pathOnly) {
-        for (const fl of res.files) {
-          if (!nextFileIds.includes(fl.id)) nextFileIds.push(fl.id);
-        }
-      }
-      ctx.directoriesByKey.set(dirKey, {
-        ...current,
-        accessMode: res.accessMode ?? current.accessMode ?? null,
-        folderIds: nextFolderIds,
-        fileIds: pathOnly ? [] : nextFileIds,
-        nextCursor: res.nextCursor,
-        lastAccessedAt: nowMs,
-      });
+    const existingReq = ctx.inFlightLoadMore.get(dirKey);
+    if (existingReq) {
+      return existingReq;
     }
 
-    ctx.pruneAndSchedulePersist();
-    ctx.emit();
+    const initial = ctx.directoriesByKey.get(dirKey);
+    const requestedCursor = initial?.nextCursor ?? null;
+    if (!requestedCursor) return;
+
+    let run: Promise<void> | null = null;
+    run = (async () => {
+      try {
+        if (folderId === null) {
+          const res = await ctx.fetchRootFoldersFn(requestedCursor);
+          const latest = ctx.directoriesByKey.get(ROOT_DIR_KEY);
+          if (!latest || latest.nextCursor !== requestedCursor) return;
+
+          const nowMs = ctx.now();
+          for (const f of res.folders) {
+            ctx.foldersById.set(f.id, f);
+          }
+          const nextIds = [...latest.folderIds];
+          for (const f of res.folders) {
+            if (!nextIds.includes(f.id)) nextIds.push(f.id);
+          }
+          ctx.rootFolderIds = nextIds;
+          ctx.rootNextCursor = res.nextCursor;
+          ctx.directoriesByKey.set(ROOT_DIR_KEY, {
+            ...latest,
+            folderIds: nextIds,
+            nextCursor: res.nextCursor,
+            lastAccessedAt: nowMs,
+            revalidatedAt: nowMs,
+          });
+        } else {
+          const res = await ctx.fetchFolderChildrenFn(folderId, requestedCursor, 50, {
+            includeBreadcrumbs: false,
+          });
+          const latest = ctx.directoriesByKey.get(dirKey);
+          if (!latest || latest.nextCursor !== requestedCursor) return;
+
+          const nowMs = ctx.now();
+          for (const f of res.folders) ctx.foldersById.set(f.id, f);
+          for (const fl of res.files) ctx.filesById.set(fl.id, fl);
+
+          const nextFolderIds = [...latest.folderIds];
+          for (const f of res.folders) {
+            if (!nextFolderIds.includes(f.id)) nextFolderIds.push(f.id);
+          }
+          const pathOnly = (res.accessMode ?? latest.accessMode) === 'path';
+          const nextFileIds = [...latest.fileIds];
+          if (!pathOnly) {
+            for (const fl of res.files) {
+              if (!nextFileIds.includes(fl.id)) nextFileIds.push(fl.id);
+            }
+          }
+          ctx.directoriesByKey.set(dirKey, {
+            ...latest,
+            accessMode: res.accessMode ?? latest.accessMode ?? null,
+            folderIds: nextFolderIds,
+            fileIds: pathOnly ? [] : nextFileIds,
+            nextCursor: res.nextCursor,
+            lastAccessedAt: nowMs,
+            revalidatedAt: nowMs,
+          });
+        }
+
+        ctx.pruneAndSchedulePersist();
+        ctx.emit();
+      } catch (err) {
+        if (isUnauthorizedError(err)) {
+          ctx.reportSessionError?.(err);
+          await ctx.purgeCurrentScope();
+          return;
+        }
+        throw err;
+      } finally {
+        if (ctx.inFlightLoadMore.get(dirKey) === run) {
+          ctx.inFlightLoadMore.delete(dirKey);
+        }
+      }
+    })();
+
+    ctx.inFlightLoadMore.set(dirKey, run);
+    return run;
   }
 
   /** Local cache helpers used by mutations to update store synchronously before/after server ack */

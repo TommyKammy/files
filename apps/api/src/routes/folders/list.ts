@@ -49,13 +49,21 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
       return c.json({ error: 'Invalid pagination cursor' }, 400);
     }
 
-    const cursorSql =
-      cursor?.name !== undefined && cursor?.id !== undefined
+    const hasPinnedKeyset =
+      cursor?.isPinned !== undefined &&
+      cursor?.name !== undefined &&
+      cursor?.id !== undefined;
+    const hasLegacyKeyset =
+      !hasPinnedKeyset && cursor?.name !== undefined && cursor?.id !== undefined;
+    const cursorSql = hasPinnedKeyset
+      ? 'AND (f.is_pinned < ? OR (f.is_pinned = ? AND (f.name, f.id) > (?, ?)))'
+      : hasLegacyKeyset
         ? 'AND (f.name, f.id) > (?, ?)'
         : '';
-    const cursorBindings =
-      cursor?.name !== undefined && cursor?.id !== undefined
-        ? [cursor.name, cursor.id]
+    const cursorBindings = hasPinnedKeyset
+      ? [cursor!.isPinned!, cursor!.isPinned!, cursor!.name!, cursor!.id!]
+      : hasLegacyKeyset
+        ? [cursor!.name!, cursor!.id!]
         : [];
 
     const rows = await c.env.DB.prepare(
@@ -139,7 +147,12 @@ export function registerFolderRootsRoutes(routes: Hono<OidcHonoEnv>) {
       }),
       nextCursor:
         hasMore && last
-          ? encodeCursor({ phase: 'folders', name: last.name, id: last.id })
+          ? encodeCursor({
+              phase: 'folders',
+              isPinned: last.is_pinned ? 1 : 0,
+              name: last.name,
+              id: last.id,
+            })
           : null,
     });
   });

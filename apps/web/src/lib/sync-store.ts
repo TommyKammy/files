@@ -324,6 +324,7 @@ export class WorkspaceSyncStore {
   private bootstrapPromise: Promise<BootstrapResponse | null> | null = null;
   private deltaPromise: Promise<void> | null = null;
   private readonly inFlightDirs = new Map<string, Promise<void>>();
+  private readonly inFlightLoadMore = new Map<string, Promise<void>>();
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private snapshot: SyncStoreSnapshot;
 
@@ -749,6 +750,7 @@ export class WorkspaceSyncStore {
       filesById: this.filesById,
       directoriesByKey: this.directoriesByKey,
       inFlightDirs: this.inFlightDirs,
+      inFlightLoadMore: this.inFlightLoadMore,
       resetMemoryOnly: () => this.resetMemoryOnly(),
       invalidateAllCachedDirectories: () =>
         this.invalidateAllCachedDirectories(),
@@ -1593,6 +1595,7 @@ export class WorkspaceSyncStore {
       filesById: this.filesById,
       directoriesByKey: this.directoriesByKey,
       inFlightDirs: this.inFlightDirs,
+      inFlightLoadMore: this.inFlightLoadMore,
     };
   }
 

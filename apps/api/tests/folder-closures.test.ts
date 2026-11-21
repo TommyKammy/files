@@ -425,4 +425,83 @@ describe('Folder Closure Hierarchy, Cycle Prevention, Move & Restore (TOM-11)', 
       .first<{ deleted_at: string | null }>();
     expect(earlyAfter?.deleted_at).toBeTruthy();
   });
+
+  it('paginates /api/folders/roots cleanly across pinned and unpinned folders without duplicates or skips', async () => {
+    const testEnv = buildTestEnv();
+    const tenantId = 'tenant-roots-page';
+    const userId = 'roots-page-owner';
+
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT OR IGNORE INTO tenants (id, name, slug) VALUES (?, 'Roots Page Org', 'roots-page-org')"
+      ).bind(tenantId),
+      env.DB.prepare(
+        'INSERT OR IGNORE INTO tenant_policies (tenant_id) VALUES (?)'
+      ).bind(tenantId),
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO users (id, tenant_id, email, display_name, role, status)
+         VALUES (?, ?, 'roots-page-owner@example.com', 'Roots Owner', 'sys_admin', 'active')`
+      ).bind(userId, tenantId),
+    ]);
+
+    const headers = authHeaders(userId, 'sys_admin', tenantId);
+    const created: Array<{ name: string; pinned: boolean }> = [
+      { name: 'Pin-X', pinned: true },
+      { name: 'Pin-Y', pinned: true },
+      { name: 'Pin-Z', pinned: true },
+      { name: 'Alpha', pinned: false },
+      { name: 'Beta', pinned: false },
+      { name: 'Gamma', pinned: false },
+    ];
+
+    for (const spec of created) {
+      const createRes = await app.fetch(
+        new Request('http://127.0.0.1:8787/api/folders', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ name: spec.name }),
+        }),
+        testEnv
+      );
+      expect(createRes.status).toBe(201);
+      if (spec.pinned) {
+        const { folder } = (await createRes.json()) as {
+          folder: { id: string; version: number };
+        };
+        const pinRes = await app.fetch(
+          new Request(`http://127.0.0.1:8787/api/folders/${folder.id}`, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({ isPinned: true, expectedVersion: folder.version }),
+          }),
+          testEnv
+        );
+        expect(pinRes.status).toBe(200);
+      }
+    }
+
+    const seenNames: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      pages += 1;
+      expect(pages).toBeLessThanOrEqual(10);
+      const url = new URL('http://127.0.0.1:8787/api/folders/roots');
+      url.searchParams.set('limit', '2');
+      if (cursor) url.searchParams.set('cursor', cursor);
+      const pageRes = await app.fetch(
+        new Request(url.toString(), { headers }),
+        testEnv
+      );
+      expect(pageRes.status).toBe(200);
+      const page = (await pageRes.json()) as {
+        folders: Array<{ name: string }>;
+        nextCursor: string | null;
+      };
+      seenNames.push(...page.folders.map((f) => f.name));
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    expect(seenNames).toEqual(['Pin-X', 'Pin-Y', 'Pin-Z', 'Alpha', 'Beta', 'Gamma']);
+  });
 });

@@ -39,6 +39,7 @@ export interface PersistenceContext {
   filesById: Map<string, FileItem>;
   directoriesByKey: Map<string, PersistedDirectoryRecord>;
   inFlightDirs: Map<string, Promise<void>>;
+  inFlightLoadMore: Map<string, Promise<void>>;
 }
 
 export function resetMemoryOnly(ctx: PersistenceContext): void {
@@ -46,6 +47,7 @@ export function resetMemoryOnly(ctx: PersistenceContext): void {
   ctx.filesById.clear();
   ctx.directoriesByKey.clear();
   ctx.inFlightDirs.clear();
+  ctx.inFlightLoadMore.clear();
   ctx.user = null;
   ctx.policy = null;
   ctx.syncSeq = 0;

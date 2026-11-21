@@ -4,6 +4,7 @@ import type { ClassificationLabel } from '../../types/api';
 
 export interface ChildrenCursor {
   phase: 'folders' | 'files';
+  isPinned?: number;
   name?: string;
   id?: string;
 }
@@ -38,6 +39,13 @@ export function decodeCursor(raw: string | undefined): ChildrenCursor | null {
   try {
     const parsed = JSON.parse(new TextDecoder().decode(base64UrlToBytes(raw))) as ChildrenCursor;
     if (parsed.phase !== 'folders' && parsed.phase !== 'files') return null;
+    if (
+      parsed.isPinned !== undefined &&
+      parsed.isPinned !== 0 &&
+      parsed.isPinned !== 1
+    ) {
+      return null;
+    }
     return parsed;
   } catch {
     return null;

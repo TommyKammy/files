@@ -708,3 +708,176 @@ test('computeVirtualWindow bypasses small lists and slices 10,000-row tables acc
     10_000 * 52
   );
 });
+
+test('loadMoreDirectory deduplicates concurrent calls and preserves revalidatedAt against prefetch resets', async () => {
+  let clock = 10_000;
+  const folderId = 'paged-folder';
+  const parentFolder = makeFolder(folderId, { name: 'Paged' });
+  const file1 = makeFile('f-1', folderId, { name: 'a.txt' });
+  const file2 = makeFile('f-2', folderId, { name: 'b.txt' });
+  const file3 = makeFile('f-3', folderId, { name: 'c.txt' });
+
+  const requestedCursors: Array<string | null | undefined> = [];
+  let releasePage2!: () => void;
+  const page2Gate = new Promise<void>((resolve) => {
+    releasePage2 = resolve;
+  });
+
+  const store = new WorkspaceSyncStore({
+    persistence: new MemorySyncPersistence(),
+    now: () => clock,
+    fetchBootstrap: async () => ({
+      user: makeUser(),
+      policy: makePolicy(),
+      rootFolders: [parentFolder],
+      pinnedFolders: [],
+      currentSeq: 1,
+      purgedBeforeSeq: 0,
+    }),
+    fetchFolderChildren: async (_id, cursor) => {
+      requestedCursors.push(cursor);
+      if (!cursor) {
+        return {
+          folder: parentFolder,
+          effectiveRole: 'editor',
+          folders: [],
+          files: [file1],
+          breadcrumbs: [{ id: folderId, name: 'Paged', classification: 'internal', depth: 0 }],
+          nextCursor: 'cursor-p2',
+        };
+      }
+      if (cursor === 'cursor-p2') {
+        await page2Gate;
+        return {
+          folder: parentFolder,
+          effectiveRole: 'editor',
+          folders: [],
+          files: [file2],
+          nextCursor: 'cursor-p3',
+        };
+      }
+      return {
+        folder: parentFolder,
+        effectiveRole: 'editor',
+        folders: [],
+        files: [file3],
+        nextCursor: null,
+      };
+    },
+    enableRealtime: false,
+  });
+
+  await store.bootstrap();
+  await store.ensureDirectoryLoaded(folderId);
+  assert.equal(store.getDirectoryView(folderId).nextCursor, 'cursor-p2');
+
+  // Fire two concurrent loadMoreDirectory calls (e.g., StrictMode double-effect)
+  clock += 20_000; // Past 15s SWR TTL
+  const pA = store.loadMoreDirectory(folderId);
+  const pB = store.loadMoreDirectory(folderId);
+
+  // Prefetch while loadMoreDirectory is in flight must not reset back to page 1
+  await store.ensureDirectoryLoaded(folderId, { isPrefetch: true });
+
+  releasePage2();
+  await Promise.all([pA, pB]);
+
+  assert.deepEqual(requestedCursors, [null, 'cursor-p2']);
+  assert.equal(store.getDirectoryView(folderId).nextCursor, 'cursor-p3');
+  assert.deepEqual(
+    store.getDirectoryView(folderId).files.map((f) => f.id),
+    ['f-1', 'f-2']
+  );
+
+  // Because loadMoreDirectory refreshed revalidatedAt, a prefetch right after must still be fresh
+  await store.ensureDirectoryLoaded(folderId, { isPrefetch: true });
+  assert.deepEqual(requestedCursors, [null, 'cursor-p2']);
+
+  // Final page drains cleanly to nextCursor: null
+  await store.loadMoreDirectory(folderId);
+  assert.equal(store.getDirectoryView(folderId).nextCursor, null);
+  assert.deepEqual(
+    store.getDirectoryView(folderId).files.map((f) => f.id),
+    ['f-1', 'f-2', 'f-3']
+  );
+});
+
+test('loadMoreDirectory ignores stale response if directory was force-refreshed while in flight', async () => {
+  const folderId = 'refresh-race-folder';
+  const parentFolder = makeFolder(folderId, { name: 'Race' });
+  const file1 = makeFile('r-1', folderId, { name: 'a.txt' });
+  const file2 = makeFile('r-2', folderId, { name: 'b.txt' });
+  const freshFile = makeFile('r-fresh', folderId, { name: 'fresh.txt' });
+
+  let releaseStalePage2!: () => void;
+  const stalePage2Gate = new Promise<void>((resolve) => {
+    releaseStalePage2 = resolve;
+  });
+  let initialCalls = 0;
+
+  const store = new WorkspaceSyncStore({
+    persistence: new MemorySyncPersistence(),
+    fetchBootstrap: async () => ({
+      user: makeUser(),
+      policy: makePolicy(),
+      rootFolders: [parentFolder],
+      pinnedFolders: [],
+      currentSeq: 1,
+      purgedBeforeSeq: 0,
+    }),
+    fetchFolderChildren: async (_id, cursor) => {
+      if (!cursor) {
+        initialCalls += 1;
+        if (initialCalls === 1) {
+          return {
+            folder: parentFolder,
+            effectiveRole: 'editor',
+            folders: [],
+            files: [file1],
+            breadcrumbs: [{ id: folderId, name: 'Race', classification: 'internal', depth: 0 }],
+            nextCursor: 'stale-cursor',
+          };
+        }
+        return {
+          folder: parentFolder,
+          effectiveRole: 'editor',
+          folders: [],
+          files: [freshFile],
+          breadcrumbs: [{ id: folderId, name: 'Race', classification: 'internal', depth: 0 }],
+          nextCursor: null,
+        };
+      }
+      await stalePage2Gate;
+      return {
+        folder: parentFolder,
+        effectiveRole: 'editor',
+        folders: [],
+        files: [file2],
+        nextCursor: 'stale-cursor-next',
+      };
+    },
+    enableRealtime: false,
+  });
+
+  await store.bootstrap();
+  await store.ensureDirectoryLoaded(folderId);
+  const inFlightMore = store.loadMoreDirectory(folderId);
+
+  // Force refresh completes while loadMoreDirectory is still awaiting stale-cursor
+  await store.ensureDirectoryLoaded(folderId, { force: true });
+  assert.equal(store.getDirectoryView(folderId).nextCursor, null);
+  assert.deepEqual(
+    store.getDirectoryView(folderId).files.map((f) => f.id),
+    ['r-fresh']
+  );
+
+  releaseStalePage2();
+  await inFlightMore;
+
+  // Stale loadMore response must not rewind nextCursor or clobber fresh files
+  assert.equal(store.getDirectoryView(folderId).nextCursor, null);
+  assert.deepEqual(
+    store.getDirectoryView(folderId).files.map((f) => f.id),
+    ['r-fresh']
+  );
+});

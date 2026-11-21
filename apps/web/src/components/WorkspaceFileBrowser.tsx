@@ -21,7 +21,10 @@ import {
 import { WorkspaceActionOverlays } from '@/components/WorkspaceActionOverlays';
 import { WorkspaceClipboardBar } from '@/components/WorkspaceClipboardBar';
 import { WorkspaceManagementModals } from '@/components/WorkspaceManagementModals';
-import { WorkspaceMainHeader } from '@/components/WorkspaceMainHeader';
+import {
+  WorkspaceMainHeader,
+  type SortDrainStatus,
+} from '@/components/WorkspaceMainHeader';
 import { WorkspaceNotices } from '@/components/WorkspaceNotices';
 import { WorkspacePinnedFolders } from '@/components/WorkspacePinnedFolders';
 import { WorkspacePermissionBanner } from '@/components/WorkspacePermissionBanner';
@@ -262,6 +265,8 @@ export function WorkspaceFileBrowser() {
   const listSortBy = isTrashView ? trashTableSort.sortBy : sortBy;
   const listSortDir = isTrashView ? trashTableSort.sortDir : sortDir;
   const sortDrainErrorKeyRef = useRef<string | null>(null);
+  const [sortDrainStatus, setSortDrainStatus] = useState<SortDrainStatus>('idle');
+  const [sortDrainRetryToken, setSortDrainRetryToken] = useState(0);
 
   useEffect(() => {
     clipboardStore.setScope(
@@ -416,18 +421,48 @@ export function WorkspaceFileBrowser() {
     [isTrashView, handleSortHeaderClick, trash]
   );
 
+  const handleRetrySortDrain = useCallback(() => {
+    sortDrainErrorKeyRef.current = null;
+    setSortDrainRetryToken((token) => token + 1);
+  }, []);
+
   // Background catch-up when sorting an incomplete multi-page folder off default name ASC
   useEffect(() => {
-    if (isTrashView || !user || snapshot.authStatus !== 'authenticated') return;
-    if (!nextCursor || (sortBy === 'name' && sortDir === 'asc')) return;
-    const drainKey = `${folderId ?? '__ROOT__'}:${nextCursor}`;
-    if (sortDrainErrorKeyRef.current === drainKey) return;
+    const needsDrain =
+      !isTrashView &&
+      Boolean(user) &&
+      snapshot.authStatus === 'authenticated' &&
+      Boolean(nextCursor) &&
+      (sortBy !== 'name' || sortDir !== 'asc');
+    if (!needsDrain || !nextCursor) {
+      setSortDrainStatus('idle');
+      return;
+    }
+    const drainKey = `${folderId ?? '__ROOT__'}:${nextCursor}:${sortDrainRetryToken}`;
+    if (sortDrainErrorKeyRef.current === drainKey) {
+      setSortDrainStatus('error');
+      return;
+    }
     let cancelled = false;
-    void syncStore.loadMoreDirectory(folderId).catch(() => {
-      if (!cancelled) {
-        sortDrainErrorKeyRef.current = drainKey;
-      }
-    });
+    setSortDrainStatus('syncing');
+    void syncStore
+      .loadMoreDirectory(folderId)
+      .then(() => {
+        if (cancelled) return;
+        const afterCursor = syncStore.getDirectoryView(folderId).nextCursor;
+        if (!afterCursor) {
+          setSortDrainStatus('idle');
+        } else if (afterCursor === nextCursor) {
+          sortDrainErrorKeyRef.current = drainKey;
+          setSortDrainStatus('error');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          sortDrainErrorKeyRef.current = drainKey;
+          setSortDrainStatus('error');
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -439,6 +474,7 @@ export function WorkspaceFileBrowser() {
     nextCursor,
     sortBy,
     sortDir,
+    sortDrainRetryToken,
     syncStore,
   ]);
 
@@ -1510,6 +1546,8 @@ export function WorkspaceFileBrowser() {
           nextCursor={nextCursor}
           sortBy={listSortBy}
           sortDir={listSortDir}
+          sortDrainStatus={sortDrainStatus}
+          onRetrySortDrain={handleRetrySortDrain}
           selectedRows={selectedRows}
           canCreateFolder={canCreateFolder && !rootCreationRestricted}
           canRenameCurrentFolder={canRenameCurrentFolder}

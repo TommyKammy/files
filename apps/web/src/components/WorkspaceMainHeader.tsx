@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, Trash2 } from 'lucide-react';
+import { AlertCircle, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { ClassificationBadge } from '@/components/ClassificationBadge';
 import { WorkspaceBreadcrumbs } from '@/components/WorkspaceBreadcrumbs';
 import { WorkspaceSelectionBar } from '@/components/WorkspaceSelectionBar';
@@ -17,6 +17,8 @@ import type {
   ResourceRole,
 } from '@/types/files';
 
+export type SortDrainStatus = 'idle' | 'syncing' | 'error';
+
 export function WorkspaceMainHeader({
   isTrashView,
   accessMode,
@@ -27,6 +29,8 @@ export function WorkspaceMainHeader({
   nextCursor,
   sortBy,
   sortDir,
+  sortDrainStatus = 'idle',
+  onRetrySortDrain,
   selectedRows,
   canCreateFolder,
   canRenameCurrentFolder,
@@ -70,6 +74,8 @@ export function WorkspaceMainHeader({
   nextCursor: string | null;
   sortBy: WorkspaceSortField;
   sortDir: WorkspaceSortDirection;
+  sortDrainStatus?: SortDrainStatus;
+  onRetrySortDrain?: () => void;
   selectedRows: WorkspaceTableRow[];
   canCreateFolder: boolean;
   canRenameCurrentFolder: boolean;
@@ -123,7 +129,9 @@ export function WorkspaceMainHeader({
 
         {!isTrashView &&
           (currentFolder ||
-            (nextCursor && (sortBy !== 'name' || sortDir !== 'asc'))) && (
+            (nextCursor &&
+              (sortBy !== 'name' || sortDir !== 'asc') &&
+              sortDrainStatus !== 'idle')) && (
             <div className="flex flex-wrap items-center gap-2 text-[0.6875rem] text-[#6b6f76]">
               {currentFolder && (
                 <>
@@ -140,12 +148,32 @@ export function WorkspaceMainHeader({
                   )}
                 </>
               )}
-              {nextCursor && (sortBy !== 'name' || sortDir !== 'asc') && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[0.6875rem] font-medium text-amber-700">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  <span>ソート全件同期中...</span>
-                </span>
-              )}
+              {nextCursor &&
+                (sortBy !== 'name' || sortDir !== 'asc') &&
+                sortDrainStatus === 'syncing' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[0.6875rem] font-medium text-amber-700">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>ソート全件同期中...</span>
+                  </span>
+                )}
+              {nextCursor &&
+                (sortBy !== 'name' || sortDir !== 'asc') &&
+                sortDrainStatus === 'error' && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[0.6875rem] font-medium text-red-700">
+                    <AlertCircle className="h-3 w-3" />
+                    <span>ソート全件同期に失敗</span>
+                    {onRetrySortDrain && (
+                      <button
+                        type="button"
+                        onClick={onRetrySortDrain}
+                        className="inline-flex items-center gap-0.5 rounded px-1 py-0.25 text-red-800 underline decoration-red-400 underline-offset-2 hover:bg-red-100"
+                      >
+                        <RefreshCw className="h-2.5 w-2.5" />
+                        <span>再試行</span>
+                      </button>
+                    )}
+                  </span>
+                )}
             </div>
           )}
       </div>
