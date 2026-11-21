@@ -31,6 +31,7 @@ import {
   buildMinimalOfficeDocument,
   type OfficeDocumentKind,
 } from '../services/ooxml-templates';
+import { extractOoxmlText } from '../services/ooxml-text-extractor';
 import {
   buildUserStorageDeltaStmt,
   getUserStorageQuotaStatus,
@@ -341,13 +342,15 @@ filesUploadRoutes.post('/create-office', async (c) => {
       httpMetadata: { contentType: doc.mimeType },
     });
 
+    const contentExcerpt = await extractOoxmlText(doc.bytes, kind).catch(() => null);
+
     const statements: D1PreparedStatement[] = [
       c.env.DB.prepare(
         `INSERT INTO files (
            id, tenant_id, folder_id, name, extension, mime_type, size_bytes,
            upload_state, current_version_id, current_version_num, classification,
-           created_by, updated_by, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, 1, ?, ?, ?, ?, ?)`
+           content_excerpt, created_by, updated_by, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, 1, ?, ?, ?, ?, ?, ?)`
       ).bind(
         fileId,
         user.tenantId,
@@ -358,6 +361,7 @@ filesUploadRoutes.post('/create-office', async (c) => {
         sizeBytes,
         versionId,
         classification,
+        contentExcerpt,
         user.id,
         user.id,
         nowIso,
@@ -379,9 +383,9 @@ filesUploadRoutes.post('/create-office', async (c) => {
         nowIso
       ),
       c.env.DB.prepare(
-        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason)
-         VALUES (?, ?, ?, ?, ?, '')`
-      ).bind(fileId, user.tenantId, classification, name, extension ?? ''),
+        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason, content_excerpt)
+         VALUES (?, ?, ?, ?, ?, '', ?)`
+      ).bind(fileId, user.tenantId, classification, name, extension ?? '', contentExcerpt ?? ''),
       c.env.DB.prepare(
         `INSERT INTO tenant_storage_stats (tenant_id, classification, file_count, total_bytes, updated_at)
          VALUES (?, ?, 1, ?, ?)

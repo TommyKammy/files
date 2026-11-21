@@ -768,8 +768,8 @@ export async function restoreFolderWithOptions(
   statements.push(
     db
       .prepare(
-        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason)
-         SELECT id, tenant_id, classification, name, COALESCE(extension, ''), COALESCE(ai_reason, '')
+        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason, content_excerpt)
+         SELECT id, tenant_id, classification, name, COALESCE(extension, ''), COALESCE(ai_reason, ''), COALESCE(content_excerpt, '')
            FROM files
           WHERE tenant_id = ?
             AND upload_state = 'active'

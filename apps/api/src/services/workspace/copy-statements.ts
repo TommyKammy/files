@@ -78,8 +78,8 @@ export function buildCoWFileCopyStatements(
       ),
     db
       .prepare(
-        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason)
-         VALUES (?, ?, ?, ?, ?, '')`
+        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason, content_excerpt)
+         VALUES (?, ?, ?, ?, ?, '', '')`
       )
       .bind(newFileId, params.tenantId, nextClassification, parsed.name, parsed.extension ?? '')
   );

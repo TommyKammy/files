@@ -177,16 +177,25 @@ export async function handleClassifyFile(
     env.DB.prepare(
       `UPDATE files
        SET ai_suggested_label = ?, ai_confidence = ?, ai_reason = ?,
+           content_excerpt = COALESCE(content_excerpt, ?),
            meta_version = meta_version + 1, updated_at = ?
        WHERE tenant_id = ? AND id = ? AND classification = 'unset' AND deleted_at IS NULL`
     ).bind(
       effectiveSuggested,
       llmResult.confidence,
       llmResult.reason,
+      ctx.excerpt,
       nowIso,
       msg.tenantId,
       msg.fileId
     ),
+    env.DB.prepare('DELETE FROM files_fts WHERE file_id = ?').bind(msg.fileId),
+    env.DB.prepare(
+      `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason, content_excerpt)
+       SELECT id, tenant_id, classification, name, COALESCE(extension, ''), COALESCE(ai_reason, ''), COALESCE(content_excerpt, '')
+         FROM files
+        WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL AND upload_state = 'active'`
+    ).bind(msg.tenantId, msg.fileId),
     buildAuditLogStmt(env.DB, {
       tenantId: msg.tenantId,
       actorId: null,

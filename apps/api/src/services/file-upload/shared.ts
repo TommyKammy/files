@@ -30,6 +30,7 @@ export interface FileRow {
   ai_suggested_label: ClassificationLabel | null;
   ai_confidence: number | null;
   ai_reason: string | null;
+  content_excerpt?: string | null;
   deleted_at: string | null;
   deleted_by: string | null;
   created_by: string;

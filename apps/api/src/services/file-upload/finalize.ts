@@ -1,4 +1,5 @@
 import type { AuthUser } from '../../types/api';
+import { extractSearchableExcerpt } from '../excerpt-extractor';
 import { buildFinalizeActivationStatements } from './finalize-activate';
 import { verifyFinalizeUpload } from './finalize-verify';
 import { FileRow } from './shared';
@@ -24,6 +25,14 @@ export async function finalizeUploadedVersion(
     markFailedCleanup,
   } = await verifyFinalizeUpload(db, bucket, user, input);
 
+  const contentExcerpt = await extractSearchableExcerpt(
+    bucket,
+    version.r2_object_key,
+    version.mime_type,
+    file.name,
+    headObj.size
+  ).catch(() => null);
+
   const nowIso = new Date().toISOString();
   const statements = buildFinalizeActivationStatements({
     db,
@@ -34,6 +43,7 @@ export async function finalizeUploadedVersion(
     nowIso,
     netDeltaBytes,
     countDelta,
+    contentExcerpt,
   });
 
   try {

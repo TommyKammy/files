@@ -14,6 +14,7 @@ export function buildFinalizeActivationStatements({
   nowIso,
   netDeltaBytes,
   countDelta,
+  contentExcerpt = null,
 }: {
   db: D1Database;
   user: AuthUser;
@@ -23,6 +24,7 @@ export function buildFinalizeActivationStatements({
   nowIso: string;
   netDeltaBytes: number;
   countDelta: number;
+  contentExcerpt?: string | null;
 }): D1PreparedStatement[] {
   return [
     db
@@ -36,6 +38,7 @@ export function buildFinalizeActivationStatements({
                 mime_type = ?,
                 current_version_id = ?,
                 current_version_num = ?,
+                content_excerpt = ?,
                 meta_version = meta_version + 1,
                 updated_by = ?,
                 updated_at = ?
@@ -46,6 +49,7 @@ export function buildFinalizeActivationStatements({
         version.mime_type,
         version.id,
         version.version_num,
+        contentExcerpt,
         user.id,
         nowIso,
         user.tenantId,
@@ -54,8 +58,8 @@ export function buildFinalizeActivationStatements({
     db.prepare('DELETE FROM files_fts WHERE file_id = ?').bind(file.id),
     db
       .prepare(
-        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason)
-         VALUES (?, ?, ?, ?, ?, ?)`
+        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason, content_excerpt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         file.id,
@@ -63,7 +67,8 @@ export function buildFinalizeActivationStatements({
         file.classification,
         file.name,
         file.extension ?? '',
-        file.ai_reason ?? ''
+        file.ai_reason ?? '',
+        contentExcerpt ?? ''
       ),
     db
       .prepare(

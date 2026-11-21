@@ -99,19 +99,13 @@ export function buildFileVersionRestoreStatements({
       .bind(file.id, newVersionId),
     db
       .prepare(
-        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason)
-         SELECT ?, ?, ?, ?, ?, ?
-          WHERE EXISTS (SELECT 1 FROM file_versions WHERE id = ?)`
+        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason, content_excerpt)
+         SELECT id, tenant_id, classification, name, COALESCE(extension, ''), COALESCE(ai_reason, ''), COALESCE(content_excerpt, '')
+           FROM files
+          WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL AND upload_state = 'active'
+            AND EXISTS (SELECT 1 FROM file_versions WHERE id = ?)`
       )
-      .bind(
-        file.id,
-        user.tenantId,
-        file.classification,
-        file.name,
-        file.extension ?? '',
-        file.ai_reason ?? '',
-        newVersionId
-      ),
+      .bind(user.tenantId, file.id, newVersionId),
     db
       .prepare(
         `INSERT INTO tenant_storage_stats (

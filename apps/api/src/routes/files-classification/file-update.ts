@@ -162,16 +162,11 @@ export function registerFileUpdateRoute(routes: Hono<OidcHonoEnv>) {
       ),
       c.env.DB.prepare('DELETE FROM files_fts WHERE file_id = ?').bind(file.id),
       c.env.DB.prepare(
-        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      ).bind(
-        file.id,
-        user.tenantId,
-        nextClassification,
-        nextName,
-        nextExt ?? '',
-        file.ai_reason ?? ''
-      ),
+        `INSERT INTO files_fts (file_id, tenant_id, classification, name, extension, ai_reason, content_excerpt)
+         SELECT id, tenant_id, classification, name, COALESCE(extension, ''), COALESCE(ai_reason, ''), COALESCE(content_excerpt, '')
+           FROM files
+          WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL AND upload_state = 'active'`
+      ).bind(user.tenantId, file.id),
       ...buildClassificationPolicyStatements(c.env.DB, {
         tenantId: user.tenantId,
         fileId: file.id,

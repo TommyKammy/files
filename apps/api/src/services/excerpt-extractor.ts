@@ -4,6 +4,11 @@ import type {
   ExtractedClassificationContext,
 } from '../types/classification';
 import { pickStricterClassification } from '../utils/classification';
+import {
+  detectOoxmlKind,
+  extractOoxmlText,
+  MAX_OOXML_ZIP_BYTES,
+} from './ooxml-text-extractor';
 
 const R2_RANGE_BYTES = 16 * 1024; // 16 KB head range read
 const MAX_EXCERPT_CHARS = 3000;
@@ -82,7 +87,10 @@ export function isPlainTextCandidate(mimeType: string, extension: string | null)
   return Boolean(ext && TEXT_EXTENSIONS.has(ext));
 }
 
-export function sanitizeBinaryToTextExcerpt(bytes: Uint8Array): string | null {
+export function sanitizeBinaryToTextExcerpt(
+  bytes: Uint8Array,
+  maxChars = MAX_EXCERPT_CHARS
+): string | null {
   if (bytes.byteLength === 0) return null;
 
   let controlCount = 0;
@@ -109,7 +117,56 @@ export function sanitizeBinaryToTextExcerpt(bytes: Uint8Array): string | null {
     .trim();
 
   if (!normalized) return null;
-  return normalized.slice(0, MAX_EXCERPT_CHARS);
+  return normalized.slice(0, maxChars);
+}
+
+/**
+ * Extract searchable plain-text excerpt from an R2 object (plain-text or OOXML <= 5 MiB).
+ * Never throws; returns null on unsupported types, oversize files, or extraction errors.
+ */
+export async function extractSearchableExcerpt(
+  storage: R2Bucket,
+  r2Key: string,
+  mimeType: string,
+  fileName: string,
+  sizeBytes?: number | null
+): Promise<string | null> {
+  try {
+    const ooxmlKind = detectOoxmlKind(mimeType, fileName);
+    if (ooxmlKind) {
+      if (typeof sizeBytes === 'number' && sizeBytes > MAX_OOXML_ZIP_BYTES) {
+        return null;
+      }
+      const obj = await storage.get(r2Key, {
+        range: { offset: 0, length: MAX_OOXML_ZIP_BYTES + 1 },
+      });
+      if (!obj) {
+        return null;
+      }
+      const buf = new Uint8Array(await obj.arrayBuffer());
+      if (buf.byteLength > MAX_OOXML_ZIP_BYTES) {
+        return null;
+      }
+      return await extractOoxmlText(buf, ooxmlKind);
+    }
+
+    const dotIdx = fileName.lastIndexOf('.');
+    const extension = dotIdx >= 0 ? fileName.slice(dotIdx + 1).toLowerCase() : null;
+    if (!isPlainTextCandidate(mimeType, extension)) {
+      return null;
+    }
+
+    const obj = await storage.get(r2Key, {
+      range: { offset: 0, length: R2_RANGE_BYTES },
+    });
+    if (!obj) {
+      return null;
+    }
+    const buf = new Uint8Array(await obj.arrayBuffer());
+    return sanitizeBinaryToTextExcerpt(buf, R2_RANGE_BYTES);
+  } catch {
+    return null;
+  }
 }
 
 interface PolicyRow {
@@ -208,14 +265,17 @@ export async function extractClassificationContext(
   let excerpt: string | null = null;
   let excerptIncluded = false;
 
-  if (mode === 'content_excerpt' && isPlainTextCandidate(mimeType, extension)) {
-    const obj = await bucket.get(input.r2ObjectKey, {
-      range: { offset: 0, length: R2_RANGE_BYTES },
-    });
-    if (obj) {
-      const buf = new Uint8Array(await obj.arrayBuffer());
-      excerpt = sanitizeBinaryToTextExcerpt(buf);
-      excerptIncluded = excerpt !== null;
+  if (mode === 'content_excerpt') {
+    const extracted = await extractSearchableExcerpt(
+      bucket,
+      input.r2ObjectKey,
+      mimeType,
+      fileName,
+      fileMeta.size_bytes
+    );
+    if (extracted) {
+      excerpt = extracted.slice(0, MAX_EXCERPT_CHARS);
+      excerptIncluded = true;
     }
   }
 
