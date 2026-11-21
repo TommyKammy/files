@@ -408,4 +408,113 @@ describe('User Collections API (/api/collections)', () => {
       .first<{ cnt: number }>();
     expect(remainingRows?.cnt).toBe(0);
   });
+
+  it('batch hydration preserves path-only folder access, direct file grants, and revocation', async () => {
+    const testEnv = buildTestEnv();
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO users (id, tenant_id, email, display_name, role, status)
+         VALUES ('col-path-user', 'tenant-col', 'col-path@col.example.com', 'Col Path User', 'member', 'active')`
+      ),
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO permissions (id, tenant_id, target_type, target_id, grantee_type, grantee_id, role, granted_by)
+         VALUES
+           ('perm-col-path-sub', 'tenant-col', 'folder', 'col-fld-sub', 'user', 'col-path-user', 'viewer', 'col-owner'),
+           ('perm-col-path-file2', 'tenant-col', 'file', 'col-file-2', 'user', 'col-path-user', 'previewer', 'col-owner')`
+      ),
+    ]);
+
+    const createRes = await app.fetch(
+      new Request('http://127.0.0.1/api/collections', {
+        method: 'POST',
+        headers: authHeaders('col-path-user'),
+        body: JSON.stringify({ name: 'Path & Direct', color: 'amber' }),
+      }),
+      testEnv
+    );
+    expect(createRes.status).toBe(201);
+    const { collection } = (await createRes.json()) as {
+      collection: { id: string };
+    };
+
+    for (const payload of [
+      { itemType: 'folder', itemId: 'col-fld-root' },
+      { itemType: 'file', itemId: 'col-file-2' },
+    ]) {
+      const addRes = await app.fetch(
+        new Request(`http://127.0.0.1/api/collections/${collection.id}/items`, {
+          method: 'POST',
+          headers: authHeaders('col-path-user'),
+          body: JSON.stringify(payload),
+        }),
+        testEnv
+      );
+      expect(addRes.status).toBe(200);
+    }
+
+    const listRes = await app.fetch(
+      new Request(`http://127.0.0.1/api/collections/${collection.id}/items`, {
+        headers: authHeaders('col-path-user'),
+      }),
+      testEnv
+    );
+    expect(listRes.status).toBe(200);
+    const listData = (await listRes.json()) as {
+      collection: { itemCount: number };
+      items: Array<{
+        id: string;
+        effectiveRole: string | null;
+        capabilities: string[];
+        pathLabel: string;
+        addedAt: string;
+      }>;
+    };
+    expect(listData.collection.itemCount).toBe(2);
+
+    const rootItem = listData.items.find((i) => i.id === 'col-fld-root');
+    expect(rootItem?.effectiveRole).toBeNull();
+    expect(rootItem?.capabilities).toEqual(['folder.traverse']);
+    expect(rootItem?.pathLabel).toBe('マイファイル / Contracts');
+    expect(typeof rootItem?.addedAt).toBe('string');
+
+    const directFile = listData.items.find((i) => i.id === 'col-file-2');
+    expect(directFile?.effectiveRole).toBe('previewer');
+    expect(directFile?.pathLabel).toBe('マイファイル / Contracts');
+
+    // Revoke descendant folder grant -> col-fld-root remains path-reachable via direct col-file-2 grant
+    await env.DB.prepare("DELETE FROM permissions WHERE id = 'perm-col-path-sub'").run();
+
+    const afterRevokeSubRes = await app.fetch(
+      new Request(`http://127.0.0.1/api/collections/${collection.id}/items`, {
+        headers: authHeaders('col-path-user'),
+      }),
+      testEnv
+    );
+    const afterRevokeSubData = (await afterRevokeSubRes.json()) as {
+      collection: { itemCount: number };
+      items: Array<{ id: string }>;
+    };
+    expect(afterRevokeSubData.collection.itemCount).toBe(2);
+    expect(afterRevokeSubData.items.map((i) => i.id).sort()).toEqual([
+      'col-file-2',
+      'col-fld-root',
+    ]);
+
+    // Revoke direct file grant -> both col-file-2 and path-only col-fld-root disappear
+    await env.DB.prepare("DELETE FROM permissions WHERE id = 'perm-col-path-file2'").run();
+
+    const afterRevokeAllRes = await app.fetch(
+      new Request(`http://127.0.0.1/api/collections/${collection.id}/items`, {
+        headers: authHeaders('col-path-user'),
+      }),
+      testEnv
+    );
+    const afterRevokeAllData = (await afterRevokeAllRes.json()) as {
+      collection: { itemCount: number };
+      items: Array<{ id: string }>;
+    };
+    expect(afterRevokeAllData.collection.itemCount).toBe(0);
+    expect(afterRevokeAllData.items).toEqual([]);
+  });
 });

@@ -6,71 +6,35 @@ import {
   resolveTargetAccess,
 } from '../services/authorization';
 import {
-  folderPathLabel,
-  loadFolderBreadcrumbMap,
-} from '../services/folder-breadcrumbs';
-import type { ClassificationLabel } from '../types/api';
+  hydrateWorkspaceItems,
+  isValidWorkspaceItemType,
+  normalizeWorkspaceItemId,
+  type HydratableFileRow,
+  type HydratableFolderRow,
+  type HydratedWorkspaceItem,
+} from '../services/workspace-item-hydrator';
 import type { OidcHonoEnv } from '../types/oidc';
 
-type ItemType = 'file' | 'folder';
 type RecentAction = 'view' | 'edit' | 'download' | 'upload';
 
 const VALID_ACTIONS = new Set<RecentAction>(['view', 'edit', 'download', 'upload']);
 const MAX_RECENT_STORED = 200;
 const DEFAULT_RECENT_LIMIT = 50;
 
-interface RecentFolderRow {
-  id: string;
-  parent_id: string | null;
-  name: string;
-  classification: ClassificationLabel;
-  updated_at: string;
+type RecentFolderRow = HydratableFolderRow & {
   last_action: RecentAction;
   accessed_at: string;
-}
+};
 
-interface RecentFileRow {
-  id: string;
-  folder_id: string | null;
-  name: string;
-  extension: string | null;
-  mime_type: string | null;
-  size_bytes: number;
-  classification: ClassificationLabel;
-  updated_at: string;
+type RecentFileRow = HydratableFileRow & {
   last_action: RecentAction;
   accessed_at: string;
-}
+};
 
-export interface RecentItemEntry {
-  itemType: ItemType;
-  id: string;
-  name: string;
-  classification: ClassificationLabel;
-  folderId: string | null;
-  parentId: string | null;
-  updatedAt: string;
-  extension: string | null;
-  mimeType: string | null;
-  sizeBytes: number | null;
-  effectiveRole: string | null;
-  capabilities: string[];
-  breadcrumbs: Array<{ id: string; name: string }>;
-  pathLabel: string;
+export type RecentItemEntry = HydratedWorkspaceItem & {
   lastAction: RecentAction;
   accessedAt: string;
-}
-
-function isValidItemType(value: unknown): value is ItemType {
-  return value === 'file' || value === 'folder';
-}
-
-function normalizeItemId(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > 128) return null;
-  return trimmed;
-}
+};
 
 function parseAction(value: unknown): RecentAction | null {
   if (value === undefined) return 'view';
@@ -144,78 +108,26 @@ recentsRoutes.get('/', async (c) => {
       .all<RecentFileRow>(),
   ]);
 
-  const folderIds = [
-    ...folderRows.results.map((row) => row.id),
-    ...fileRows.results
-      .map((row) => row.folder_id)
-      .filter((id): id is string => Boolean(id)),
-  ];
-  const breadcrumbMap = await loadFolderBreadcrumbMap(
-    c.env.DB,
-    user.tenantId,
-    folderIds
-  );
-
-  const items: RecentItemEntry[] = [];
-
-  for (const row of folderRows.results) {
-    const access = await resolveTargetAccess(c.env.DB, user, 'folder', row.id);
-    if (!access || access.deletedAt !== null || !canAccess(access, 'folder.traverse')) {
-      continue;
-    }
-    const breadcrumbs = breadcrumbMap.get(row.id) ?? [];
-    items.push({
-      itemType: 'folder',
-      id: row.id,
-      name: row.name,
-      classification: row.classification,
-      folderId: null,
-      parentId: row.parent_id,
-      updatedAt: row.updated_at,
-      extension: null,
-      mimeType: null,
-      sizeBytes: null,
-      effectiveRole: access.effectiveRole,
-      capabilities: access.capabilities,
-      breadcrumbs,
-      pathLabel: folderPathLabel(breadcrumbs),
+  const items = await hydrateWorkspaceItems<
+    RecentFolderRow,
+    RecentFileRow,
+    RecentItemEntry
+  >({
+    db: c.env.DB,
+    user,
+    folderRows: folderRows.results,
+    fileRows: fileRows.results,
+    projectFolder: (base, row) => ({
+      ...base,
       lastAction: row.last_action,
       accessedAt: row.accessed_at,
-    });
-  }
-
-  for (const row of fileRows.results) {
-    const access = await resolveTargetAccess(c.env.DB, user, 'file', row.id);
-    if (
-      !access ||
-      access.deletedAt !== null ||
-      access.uploadState !== 'active' ||
-      !canAccess(access, 'item.preview')
-    ) {
-      continue;
-    }
-    const breadcrumbs = row.folder_id
-      ? breadcrumbMap.get(row.folder_id) ?? []
-      : [];
-    items.push({
-      itemType: 'file',
-      id: row.id,
-      name: row.name,
-      classification: row.classification,
-      folderId: row.folder_id,
-      parentId: null,
-      updatedAt: row.updated_at,
-      extension: row.extension,
-      mimeType: row.mime_type,
-      sizeBytes: row.size_bytes,
-      effectiveRole: access.effectiveRole,
-      capabilities: access.capabilities,
-      breadcrumbs,
-      pathLabel: folderPathLabel(breadcrumbs),
+    }),
+    projectFile: (base, row) => ({
+      ...base,
       lastAction: row.last_action,
       accessedAt: row.accessed_at,
-    });
-  }
+    }),
+  });
 
   items.sort((a, b) => {
     const byAccessed = b.accessedAt.localeCompare(a.accessedAt);
@@ -235,10 +147,10 @@ recentsRoutes.post('/touch', async (c) => {
     .json<{ itemType?: unknown; itemId?: unknown; action?: unknown }>()
     .catch(() => null);
 
-  if (!body || !isValidItemType(body.itemType)) {
+  if (!body || !isValidWorkspaceItemType(body.itemType)) {
     return c.json({ error: 'Invalid itemType (must be file or folder)' }, 400);
   }
-  const itemId = normalizeItemId(body.itemId);
+  const itemId = normalizeWorkspaceItemId(body.itemId);
   if (!itemId) {
     return c.json({ error: 'Invalid itemId' }, 400);
   }

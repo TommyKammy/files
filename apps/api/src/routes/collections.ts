@@ -6,13 +6,14 @@ import {
   resolveTargetAccess,
 } from '../services/authorization';
 import {
-  folderPathLabel,
-  loadFolderBreadcrumbMap,
-} from '../services/folder-breadcrumbs';
-import type { ClassificationLabel } from '../types/api';
+  hydrateWorkspaceItems,
+  isValidWorkspaceItemType,
+  normalizeWorkspaceItemId,
+  type HydratableFileRow,
+  type HydratableFolderRow,
+  type HydratedWorkspaceItem,
+} from '../services/workspace-item-hydrator';
 import type { OidcHonoEnv } from '../types/oidc';
-
-type ItemType = 'file' | 'folder';
 
 const ALLOWED_COLLECTION_COLORS = [
   'slate',
@@ -35,26 +36,13 @@ interface CollectionRow {
   item_count?: number;
 }
 
-interface CollectionFolderRow {
-  id: string;
-  parent_id: string | null;
-  name: string;
-  classification: ClassificationLabel;
-  updated_at: string;
+type CollectionFolderRow = HydratableFolderRow & {
   added_at: string;
-}
+};
 
-interface CollectionFileRow {
-  id: string;
-  folder_id: string | null;
-  name: string;
-  extension: string | null;
-  mime_type: string | null;
-  size_bytes: number;
-  classification: ClassificationLabel;
-  updated_at: string;
+type CollectionFileRow = HydratableFileRow & {
   added_at: string;
-}
+};
 
 export interface CollectionEntry {
   id: string;
@@ -65,34 +53,9 @@ export interface CollectionEntry {
   updatedAt: string;
 }
 
-export interface CollectionItemEntry {
-  itemType: ItemType;
-  id: string;
-  name: string;
-  classification: ClassificationLabel;
-  folderId: string | null;
-  parentId: string | null;
-  updatedAt: string;
-  extension: string | null;
-  mimeType: string | null;
-  sizeBytes: number | null;
-  effectiveRole: string | null;
-  capabilities: string[];
-  breadcrumbs: Array<{ id: string; name: string }>;
-  pathLabel: string;
+export type CollectionItemEntry = HydratedWorkspaceItem & {
   addedAt: string;
-}
-
-function isValidItemType(value: unknown): value is ItemType {
-  return value === 'file' || value === 'folder';
-}
-
-function normalizeItemId(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > 128) return null;
-  return trimmed;
-}
+};
 
 function normalizeCollectionName(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -253,7 +216,7 @@ collectionsRoutes.post('/', async (c) => {
  */
 collectionsRoutes.patch('/:id', async (c) => {
   const user = getAuthenticatedUser(c);
-  const collectionId = normalizeItemId(c.req.param('id'));
+  const collectionId = normalizeWorkspaceItemId(c.req.param('id'));
   if (!collectionId) {
     return c.json({ error: 'Invalid collection id' }, 400);
   }
@@ -376,7 +339,7 @@ collectionsRoutes.patch('/:id', async (c) => {
  */
 collectionsRoutes.delete('/:id', async (c) => {
   const user = getAuthenticatedUser(c);
-  const collectionId = normalizeItemId(c.req.param('id'));
+  const collectionId = normalizeWorkspaceItemId(c.req.param('id'));
   if (!collectionId) {
     return c.json({ error: 'Invalid collection id' }, 400);
   }
@@ -412,7 +375,7 @@ collectionsRoutes.delete('/:id', async (c) => {
  */
 collectionsRoutes.get('/:id/items', async (c) => {
   const user = getAuthenticatedUser(c);
-  const collectionId = normalizeItemId(c.req.param('id'));
+  const collectionId = normalizeWorkspaceItemId(c.req.param('id'));
   if (!collectionId) {
     return c.json({ error: 'Invalid collection id' }, 400);
   }
@@ -474,76 +437,18 @@ collectionsRoutes.get('/:id/items', async (c) => {
       .all<CollectionFileRow>(),
   ]);
 
-  const folderIds = [
-    ...folderRows.results.map((row) => row.id),
-    ...fileRows.results
-      .map((row) => row.folder_id)
-      .filter((id): id is string => Boolean(id)),
-  ];
-  const breadcrumbMap = await loadFolderBreadcrumbMap(
-    c.env.DB,
-    user.tenantId,
-    folderIds
-  );
-
-  const items: CollectionItemEntry[] = [];
-
-  for (const row of folderRows.results) {
-    const access = await resolveTargetAccess(c.env.DB, user, 'folder', row.id);
-    if (!access || access.deletedAt !== null || !canAccess(access, 'folder.traverse')) {
-      continue;
-    }
-    const breadcrumbs = breadcrumbMap.get(row.id) ?? [];
-    items.push({
-      itemType: 'folder',
-      id: row.id,
-      name: row.name,
-      classification: row.classification,
-      folderId: null,
-      parentId: row.parent_id,
-      updatedAt: row.updated_at,
-      extension: null,
-      mimeType: null,
-      sizeBytes: null,
-      effectiveRole: access.effectiveRole,
-      capabilities: access.capabilities,
-      breadcrumbs,
-      pathLabel: folderPathLabel(breadcrumbs),
-      addedAt: row.added_at,
-    });
-  }
-
-  for (const row of fileRows.results) {
-    const access = await resolveTargetAccess(c.env.DB, user, 'file', row.id);
-    if (
-      !access ||
-      access.deletedAt !== null ||
-      access.uploadState !== 'active' ||
-      !canAccess(access, 'item.preview')
-    ) {
-      continue;
-    }
-    const breadcrumbs = row.folder_id
-      ? breadcrumbMap.get(row.folder_id) ?? []
-      : [];
-    items.push({
-      itemType: 'file',
-      id: row.id,
-      name: row.name,
-      classification: row.classification,
-      folderId: row.folder_id,
-      parentId: null,
-      updatedAt: row.updated_at,
-      extension: row.extension,
-      mimeType: row.mime_type,
-      sizeBytes: row.size_bytes,
-      effectiveRole: access.effectiveRole,
-      capabilities: access.capabilities,
-      breadcrumbs,
-      pathLabel: folderPathLabel(breadcrumbs),
-      addedAt: row.added_at,
-    });
-  }
+  const items = await hydrateWorkspaceItems<
+    CollectionFolderRow,
+    CollectionFileRow,
+    CollectionItemEntry
+  >({
+    db: c.env.DB,
+    user,
+    folderRows: folderRows.results,
+    fileRows: fileRows.results,
+    projectFolder: (base, row) => ({ ...base, addedAt: row.added_at }),
+    projectFile: (base, row) => ({ ...base, addedAt: row.added_at }),
+  });
 
   items.sort((a, b) => {
     const byAdded = b.addedAt.localeCompare(a.addedAt);
@@ -565,7 +470,7 @@ collectionsRoutes.get('/:id/items', async (c) => {
  */
 collectionsRoutes.post('/:id/items', async (c) => {
   const user = getAuthenticatedUser(c);
-  const collectionId = normalizeItemId(c.req.param('id'));
+  const collectionId = normalizeWorkspaceItemId(c.req.param('id'));
   if (!collectionId) {
     return c.json({ error: 'Invalid collection id' }, 400);
   }
@@ -584,10 +489,10 @@ collectionsRoutes.post('/:id/items', async (c) => {
   const body = await c.req
     .json<{ itemType?: unknown; itemId?: unknown }>()
     .catch(() => null);
-  if (!body || !isValidItemType(body.itemType)) {
+  if (!body || !isValidWorkspaceItemType(body.itemType)) {
     return c.json({ error: 'Invalid itemType (must be file or folder)' }, 400);
   }
-  const itemId = normalizeItemId(body.itemId);
+  const itemId = normalizeWorkspaceItemId(body.itemId);
   if (!itemId) {
     return c.json({ error: 'Invalid itemId' }, 400);
   }
@@ -633,14 +538,14 @@ collectionsRoutes.post('/:id/items', async (c) => {
  */
 collectionsRoutes.delete('/:id/items/:itemType/:itemId', async (c) => {
   const user = getAuthenticatedUser(c);
-  const collectionId = normalizeItemId(c.req.param('id'));
+  const collectionId = normalizeWorkspaceItemId(c.req.param('id'));
   const itemType = c.req.param('itemType');
-  const itemId = normalizeItemId(c.req.param('itemId'));
+  const itemId = normalizeWorkspaceItemId(c.req.param('itemId'));
 
   if (!collectionId) {
     return c.json({ error: 'Invalid collection id' }, 400);
   }
-  if (!isValidItemType(itemType)) {
+  if (!isValidWorkspaceItemType(itemType)) {
     return c.json({ error: 'Invalid itemType (must be file or folder)' }, 400);
   }
   if (!itemId) {

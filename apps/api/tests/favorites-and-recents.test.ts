@@ -362,4 +362,161 @@ describe('Favorites & Recents API (/api/favorites, /api/recents)', () => {
     ).first<{ cnt: number }>();
     expect(countRow?.cnt).toBe(200);
   });
+
+  it('batch hydration preserves path-only traversal, direct file grants, uploader filtering, and response shape', async () => {
+    const testEnv = buildTestEnv();
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO users (id, tenant_id, email, display_name, role, status)
+         VALUES
+           ('fr-path-user', 'tenant-fav-rec', 'fr-path@favrec.example.com', 'FR Path User', 'member', 'active'),
+           ('fr-uploader', 'tenant-fav-rec', 'fr-uploader@favrec.example.com', 'FR Uploader', 'member', 'active')`
+      ),
+      // fr-path-user has viewer on fr-fld-sub (so fr-fld-root is path-only) and direct previewer on fr-file-2
+      // fr-uploader has uploader on fr-fld-sub (can traverse folder, cannot preview fr-file-1)
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO permissions (id, tenant_id, target_type, target_id, grantee_type, grantee_id, role, granted_by)
+         VALUES
+           ('perm-fr-path-sub', 'tenant-fav-rec', 'folder', 'fr-fld-sub', 'user', 'fr-path-user', 'viewer', 'fr-owner'),
+           ('perm-fr-path-file2', 'tenant-fav-rec', 'file', 'fr-file-2', 'user', 'fr-path-user', 'previewer', 'fr-owner'),
+           ('perm-fr-uploader-sub', 'tenant-fav-rec', 'folder', 'fr-fld-sub', 'user', 'fr-uploader', 'uploader', 'fr-owner')`
+      ),
+    ]);
+
+    // fr-path-user favorites fr-fld-root (path-only), fr-fld-sub (viewer), and fr-file-2 (direct previewer)
+    for (const payload of [
+      { itemType: 'folder', itemId: 'fr-fld-root' },
+      { itemType: 'folder', itemId: 'fr-fld-sub' },
+      { itemType: 'file', itemId: 'fr-file-2' },
+    ]) {
+      const fav = await app.fetch(
+        new Request('http://127.0.0.1/api/favorites', {
+          method: 'POST',
+          headers: authHeaders('fr-path-user'),
+          body: JSON.stringify(payload),
+        }),
+        testEnv
+      );
+      expect(fav.status).toBe(200);
+
+      const rec = await app.fetch(
+        new Request('http://127.0.0.1/api/recents/touch', {
+          method: 'POST',
+          headers: authHeaders('fr-path-user'),
+          body: JSON.stringify({ ...payload, action: 'view' }),
+        }),
+        testEnv
+      );
+      expect(rec.status).toBe(200);
+    }
+
+    const [favRes, recRes] = await Promise.all([
+      app.fetch(
+        new Request('http://127.0.0.1/api/favorites', {
+          headers: authHeaders('fr-path-user'),
+        }),
+        testEnv
+      ),
+      app.fetch(
+        new Request('http://127.0.0.1/api/recents', {
+          headers: authHeaders('fr-path-user'),
+        }),
+        testEnv
+      ),
+    ]);
+    expect(favRes.status).toBe(200);
+    expect(recRes.status).toBe(200);
+
+    const favData = (await favRes.json()) as {
+      items: Array<Record<string, unknown>>;
+    };
+    const recData = (await recRes.json()) as {
+      items: Array<Record<string, unknown>>;
+    };
+
+    for (const list of [favData.items, recData.items]) {
+      const rootFolder = list.find((i) => i.id === 'fr-fld-root');
+      expect(rootFolder).toBeDefined();
+      expect(rootFolder?.effectiveRole).toBeNull();
+      expect(rootFolder?.capabilities).toEqual(['folder.traverse']);
+      expect(rootFolder?.parentId).toBeNull();
+      expect(rootFolder?.folderId).toBeNull();
+      expect(rootFolder?.pathLabel).toBe('マイファイル / Projects');
+
+      const subFolder = list.find((i) => i.id === 'fr-fld-sub');
+      expect(subFolder?.effectiveRole).toBe('viewer');
+      expect(subFolder?.parentId).toBe('fr-fld-root');
+      expect(subFolder?.pathLabel).toBe('マイファイル / Projects / Q4');
+
+      const directFile = list.find((i) => i.id === 'fr-file-2');
+      expect(directFile?.effectiveRole).toBe('previewer');
+      expect(directFile?.capabilities).toEqual([
+        'folder.list',
+        'folder.traverse',
+        'item.preview',
+      ]);
+      expect(directFile?.folderId).toBe('fr-fld-root');
+      expect(directFile?.extension).toBe('txt');
+      expect(directFile?.sizeBytes).toBe(256);
+    }
+
+    // Revoking fr-fld-sub removes fr-fld-sub, while fr-fld-root remains path-reachable via direct fr-file-2 grant
+    await env.DB.prepare("DELETE FROM permissions WHERE id = 'perm-fr-path-sub'").run();
+
+    const favAfterSubRevoke = (await (
+      await app.fetch(
+        new Request('http://127.0.0.1/api/favorites', {
+          headers: authHeaders('fr-path-user'),
+        }),
+        testEnv
+      )
+    ).json()) as { items: Array<{ id: string }> };
+    expect(favAfterSubRevoke.items.map((i) => i.id).sort()).toEqual([
+      'fr-file-2',
+      'fr-fld-root',
+    ]);
+
+    // Revoking direct fr-file-2 grant removes both fr-file-2 and path-only fr-fld-root
+    await env.DB.prepare("DELETE FROM permissions WHERE id = 'perm-fr-path-file2'").run();
+
+    const favAfterAllRevoke = (await (
+      await app.fetch(
+        new Request('http://127.0.0.1/api/favorites', {
+          headers: authHeaders('fr-path-user'),
+        }),
+        testEnv
+      )
+    ).json()) as { items: Array<{ id: string }> };
+    expect(favAfterAllRevoke.items).toEqual([]);
+
+    // Uploader can favorite fr-fld-sub, but if a file row exists in user_favorites, item.preview check hides it
+    const uploaderFavFolder = await app.fetch(
+      new Request('http://127.0.0.1/api/favorites', {
+        method: 'POST',
+        headers: authHeaders('fr-uploader'),
+        body: JSON.stringify({ itemType: 'folder', itemId: 'fr-fld-sub' }),
+      }),
+      testEnv
+    );
+    expect(uploaderFavFolder.status).toBe(200);
+
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO user_favorites (tenant_id, user_id, item_type, item_id, created_at)
+       VALUES ('tenant-fav-rec', 'fr-uploader', 'file', 'fr-file-1', datetime('now'))`
+    ).run();
+
+    const uploaderList = (await (
+      await app.fetch(
+        new Request('http://127.0.0.1/api/favorites', {
+          headers: authHeaders('fr-uploader'),
+        }),
+        testEnv
+      )
+    ).json()) as { items: Array<{ itemType: string; id: string; effectiveRole: string | null }> };
+    expect(uploaderList.items.map((i) => `${i.itemType}:${i.id}`)).toEqual([
+      'folder:fr-fld-sub',
+    ]);
+    expect(uploaderList.items[0].effectiveRole).toBe('uploader');
+  });
 });
