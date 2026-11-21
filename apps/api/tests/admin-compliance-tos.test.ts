@@ -600,6 +600,8 @@ describe('Custom ToS, file-request governance, branding & SIEM (TOM-72)', () => 
         orgName: 'サンプル株式会社',
         contactInfo: 'security@example.com',
         footerNote: '本リンクは秘密保持契約に準拠します。',
+        logoUrl: null,
+        accentColor: null,
       });
 
       const fileRequestMeta = await call<{

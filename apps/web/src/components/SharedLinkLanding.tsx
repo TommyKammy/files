@@ -20,6 +20,7 @@ import { ModalShell } from '@/components/ModalShell';
 import { SecurePreviewModal } from '@/components/SecurePreviewModal';
 import { WopiEditorFrame } from '@/components/WopiEditorFrame';
 import { useSharedLinkLanding } from '@/lib/use-shared-link-landing';
+import { normalizeHexAccentColor } from '@/lib/admin-compliance';
 import { buildLoginUrl } from '@/lib/files-api';
 import { formatBytes, formatDateTime } from '@/lib/formatters';
 import {
@@ -68,20 +69,40 @@ export function SharedLinkLanding({ token }: { token: string }) {
     if (uploadInputRef.current) uploadInputRef.current.value = '';
   }
 
+  const brandOrgName = meta?.branding?.orgName?.trim() || 'Files';
+  const brandLogoUrl = meta?.branding?.logoUrl?.trim() || null;
+  const brandAccentColor =
+    normalizeHexAccentColor(meta?.branding?.accentColor) ?? '#5e6ad2';
+
   return (
-    <main className="min-h-screen bg-[#efeff1] px-4 py-12 text-slate-900">
+    <main
+      className="min-h-screen bg-[#efeff1] px-4 py-12 text-slate-900"
+      style={{ borderTop: `4px solid ${brandAccentColor}` }}
+    >
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#5e6ad2] text-sm font-semibold text-white">
-              F
-            </div>
+            {brandLogoUrl ? (
+              <img
+                data-testid="shared-link-branding-logo"
+                src={brandLogoUrl}
+                alt={brandOrgName}
+                className="h-8 max-w-[140px] rounded object-contain"
+              />
+            ) : (
+              <div
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold text-white"
+                style={{ backgroundColor: brandAccentColor }}
+              >
+                F
+              </div>
+            )}
             <div>
               <div
                 data-testid="shared-link-branding-org"
                 className="break-words text-sm font-semibold text-slate-900"
               >
-                {meta?.branding?.orgName?.trim() || 'Files'}
+                {brandOrgName}
               </div>
               <div className="text-[0.6875rem] text-slate-700">Secure Share Delivery</div>
             </div>

@@ -12,7 +12,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import {
+  BRANDING_ACCENT_COLOR_PRESETS,
   formatTosAudienceLabel,
+  normalizeHexAccentColor,
   readBranding,
   readFileRequestPolicy,
   readQuotaThresholds,
@@ -22,9 +24,11 @@ import {
 } from '@/lib/admin-compliance';
 import {
   ApiClientError,
+  deleteAdminBrandingLogo,
   fetchAdminTos,
   updateAdminPolicies,
   updateAdminTos,
+  uploadAdminBrandingLogo,
 } from '@/lib/files-api';
 import type {
   AdminTosPolicy,
@@ -132,6 +136,14 @@ export function AdminComplianceSettingsSection({
   const [brandingFooterNote, setBrandingFooterNote] = useState(
     persistedBranding.footerNote ?? ''
   );
+  const [brandingAccentColor, setBrandingAccentColor] = useState(
+    persistedBranding.accentColor ?? ''
+  );
+  const [brandingLogoUrl, setBrandingLogoUrl] = useState<string | null>(
+    persistedBranding.logoUrl ?? null
+  );
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoCacheBust, setLogoCacheBust] = useState(0);
   const [quotaWarn, setQuotaWarn] = useState(String(persistedThresholds.warn));
   const [quotaCritical, setQuotaCritical] = useState(
     String(persistedThresholds.critical)
@@ -279,6 +291,15 @@ export function AdminComplianceSettingsSection({
       return;
     }
 
+    const trimmedAccent = brandingAccentColor.trim();
+    const normalizedAccent = trimmedAccent
+      ? normalizeHexAccentColor(trimmedAccent)
+      : null;
+    if (trimmedAccent && !normalizedAccent) {
+      setPolicyError('アクセントカラーは #RRGGBB 形式で入力してください。');
+      return;
+    }
+
     setPolicySaving(true);
     try {
       const response = await updateAdminPolicies({
@@ -288,6 +309,7 @@ export function AdminComplianceSettingsSection({
         brandingOrgName: brandingOrgName.trim() || null,
         brandingContactInfo: brandingContactInfo.trim() || null,
         brandingFooterNote: brandingFooterNote.trim() || null,
+        brandingAccentColor: normalizedAccent,
         quotaWarnThresholdPct: warn,
         quotaCriticalThresholdPct: critical,
         trashRetentionDays:
@@ -304,6 +326,57 @@ export function AdminComplianceSettingsSection({
       setPolicyError(errorText(err, 'ガバナンス設定の保存に失敗しました'));
     } finally {
       setPolicySaving(false);
+    }
+  }
+
+  async function handleLogoUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !canManage) return;
+    setPolicyError(null);
+    setPolicyNotice(null);
+
+    if (file.size > 512 * 1024) {
+      setPolicyError('ロゴ画像は 512 KiB 以下にしてください。');
+      return;
+    }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setPolicyError('PNG・JPEG・WebP 形式の画像のみアップロードできます。');
+      return;
+    }
+
+    setLogoUploading(true);
+    try {
+      const result = await uploadAdminBrandingLogo(file);
+      setBrandingLogoUrl(result.logoUrl);
+      setLogoCacheBust((n) => n + 1);
+      if (policy) {
+        onPolicyUpdated({ ...policy, brandingLogoUrl: result.logoUrl });
+      }
+      setPolicyNotice('組織ロゴをアップロードしました');
+    } catch (err) {
+      setPolicyError(errorText(err, '組織ロゴのアップロードに失敗しました'));
+    } finally {
+      setLogoUploading(false);
+    }
+  }
+
+  async function handleLogoDelete() {
+    if (!canManage) return;
+    setPolicyError(null);
+    setPolicyNotice(null);
+    setLogoUploading(true);
+    try {
+      await deleteAdminBrandingLogo();
+      setBrandingLogoUrl(null);
+      if (policy) {
+        onPolicyUpdated({ ...policy, brandingLogoUrl: null });
+      }
+      setPolicyNotice('組織ロゴを削除しました');
+    } catch (err) {
+      setPolicyError(errorText(err, '組織ロゴの削除に失敗しました'));
+    } finally {
+      setLogoUploading(false);
     }
   }
 
@@ -648,6 +721,105 @@ export function AdminComplianceSettingsSection({
                 className="mt-1 w-full resize-y rounded-md border border-[#d7d7dc] px-2.5 py-1.5 text-[0.75rem]"
               />
             </label>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5 text-[0.75rem]">
+                <span className="block font-medium text-slate-700">
+                  組織ロゴ (PNG / JPEG / WebP, 最大 512 KiB)
+                </span>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {brandingLogoUrl ? (
+                    <img
+                      data-testid="admin-branding-logo-preview"
+                      src={
+                        logoCacheBust > 0
+                          ? `${brandingLogoUrl}?v=${logoCacheBust}`
+                          : brandingLogoUrl
+                      }
+                      alt={brandingOrgName.trim() || '組織ロゴ'}
+                      className="h-10 max-w-[160px] rounded border border-[#e3e3e8] bg-white object-contain p-1"
+                    />
+                  ) : (
+                    <span className="rounded border border-dashed border-[#d7d7dc] px-2.5 py-1.5 text-[0.6875rem] text-[#6b6f76]">
+                      未設定
+                    </span>
+                  )}
+                  <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-[#d7d7dc] bg-white px-2.5 py-1 text-[0.6875rem] font-medium text-slate-700 hover:bg-[#f7f7fa]">
+                    <input
+                      data-testid="admin-branding-logo-input"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={!canManage || logoUploading}
+                      onChange={handleLogoUpload}
+                      className="sr-only"
+                    />
+                    {logoUploading ? '処理中...' : 'ロゴを選択'}
+                  </label>
+                  {brandingLogoUrl && canManage && (
+                    <button
+                      type="button"
+                      data-testid="admin-branding-logo-delete"
+                      disabled={logoUploading}
+                      onClick={handleLogoDelete}
+                      className="rounded-md border border-[#f2c6c6] bg-white px-2.5 py-1 text-[0.6875rem] font-medium text-[#b91c1c] hover:bg-[#fff5f5] disabled:opacity-50"
+                    >
+                      削除
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1.5 text-[0.75rem]">
+                <span className="block font-medium text-slate-700">
+                  アクセントカラー (#RRGGBB)
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="color"
+                    aria-label="アクセントカラー選択"
+                    value={normalizeHexAccentColor(brandingAccentColor) ?? '#5e6ad2'}
+                    disabled={!canManage}
+                    onChange={(event) => setBrandingAccentColor(event.target.value)}
+                    className="h-8 w-9 cursor-pointer rounded border border-[#d7d7dc] bg-white p-0.5 disabled:opacity-50"
+                  />
+                  <input
+                    data-testid="admin-branding-accent-color"
+                    type="text"
+                    maxLength={7}
+                    value={brandingAccentColor}
+                    disabled={!canManage}
+                    onChange={(event) => setBrandingAccentColor(event.target.value)}
+                    placeholder="#2563eb"
+                    className="h-8 w-28 rounded-md border border-[#d7d7dc] px-2.5 font-mono text-[0.75rem]"
+                  />
+                  {brandingAccentColor && canManage && (
+                    <button
+                      type="button"
+                      onClick={() => setBrandingAccentColor('')}
+                      className="rounded-md border border-[#d7d7dc] px-2 py-1 text-[0.6875rem] text-slate-600 hover:bg-[#f7f7fa]"
+                    >
+                      クリア
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  {BRANDING_ACCENT_COLOR_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      disabled={!canManage}
+                      aria-label={`プリセットカラー ${preset}`}
+                      onClick={() => setBrandingAccentColor(preset)}
+                      style={{ backgroundColor: preset }}
+                      className={`h-5 w-5 rounded-full border transition ${
+                        normalizeHexAccentColor(brandingAccentColor) === preset
+                          ? 'ring-2 ring-slate-900 ring-offset-1 border-white'
+                          : 'border-black/10 hover:scale-110'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
             <p className="text-[0.625rem] text-[#6b6f76]">
               共有リンク・ファイル収集・ゲスト招待・利用規約モーダルに、HTML
               エスケープされたテキストとして表示されます。

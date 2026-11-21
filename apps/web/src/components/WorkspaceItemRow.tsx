@@ -19,6 +19,10 @@ import { formatBytes, formatDateTime, isPdfFile } from '@/lib/formatters';
 import { isImeComposingEvent } from '@/lib/keyboard-shortcuts';
 import type { IntentPrefetcher } from '@/lib/intent-prefetch';
 import {
+  DEFAULT_WORKSPACE_COLUMN_VISIBILITY,
+  type WorkspaceColumnVisibility,
+} from '@/lib/workspace-table-columns';
+import {
   getWorkspaceRowKey,
   isRowControlTarget,
   type InlineRenameState,
@@ -51,6 +55,7 @@ export function WorkspaceItemRow({
   canClassify,
   canDownloadCurrentFolder,
   isPrivilegedAdmin,
+  columnVisibility = DEFAULT_WORKSPACE_COLUMN_VISIBILITY,
   onCheckboxClick,
   onPointerDown,
   onSelectRow,
@@ -84,6 +89,7 @@ export function WorkspaceItemRow({
   canClassify: boolean;
   canDownloadCurrentFolder: boolean;
   isPrivilegedAdmin: boolean;
+  columnVisibility?: WorkspaceColumnVisibility;
   onCheckboxClick: (event: MouseEvent<HTMLButtonElement>) => void;
   onPointerDown: (event: React.PointerEvent<HTMLElement>) => void;
   onSelectRow: (
@@ -311,64 +317,78 @@ export function WorkspaceItemRow({
           </button>
         )}
       </td>
-      <td className="px-3 py-2">
-        {isTrashView ? (
-          <span
-            className="inline-flex items-center gap-1 text-[0.75rem] text-[#3c3f46]"
-            title="削除者"
-            data-trash-deleter={trashMeta?.deletedBy ?? 'unknown'}
-          >
-            <UserRound className="h-3.5 w-3.5 shrink-0 text-[#8a8d94]" />
-            <span>{trashDeletedByName ?? '不明'}</span>
-          </span>
-        ) : isFolder ? (
-          <ClassificationBadge
-            classification={folder!.classification}
-            compact
-          />
-        ) : (
-          <ClassificationCell
-            file={file!}
-            canEdit={
-              !isTrashView &&
-              !isPendingUpload &&
-              (canClassify || isPrivilegedAdmin)
-            }
-            effectiveRole={effectiveRole}
-            isPrivilegedAdmin={isPrivilegedAdmin}
-            onUpdated={(updatedFile) => {
-              if (isTrashView) onFileUpdated(updatedFile);
-            }}
-            onError={onError}
-          />
-        )}
-      </td>
-      <td className="px-3 py-2 font-mono text-[#55565a]">
-        {isFolder ? 'フォルダ' : formatBytes(file!.size_bytes)}
-      </td>
-      <td className="px-3 py-2 text-[#55565a]">
-        {isTrashView ? (
-          <div
-            className="space-y-0.5"
-            data-trash-purge-at={trashMeta?.purgeAt ?? undefined}
-            data-trash-days-remaining={trashMeta?.daysRemaining}
-          >
-            <div>{formatDateTime(trashDeletedAt)}</div>
-            <div className="text-[0.625rem] text-[#8a8d94]">
-              予定 {formatDateTime(trashMeta?.purgeAt)}
-            </div>
-            <TrashRetentionBadge
-              daysRemaining={trashMeta?.daysRemaining}
+      {columnVisibility.classification && (
+        <td className="px-3 py-2">
+          {isTrashView ? (
+            <span
+              className="inline-flex items-center gap-1 text-[0.75rem] text-[#3c3f46]"
+              title="削除者"
+              data-trash-deleter={trashMeta?.deletedBy ?? 'unknown'}
+            >
+              <UserRound className="h-3.5 w-3.5 shrink-0 text-[#8a8d94]" />
+              <span>{trashDeletedByName ?? '不明'}</span>
+            </span>
+          ) : isFolder ? (
+            <ClassificationBadge
+              classification={folder!.classification}
+              compact
             />
-          </div>
-        ) : (
-          formatDateTime(
-            isFolder
-              ? folder!.updated_at
-              : file!.updated_at
-          )
-        )}
-      </td>
+          ) : (
+            <ClassificationCell
+              file={file!}
+              canEdit={
+                !isTrashView &&
+                !isPendingUpload &&
+                (canClassify || isPrivilegedAdmin)
+              }
+              effectiveRole={effectiveRole}
+              isPrivilegedAdmin={isPrivilegedAdmin}
+              onUpdated={(updatedFile) => {
+                if (isTrashView) onFileUpdated(updatedFile);
+              }}
+              onError={onError}
+            />
+          )}
+        </td>
+      )}
+      {columnVisibility.extension && (
+        <td className="px-3 py-2 font-mono text-[0.6875rem] text-[#55565a]">
+          {isFolder
+            ? 'フォルダ'
+            : (file!.extension?.trim() || file!.name.split('.').pop() || '-')
+                .toUpperCase()}
+        </td>
+      )}
+      {columnVisibility.size && (
+        <td className="px-3 py-2 font-mono text-[#55565a]">
+          {isFolder ? 'フォルダ' : formatBytes(file!.size_bytes)}
+        </td>
+      )}
+      {columnVisibility.updated_at && (
+        <td className="px-3 py-2 text-[#55565a]">
+          {isTrashView ? (
+            <div
+              className="space-y-0.5"
+              data-trash-purge-at={trashMeta?.purgeAt ?? undefined}
+              data-trash-days-remaining={trashMeta?.daysRemaining}
+            >
+              <div>{formatDateTime(trashDeletedAt)}</div>
+              <div className="text-[0.625rem] text-[#8a8d94]">
+                予定 {formatDateTime(trashMeta?.purgeAt)}
+              </div>
+              <TrashRetentionBadge
+                daysRemaining={trashMeta?.daysRemaining}
+              />
+            </div>
+          ) : (
+            formatDateTime(
+              isFolder
+                ? folder!.updated_at
+                : file!.updated_at
+            )
+          )}
+        </td>
+      )}
       <td className="px-3 py-2 text-right">
         {isTrashView ? (
           <button

@@ -29,6 +29,7 @@ import { registerStorageStatsRoutes } from './admin/storage';
 import { registerAdminTosRoutes } from './admin/tos';
 import { registerAdminTrashRoutes } from './admin/trash';
 import { registerAdminUserRoutes } from './admin/users';
+import { registerAdminBrandingRoutes } from './branding';
 
 export const adminGovernanceRoutes = new Hono<OidcHonoEnv>();
 adminGovernanceRoutes.use(
@@ -172,6 +173,10 @@ guards.use(
 );
 
 guards.use(
+  '/branding/logo',
+  requireAdminCapabilityForMethods('admin.policies.edit', ['POST', 'DELETE'])
+);
+guards.use(
   '/policies',
   requireAdminCapabilityForMethods('admin.policies.read', ['GET'])
 );
@@ -295,5 +300,6 @@ registerAdminTrashRoutes(adminGovernanceRoutes);
 registerAdminReportRoutes(adminGovernanceRoutes);
 registerAdminDelegationRoutes(adminGovernanceRoutes);
 registerAdminSettingsBundleRoutes(adminGovernanceRoutes);
+registerAdminBrandingRoutes(adminGovernanceRoutes);
 
 export { auditLogsRoutes } from './admin/audit-logs';

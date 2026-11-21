@@ -124,9 +124,30 @@ export function readFileRequestPolicy(
   };
 }
 
+export const BRANDING_ACCENT_COLOR_PRESETS = [
+  '#2563eb',
+  '#0f766e',
+  '#4f46e5',
+  '#7c3aed',
+  '#be123c',
+  '#b45309',
+  '#334155',
+] as const;
+
+export function normalizeHexAccentColor(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toLowerCase() : null;
+}
+
 export function readBranding(
   policy: TenantPolicyRow | null | undefined
 ): TenantBranding {
+  const rawLogoUrl = policy?.brandingLogoUrl?.trim() || null;
+  const rawAccent =
+    policy?.brandingAccentColor?.trim() ||
+    policy?.branding_accent_color?.trim() ||
+    null;
   return {
     orgName:
       policy?.brandingOrgName?.trim() ||
@@ -140,6 +161,8 @@ export function readBranding(
       policy?.brandingFooterNote?.trim() ||
       policy?.branding_footer_note?.trim() ||
       null,
+    logoUrl: rawLogoUrl,
+    accentColor: normalizeHexAccentColor(rawAccent),
   };
 }
 

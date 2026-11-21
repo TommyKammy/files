@@ -22,6 +22,7 @@ import {
   sha256Hex,
 } from '../services/crypto-utils';
 import type { FolderRow } from '../services/folder-closure-service';
+import { buildBrandingLogoUrl } from '../services/branding';
 import { getFolderStructureMode } from '../services/folder-structure';
 import {
   getPermissionInheritanceMode,
@@ -156,6 +157,11 @@ syncRoutes.get('/bootstrap', async (c) => {
         brandingOrgName: rawPolicy.branding_org_name ?? null,
         brandingContactInfo: rawPolicy.branding_contact_info ?? null,
         brandingFooterNote: rawPolicy.branding_footer_note ?? null,
+        brandingLogoUrl: buildBrandingLogoUrl(
+          user.tenantId,
+          (rawPolicy.branding_logo_r2_key as string | null | undefined) ?? null
+        ),
+        brandingAccentColor: rawPolicy.branding_accent_color ?? null,
         quotaWarnThresholdPct: Number(rawPolicy.quota_warn_threshold_pct ?? 80),
         quotaCriticalThresholdPct: Number(
           rawPolicy.quota_critical_threshold_pct ?? 90

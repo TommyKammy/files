@@ -48,6 +48,8 @@ import {
   BRANDING_CONTACT_INFO_MAX_LENGTH,
   BRANDING_FOOTER_NOTE_MAX_LENGTH,
   BRANDING_ORG_NAME_MAX_LENGTH,
+  buildBrandingLogoUrl,
+  normalizeBrandingAccentColor,
   normalizeBrandingText,
 } from '../../services/branding';
 import {
@@ -121,6 +123,11 @@ function projectPolicy(
     brandingOrgName: policy.branding_org_name ?? null,
     brandingContactInfo: policy.branding_contact_info ?? null,
     brandingFooterNote: policy.branding_footer_note ?? null,
+    brandingLogoUrl: buildBrandingLogoUrl(
+      String(policy.tenant_id ?? ''),
+      (policy.branding_logo_r2_key as string | null | undefined) ?? null
+    ),
+    brandingAccentColor: policy.branding_accent_color ?? null,
     quotaWarnThresholdPct: Number(policy.quota_warn_threshold_pct ?? 80),
     quotaCriticalThresholdPct: Number(
       policy.quota_critical_threshold_pct ?? 90
@@ -220,6 +227,7 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       brandingOrgName?: unknown;
       brandingContactInfo?: unknown;
       brandingFooterNote?: unknown;
+      brandingAccentColor?: unknown;
       quotaWarnThresholdPct?: unknown;
       quotaCriticalThresholdPct?: unknown;
     } | null;
@@ -674,7 +682,8 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
     const brandingProvided =
       body.brandingOrgName !== undefined ||
       body.brandingContactInfo !== undefined ||
-      body.brandingFooterNote !== undefined;
+      body.brandingFooterNote !== undefined ||
+      body.brandingAccentColor !== undefined;
     const quotaProvided =
       body.quotaWarnThresholdPct !== undefined ||
       body.quotaCriticalThresholdPct !== undefined;
@@ -750,6 +759,23 @@ export function registerAdminPolicyRoutes(routes: Hono<OidcHonoEnv>) {
       }
       updates.push(`${column} = ?`);
       binds.push(normalizeBrandingText(value, maxLength));
+    }
+
+    if (body.brandingAccentColor !== undefined) {
+      const normalizedAccent = normalizeBrandingAccentColor(
+        body.brandingAccentColor
+      );
+      if (!normalizedAccent.ok) {
+        return c.json(
+          {
+            error: normalizedAccent.error,
+            code: 'INVALID_BRANDING',
+          },
+          400
+        );
+      }
+      updates.push('branding_accent_color = ?');
+      binds.push(normalizedAccent.value);
     }
 
     let effectiveQuotaWarn =

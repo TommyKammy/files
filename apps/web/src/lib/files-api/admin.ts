@@ -149,6 +149,29 @@ export function updateAdminPolicies(
   });
 }
 
+export function uploadAdminBrandingLogo(file: File): Promise<{
+  ok: boolean;
+  logoUrl: string;
+  contentType: string;
+  sizeBytes: number;
+}> {
+  const formData = new FormData();
+  formData.append('logo', file);
+  return apiFetch('/api/admin/branding/logo', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export function deleteAdminBrandingLogo(): Promise<{
+  ok: boolean;
+  logoUrl: null;
+}> {
+  return apiFetch('/api/admin/branding/logo', {
+    method: 'DELETE',
+  });
+}
+
 /** GET /api/admin/tos — full policy text for sys_admin / sec_admin. */
 export function fetchAdminTos(): Promise<{ tos: AdminTosPolicy }> {
   return apiFetch('/api/admin/tos');

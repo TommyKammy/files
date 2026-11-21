@@ -9,6 +9,10 @@ import type {
   WorkspaceSortDirection,
   WorkspaceSortField,
 } from '@/lib/workspace-sort-and-view';
+import type {
+  WorkspaceColumnVisibility,
+  WorkspaceOptionalColumnId,
+} from '@/lib/workspace-table-columns';
 import type { WorkspaceTableRow } from '@/lib/workspace-table-row';
 
 function TrashErrorState({
@@ -59,6 +63,7 @@ export function WorkspaceFileListSection({
   selectedRowCount,
   sortBy,
   sortDir,
+  columnVisibility,
   nextCursor,
   loadingMore,
   trashError,
@@ -71,6 +76,7 @@ export function WorkspaceFileListSection({
   onBackgroundEmptyClick,
   onToggleSelectAll,
   onSort,
+  onToggleColumn,
   onLoadMore,
   onRetryTrash,
   onClearTrashFilters,
@@ -100,6 +106,7 @@ export function WorkspaceFileListSection({
   selectedRowCount: number;
   sortBy: WorkspaceSortField;
   sortDir: WorkspaceSortDirection;
+  columnVisibility?: WorkspaceColumnVisibility;
   nextCursor: string | null;
   loadingMore: boolean;
   trashError: string | null;
@@ -112,6 +119,7 @@ export function WorkspaceFileListSection({
   onBackgroundEmptyClick: (event: React.MouseEvent) => void;
   onToggleSelectAll: () => void;
   onSort: (field: WorkspaceSortField) => void;
+  onToggleColumn?: (columnId: WorkspaceOptionalColumnId) => void;
   onLoadMore: () => void;
   onRetryTrash: () => void;
   onClearTrashFilters: () => void;
@@ -211,8 +219,10 @@ export function WorkspaceFileListSection({
                 selectedRowCount={selectedRowCount}
                 sortBy={sortBy}
                 sortDir={sortDir}
+                columnVisibility={columnVisibility}
                 onToggleSelectAll={onToggleSelectAll}
                 onSort={onSort}
+                onToggleColumn={onToggleColumn}
                 renderRow={renderRow}
               />
             )}

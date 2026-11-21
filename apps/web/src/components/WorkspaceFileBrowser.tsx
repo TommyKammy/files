@@ -90,6 +90,13 @@ import { useTosAcceptance } from '@/lib/use-tos-acceptance';
 import { useWorkspaceVirtualization } from '@/lib/use-workspace-virtualization';
 import { describeWorkspaceRow } from '@/lib/workspace-row-presentation';
 import { getWorkspaceRowKey, isRowSelectable, toDragWorkspaceItem, type WorkspaceTableRow } from '@/lib/workspace-table-row';
+import {
+  DEFAULT_WORKSPACE_COLUMN_VISIBILITY,
+  loadWorkspaceColumnVisibility,
+  saveWorkspaceColumnVisibility,
+  type WorkspaceColumnVisibility,
+  type WorkspaceOptionalColumnId,
+} from '@/lib/workspace-table-columns';
 import { useWorkspaceViewPrefs } from '@/lib/use-workspace-view-prefs';
 import {
   getWorkspaceClipboardStore,
@@ -410,6 +417,20 @@ export function WorkspaceFileBrowser() {
   const trashTableSort = trashSortToTableSort(trash.filters.sort);
   const listSortBy = isTrashView ? trashTableSort.sortBy : sortBy;
   const listSortDir = isTrashView ? trashTableSort.sortDir : sortDir;
+  const [columnVisibility, setColumnVisibility] =
+    useState<WorkspaceColumnVisibility>(DEFAULT_WORKSPACE_COLUMN_VISIBILITY);
+
+  useEffect(() => {
+    setColumnVisibility(loadWorkspaceColumnVisibility());
+  }, []);
+
+  function handleToggleColumn(columnId: WorkspaceOptionalColumnId) {
+    setColumnVisibility((prev) => {
+      const next = { ...prev, [columnId]: !prev[columnId] };
+      saveWorkspaceColumnVisibility(next);
+      return next;
+    });
+  }
 
   useEffect(() => {
     clipboardStore.setScope(
@@ -1685,6 +1706,7 @@ export function WorkspaceFileBrowser() {
                         canClassify={canClassifyCurrentFolder}
                         canDownloadCurrentFolder={canDownloadCurrentFolder}
                         isPrivilegedAdmin={isPrivilegedAdmin}
+                        columnVisibility={columnVisibility}
                         onCheckboxClick={(e) =>
                           handleCardCheckboxClick(row, rowKey, e)
                         }
@@ -1966,6 +1988,7 @@ export function WorkspaceFileBrowser() {
           selectedRowCount={selectedRows.length}
           sortBy={listSortBy}
           sortDir={listSortDir}
+          columnVisibility={columnVisibility}
           nextCursor={nextCursor}
           loadingMore={loadingMore}
           trashError={trashError}
@@ -1984,6 +2007,7 @@ export function WorkspaceFileBrowser() {
             }
           }}
           onSort={handleListSort}
+          onToggleColumn={handleToggleColumn}
           onLoadMore={handleLoadMore}
           onRetryTrash={() => {
             void trash.retry();

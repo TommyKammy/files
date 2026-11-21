@@ -1093,6 +1093,8 @@ export interface TenantBranding {
   orgName: string | null;
   contactInfo: string | null;
   footerNote: string | null;
+  logoUrl?: string | null;
+  accentColor?: string | null;
 }
 
 /** GET /api/auth/tos and `/api/sync/bootstrap` TOS projection. */
@@ -1214,6 +1216,10 @@ export interface TenantPolicyRow {
   brandingContactInfo?: string | null;
   branding_footer_note?: string | null;
   brandingFooterNote?: string | null;
+  branding_logo_r2_key?: string | null;
+  brandingLogoUrl?: string | null;
+  branding_accent_color?: string | null;
+  brandingAccentColor?: string | null;
   quota_warn_threshold_pct?: number;
   quotaWarnThresholdPct?: number;
   quota_critical_threshold_pct?: number;
@@ -1255,6 +1261,7 @@ export interface UpdateAdminPoliciesPayload {
   brandingOrgName?: string | null;
   brandingContactInfo?: string | null;
   brandingFooterNote?: string | null;
+  brandingAccentColor?: string | null;
   quotaWarnThresholdPct?: number;
   quotaCriticalThresholdPct?: number;
 }

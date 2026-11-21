@@ -155,6 +155,8 @@ test('file-request governance and branding helpers project defaults', () => {
     orgName: null,
     contactInfo: null,
     footerNote: null,
+    logoUrl: null,
+    accentColor: null,
   });
   assert.deepEqual(
     readBranding(
@@ -168,6 +170,8 @@ test('file-request governance and branding helpers project defaults', () => {
       orgName: 'サンプル株式会社',
       contactInfo: 'security@example.com',
       footerNote: '法務注記',
+      logoUrl: null,
+      accentColor: null,
     }
   );
   assert.deepEqual(readSiemEvents(null), ['security_blocked', 'admin_mutation']);
